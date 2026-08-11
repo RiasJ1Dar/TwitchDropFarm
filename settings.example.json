@@ -1,0 +1,28 @@
+{
+    "browser_path": "",
+    "dark_theme": true,
+    "exclude": [],
+    "farm_cosmetics": false,
+    "farm_mode": {
+        "__type": "FarmMode",
+        "data": 1
+    },
+    "priority": [
+        "World of Warships",
+        "THE FINALS"
+    ],
+    "proxy": "",
+    "start_in_tray": false,
+    "telegram": {
+        "allow_control": true,
+        "bot_token": "",
+        "chat_ids": [],
+        "enabled": false,
+        "notify_critical": true,
+        "notify_rewards": true,
+        "notify_routine": false,
+        "report_every_hours": 6
+    },
+    "tray_notifications": true,
+    "verify_channel_drops": false
+}
