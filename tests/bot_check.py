@@ -5,20 +5,28 @@
 """
 from __future__ import annotations
 
-import asyncio
 import argparse
-from datetime import datetime, timezone, timedelta
-
+import asyncio
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from core.settings import Settings
-from core.miner import Miner as Twitch
 from core.events import (
-    CommandType, LoginRequired, DropClaimed, CampaignFinished, ProgressStalled,
-    ConnectionLost, ConnectionRestored, MinerError, MinerStopped,
-    WatchingChanged, StreamOffline, ChannelSnapshot,
+    CampaignFinished,
+    ChannelSnapshot,
+    CommandType,
+    ConnectionLost,
+    ConnectionRestored,
+    DropClaimed,
+    LoginRequired,
+    MinerError,
+    MinerStopped,
+    ProgressStalled,
+    StreamOffline,
+    WatchingChanged,
 )
+from core.miner import Miner as Twitch
+from core.settings import Settings
 from notify.telegram import TelegramNotifier
 
 OWNER = 111111
