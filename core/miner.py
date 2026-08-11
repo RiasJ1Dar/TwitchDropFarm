@@ -620,7 +620,12 @@ class Miner:
         campaign = self.active_campaign()
         if campaign is None or (drop := campaign.next_drop) is None:
             return None
-        return drop.id, drop.minutes
+        # Лише підтверджені Twitch хвилини. Якщо брати `minutes`, туди входять
+        # і домальовані наосліп — а їх додає щохвилини саме той шлях, яким
+        # майнер іде, коли Twitch мовчить. Позначка щоразу мінялась би, і
+        # застій маскував би сам себе: лічильник скидався в нуль, тривога
+        # не спрацьовувала жодного разу.
+        return drop.id, drop.counted_minutes
 
     @guard_task(vital=True)
     async def _watch_loop(self) -> None:
@@ -688,7 +693,8 @@ class Miner:
         after = self._progress_mark()
         if after is None:
             return  # нема чого фармити — це не застій
-        if before is not None and after != before:
+        # before is None — фарм щойно почався, порівнювати ще нема з чим
+        if before is None or after != before:
             self._stall_count = 0
             return
         self._stall_count += 1
