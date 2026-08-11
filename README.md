@@ -135,7 +135,7 @@ browser_profile  профіль браузера для входу
 ## Збірка
 
 ```bash
-env\Scripts\pyinstaller.exe build.spec --noconfirm
+env\Scripts\python.exe -m PyInstaller build.spec --noconfirm
 ```
 
 Три речі, на яких легко обпектися:

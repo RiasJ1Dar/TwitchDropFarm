@@ -146,7 +146,7 @@ l'inverse (clé USB, ordinateur d'autrui), placez un fichier vide `portable.txt`
 ## Compilation
 
 ```bash
-env\Scripts\pyinstaller.exe build.spec --noconfirm
+env\Scripts\python.exe -m PyInstaller build.spec --noconfirm
 ```
 
 Trois pièges faciles :

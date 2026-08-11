@@ -145,7 +145,7 @@ al `.exe`: el estado vivirá allí.
 ## Compilación
 
 ```bash
-env\Scripts\pyinstaller.exe build.spec --noconfirm
+env\Scripts\python.exe -m PyInstaller build.spec --noconfirm
 ```
 
 Tres formas fáciles de tropezar:

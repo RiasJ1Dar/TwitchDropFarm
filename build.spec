@@ -4,7 +4,13 @@
 # не потрібен, бо замість Playwright використовується власний CDP-клієнт. Тому
 # збірка виходить компактною — усе, що треба, це Python-рантайм і Tcl/Tk.
 #
-# Збірка:  env\Scripts\pyinstaller.exe build.spec --noconfirm
+# Збірка:  env\Scripts\python.exe -m PyInstaller build.spec --noconfirm
+#
+# Саме через модуль, а не через env\Scripts\pyinstaller.exe. Обгортки консольних
+# скриптів у Windows містять абсолютний шлях до інтерпретатора, вшитий при
+# встановленні, — і якщо venv колись копіювали з іншої теки, вони мовчки
+# запускають чужий Python із чужими бібліотеками. `python -m` бере інтерпретатор
+# за розташуванням і такої підміни не допускає.
 a = Analysis(
     ["main.py"],
     pathex=[],
