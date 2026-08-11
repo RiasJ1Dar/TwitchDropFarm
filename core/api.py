@@ -19,6 +19,7 @@ import aiohttp
 
 from core import protocol
 from core.config import COOKIE_FILE, GQL_RETRIES, TRACE
+from core.exceptions import RequestInvalid
 from core.toolbox import Backoff, Throttle
 
 log = logging.getLogger("TwitchDrops")
@@ -54,8 +55,10 @@ class Aborted(Exception):
     """Запит перервано, бо застосунок завершується."""
 
 
-class Stale(Exception):
-    """Запит утратив сенс: те, заради чого він робився, протухло."""
+# «Запит утратив сенс, бо протухло те, заради чого робився» — це вже описаний
+# стан: core.exceptions.RequestInvalid, і саме його ловить авторизація, щоб
+# узяти новий код пристрою. Власний клас тут був дублікатом, який ніхто не
+# ловив, тож протухлий код валив вхід замість того, щоб оновитись.
 
 
 def _loose_json(text: str) -> Any:
@@ -183,7 +186,7 @@ class TwitchApi:
                 # враховуємо, що запит може завершитись уже після протухання
                 deadline = valid_until.timestamp() - budget
                 if datetime.now(timezone.utc).timestamp() >= deadline:
-                    raise Stale()
+                    raise RequestInvalid()
 
             response = None
             try:
