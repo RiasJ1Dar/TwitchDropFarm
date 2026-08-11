@@ -247,7 +247,11 @@ class Drop:
         self.campaign.shift_counted(delta)
 
     def _apply_delta(self, delta: int) -> None:
-        if delta == 0:
+        # Приріст розходиться по всіх дропах кампанії, бо Twitch рахує хвилини
+        # спільними для неї. Уже забраний дроп при цьому чіпати нема сенсу: його
+        # лічильник і так упертий у стелю, а повідомлення про «прогрес» того,
+        # що давно отримано, лише засмічує журнал.
+        if delta == 0 or self.taken:
             return
         self.counted_minutes = max(
             0, min(self.counted_minutes + delta, self.required_minutes)
