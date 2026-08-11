@@ -1,0 +1,6 @@
+# Нормалізація кінців рядків. Без цього git на кожному коміті сипле
+# попередженнями «LF will be replaced by CRLF» і засмічує diff.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.exe binary
+*.ico binary

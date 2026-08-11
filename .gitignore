@@ -1,0 +1,17 @@
+# віртуальне середовище та збірка
+env/
+build/
+dist/
+__pycache__/
+*.py[cod]
+
+# стан застосунку — містить токен доступу до акаунта Twitch
+auth.json
+cookies.jar
+settings.json
+lock.file
+log.txt
+auth_test.log
+cache/
+browser_profile/
+.ruff_cache/

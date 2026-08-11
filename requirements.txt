@@ -1,0 +1,12 @@
+# Керування браузером — через CDP поверх aiohttp, тому ні playwright, ні selenium тут
+# немає і бути не повинно: вони тягнуть власні рантайми, а вимога проєкту — один .exe.
+aiohttp>=3.9,<4.0
+yarl
+truststore
+
+# трей та іконка
+Pillow
+pystray
+
+# сповіщення трею на Windows
+pywin32; sys_platform == "win32"
