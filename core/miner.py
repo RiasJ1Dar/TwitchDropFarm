@@ -658,12 +658,20 @@ class Miner:
         drop = self._drops.get(session["dropID"])
         if drop is None:
             return False
+        if drop.taken:
+            # Кілька секунд після клейму Twitch віддає щойно забраний дроп як
+            # поточний: його сесія перемикається на наступний із запізненням.
+            # Це нормальний стан, а не чужий перегляд — просто чекаємо
+            # наступного опитування, домалювавши хвилину наосліп.
+            log.log(TRACE, f"Twitch ще звітує забраний дроп «{drop.name}»")
+            return False
         if not drop.farmable(channel):
             # Twitch рахує зовсім іншу кампанію — майже напевно цим акаунтом
             # хтось дивиться Twitch вручну
+            here = f"{channel.name} ({channel.game})" if channel.game else channel.name
             log.warning(
                 f"Twitch зараховує «{drop.campaign.game.name}», "
-                f"а ми дивимось {channel.name} — схоже на паралельний перегляд"
+                f"а ми дивимось {here} — схоже на паралельний перегляд"
             )
             return False
         drop.set_counted(session["currentMinutesWatched"])
