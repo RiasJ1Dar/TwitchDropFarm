@@ -12,7 +12,21 @@ from typing import TYPE_CHECKING, Any
 
 from PIL import Image, ImageDraw
 
-from core.events import Command, CommandType
+from core.events import (
+    CampaignFinished,
+    Command,
+    CommandType,
+    ConnectionLost,
+    ConnectionRestored,
+    DropClaimed,
+    Event,
+    LoginRequired,
+    MinerError,
+    MinerStarted,
+    MinerStopped,
+    ProgressStalled,
+    WatchingChanged,
+)
 
 if TYPE_CHECKING:
     from core.miner import Miner as Twitch
@@ -43,6 +57,7 @@ class Tray:
         self._gui = gui
         self._icon: Any = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._state = "idle"
 
     def start(self) -> None:
         try:
@@ -67,6 +82,10 @@ class Tray:
         self._gui._tray_available = True
         # pystray блокує потік, тому віддаємо його виконавцю
         self._loop.run_in_executor(None, self._icon.run)
+        # Без цієї підписки колір іконки й сповіщення лишаються мертвим кодом:
+        # `set_state` і `notify` не викликав ніхто, тож іконка назавжди сіра,
+        # а `tray_notifications` у налаштуваннях нічим не керує.
+        self._twitch.events.subscribe(self._on_event)
 
     def _dispatch(self, func: Any) -> None:
         if self._loop is not None:
@@ -88,12 +107,53 @@ class Tray:
         self._dispatch(self._gui.request_close)
         self.stop()
 
+    def _on_event(self, event: Event) -> None:
+        """Перекладає події ядра в колір іконки та спливні сповіщення.
+
+        Сповіщаємо лише про те, заради чого варто відривати людину від справ:
+        нагороду, завершену кампанію, застій, помилку й потребу увійти.
+        Рутина (зміна каналу, приріст хвилин) міняє хіба що колір.
+        """
+        if isinstance(event, WatchingChanged):
+            self.set_state("idle" if event.channel is None else "active")
+        elif isinstance(event, ConnectionLost):
+            self.set_state("error")
+        elif isinstance(event, ConnectionRestored):
+            self.set_state("active")
+        elif isinstance(event, MinerStarted):
+            # при старті одразу в трей вікна не видно, і без цього незрозуміло,
+            # чи програма взагалі піднялась
+            if event.tray:
+                self.notify(f"Працюю у фоні, версія {event.version}")
+        elif isinstance(event, MinerStopped):
+            self.set_state("idle")
+            self.notify(f"Майнер зупинено: {event.reason}")
+        elif isinstance(event, DropClaimed):
+            self.notify(f"{event.rewards} — {event.game}", "Отримано дроп")
+        elif isinstance(event, CampaignFinished):
+            self.notify(f"{event.campaign_name} ({event.game})", "Кампанію завершено")
+        elif isinstance(event, ProgressStalled):
+            self.notify(
+                f"{event.minutes_without_progress} хв без приросту на "
+                f"{event.channel_name}",
+                "Прогрес стоїть",
+            )
+        elif isinstance(event, MinerError):
+            self.set_state("error")
+            self.notify(event.message, "Помилка")
+        elif isinstance(event, LoginRequired):
+            self.notify(f"Код: {event.user_code}", "Потрібен вхід")
+
     def set_state(self, state: str) -> None:
-        if self._icon is not None:
-            try:
-                self._icon.icon = _make_icon(state)
-            except Exception:
-                pass
+        # WatchingChanged приходить часто, а перемальовування іконки безглузде,
+        # поки стан той самий
+        if self._icon is None or state == self._state:
+            return
+        self._state = state
+        try:
+            self._icon.icon = _make_icon(state)
+        except Exception:
+            pass
 
     def notify(self, message: str, title: str = "Twitch Drop Farm") -> None:
         if self._icon is not None and self._twitch.settings.tray_notifications:
