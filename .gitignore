@@ -12,5 +12,9 @@ log.txt
 browser_profile/
 portable.txt
 
-# Робочі нотатки з особистими даними (chat_id, user_id) — не для публікації
+# Робочі нотатки — не для публікації
 HANDOFF.md
+IDEAS.md
+
+# Obsidian: тека проєкту підключена до сховища через junction
+.obsidian/
