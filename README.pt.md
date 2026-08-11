@@ -143,7 +143,7 @@ o estado passa a viver ali.
 ## Compilação
 
 ```bash
-env\Scripts\pyinstaller.exe build.spec --noconfirm
+env\Scripts\python.exe -m PyInstaller build.spec --noconfirm
 ```
 
 Três jeitos fáceis de se queimar:

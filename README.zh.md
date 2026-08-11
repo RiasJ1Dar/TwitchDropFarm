@@ -130,7 +130,7 @@ browser_profile  用于登录的浏览器配置文件
 ## 构建
 
 ```bash
-env\Scripts\pyinstaller.exe build.spec --noconfirm
+env\Scripts\python.exe -m PyInstaller build.spec --noconfirm
 ```
 
 三个容易踩的坑：
