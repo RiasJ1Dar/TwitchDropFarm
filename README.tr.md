@@ -141,7 +141,7 @@ yaşar.
 ## Derleme
 
 ```bash
-env\Scripts\pyinstaller.exe build.spec --noconfirm
+env\Scripts\python.exe -m PyInstaller build.spec --noconfirm
 ```
 
 Kolayca yanılabileceğiniz üç nokta:

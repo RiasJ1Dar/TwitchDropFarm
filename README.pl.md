@@ -142,7 +142,7 @@ komputer), połóż pusty plik `portable.txt` obok `.exe`: wtedy stan zamieszka 
 ## Budowanie
 
 ```bash
-env\Scripts\pyinstaller.exe build.spec --noconfirm
+env\Scripts\python.exe -m PyInstaller build.spec --noconfirm
 ```
 
 Trzy łatwe sposoby, żeby się sparzyć:

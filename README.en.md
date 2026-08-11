@@ -143,7 +143,7 @@ the state will then live there.
 ## Building
 
 ```bash
-env\Scripts\pyinstaller.exe build.spec --noconfirm
+env\Scripts\python.exe -m PyInstaller build.spec --noconfirm
 ```
 
 Three easy ways to get burned:
