@@ -1,3 +1,5 @@
+**Українська** · [English](README.en.md) · [Español](README.es.md) · [Português](README.pt.md) · [Deutsch](README.de.md) · [Français](README.fr.md) · [Polski](README.pl.md) · [Türkçe](README.tr.md) · [简体中文](README.zh.md)
+
 # TwitchDropFarm
 
 Фарм **timed drops** на Twitch без відкритого браузера й без стріму на екрані.
@@ -196,13 +198,3 @@ GraphQL, формат події `minute-watched`, назви топіків), `
 ## Ліцензія
 
 MIT — [LICENSE](LICENSE), переклад українською: [LICENSE.uk.md](LICENSE.uk.md).
-
----
-
-**English summary.** TwitchDropFarm is a Windows drop miner for Twitch: it reads
-your inventory, picks campaigns by one of four strategies, watches eligible
-channels headlessly, and claims drops automatically. Ships as a single
-self-contained `.exe` — no Node.js, no Playwright, no bundled browser (browser
-control is a custom Chrome DevTools Protocol client over `aiohttp`). Includes a
-Tk window, a system tray, and a Telegram bot for remote control. UI, logs and
-source comments are in Ukrainian. MIT licensed.
