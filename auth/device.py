@@ -90,7 +90,7 @@ async def poll_for_token(twitch: Twitch, code: DeviceCode) -> str:
             AUTH_TOKEN_URL,
             headers=_headers(client_info, device_id),
             data=payload,
-            invalidate_after=code.expires_at,
+            valid_until=code.expires_at,
         ) as response:
             if response.status != 200:
                 continue
