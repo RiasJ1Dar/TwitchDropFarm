@@ -10,3 +10,7 @@ settings.json
 lock.file
 log.txt
 browser_profile/
+portable.txt
+
+# Робочі нотатки з особистими даними (chat_id, user_id) — не для публікації
+HANDOFF.md
