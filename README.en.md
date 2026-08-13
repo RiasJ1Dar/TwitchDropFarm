@@ -160,6 +160,7 @@ Three easy ways to get burned:
 ```bash
 main.py --dump-inventory     all campaigns from live Twitch
 main.py --test-telegram      the bot
+tests\core_check.py          core logic (no network)
 tests\bot_check.py           bot tests (no network)
 tests\live_check.py          core against live Twitch
 ```

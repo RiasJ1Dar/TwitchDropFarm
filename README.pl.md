@@ -160,6 +160,7 @@ Trzy łatwe sposoby, żeby się sparzyć:
 ```bash
 main.py --dump-inventory     wszystkie kampanie z żywego Twitcha
 main.py --test-telegram      bot
+tests\core_check.py          logika rdzenia (bez sieci)
 tests\bot_check.py           testy bota (bez sieci)
 tests\live_check.py          rdzeń wobec żywego Twitcha
 ```

@@ -163,6 +163,7 @@ Tres formas fáciles de tropezar:
 ```bash
 main.py --dump-inventory     todas las campañas del Twitch real
 main.py --test-telegram      el bot
+tests\core_check.py          lógica del núcleo (sin red)
 tests\bot_check.py           pruebas del bot (sin red)
 tests\live_check.py          el núcleo contra el Twitch real
 ```

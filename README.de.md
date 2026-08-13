@@ -161,6 +161,7 @@ Drei Stolperfallen:
 ```bash
 main.py --dump-inventory     alle Kampagnen vom echten Twitch
 main.py --test-telegram      der Bot
+tests\core_check.py          Kernlogik (ohne Netz)
 tests\bot_check.py           Bot-Tests (ohne Netz)
 tests\live_check.py          Kern gegen echtes Twitch
 ```

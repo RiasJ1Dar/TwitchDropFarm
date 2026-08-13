@@ -152,6 +152,7 @@ env\Scripts\python.exe -m PyInstaller build.spec --noconfirm
 ```bash
 main.py --dump-inventory     усі кампанії з живого Twitch
 main.py --test-telegram      бот
+tests\core_check.py          логіка ядра (без мережі)
 tests\bot_check.py           тести бота (без мережі)
 tests\live_check.py          ядро проти живого Twitch
 ```
