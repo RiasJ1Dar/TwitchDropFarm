@@ -146,6 +146,7 @@ env\Scripts\python.exe -m PyInstaller build.spec --noconfirm
 ```bash
 main.py --dump-inventory     从真实 Twitch 拉取全部活动
 main.py --test-telegram      机器人
+tests\core_check.py          内核逻辑（不联网）
 tests\bot_check.py           机器人测试（不联网）
 tests\live_check.py          内核对真实 Twitch
 ```
