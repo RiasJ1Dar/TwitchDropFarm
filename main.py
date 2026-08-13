@@ -27,6 +27,7 @@ if __name__ == "__main__":
     from core.config import CONSOLE_LOG_FORMAT as OUTPUT_FORMATTER
     from core.config import FILE_LOG_FORMAT as FILE_FORMATTER
     from core.config import LOCK_FILE as LOCK_PATH
+    from core.config import LOG_BACKUPS, LOG_MAX_BYTES
     from core.config import LOG_FILE as LOG_PATH
     from core.config import TRACE as CALL
     from core.config import VERBOSITY as LOGGING_LEVELS
@@ -52,6 +53,7 @@ if __name__ == "__main__":
     from core.miner import Miner as Twitch
     from core.settings import Settings
     from core.toolbox import claim_single_instance as lock_file
+    from core.toolbox import rotating_log_handler
 
     parser = argparse.ArgumentParser(
         "TwitchDropFarm",
@@ -109,9 +111,10 @@ if __name__ == "__main__":
     console.setFormatter(OUTPUT_FORMATTER)
     logger.addHandler(console)
     if settings.log:
-        file_handler = logging.FileHandler(LOG_PATH, encoding="utf-8")
-        file_handler.setFormatter(FILE_FORMATTER)
-        logger.addHandler(file_handler)
+        logger.addHandler(rotating_log_handler(
+            LOG_PATH, max_bytes=LOG_MAX_BYTES, backups=LOG_BACKUPS,
+            formatter=FILE_FORMATTER,
+        ))
     logging.getLogger("TwitchDrops.gql").setLevel(settings.debug_gql)
     logging.getLogger("TwitchDrops.websocket").setLevel(settings.debug_ws)
 

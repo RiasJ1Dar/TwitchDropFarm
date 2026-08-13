@@ -25,6 +25,29 @@ from yarl import URL
 
 log = logging.getLogger("TwitchDrops")
 
+
+def rotating_log_handler(
+    path: Path, *, max_bytes: int, backups: int, formatter: logging.Formatter
+) -> logging.Handler:
+    """Файловий журнал зі стелею розміру.
+
+    Окремою функцією, а не рядком у `main`, з двох причин. По-перше, це єдиний
+    спосіб перевірити ротацію виконанням — без неї лишається вірити, що
+    параметри правильні. По-друге, на Windows перейменування під час ротації
+    може не вдатись, якщо файл ще тримає інший процес: так буває на `/reboot`,
+    коли новий екземпляр уже піднявся, а старий ще не дописав. `logging` таку
+    помилку не пропускає нагору, тож фарм від неї не постраждає — але знати про
+    неї варто саме тут.
+    """
+    from logging.handlers import RotatingFileHandler
+
+    handler = RotatingFileHandler(
+        path, maxBytes=max_bytes, backupCount=backups, encoding="utf-8"
+    )
+    handler.setFormatter(formatter)
+    return handler
+
+
 T = TypeVar("T")
 D = TypeVar("D")
 
