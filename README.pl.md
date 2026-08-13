@@ -17,6 +17,8 @@ już zainstalowana w systemie (Edge albo Chrome).
 
 ## Co potrafi
 
+- **Ostrzega, gdy nie zdąży**: jeśli do końca kampanii zostało mniej czasu niż
+  potrzebnych minut oglądania, powie o tym z wyprzedzeniem.
 - **Wybiera sam.** Cztery tryby: według listy priorytetów, według najbliższego
   terminu, według najlepszego dopasowania (by zdążyć z jak największą liczbą
   kampanii) albo wyłącznie to, z czym konto jest powiązane i gdzie wydawany jest
@@ -118,7 +120,7 @@ pliku. Zmiany w pliku działają po restarcie.
 obcy, który znajdzie bota, nie przejmie kontroli nad minerem.
 
 Polecenia: `/status`, `/inventory`, `/campaigns`, `/pause`, `/resume`,
-`/switch <kanał>`, `/priority add|remove <gra>`, `/reload`, `/reboot`,
+`/switch <kanał>`, `/priority add|remove <gra>`, `/reload`, `/hide`, `/show`, `/reboot`,
 `/menu`, `/help`. Wszystko poza dwoma przyjmującymi argumenty jest dostępne jako
 przycisk.
 

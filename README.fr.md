@@ -18,6 +18,8 @@ installé sur le système (Edge ou Chrome).
 
 ## Ce qu'il fait
 
+- **Prévient quand c'est perdu d'avance** : s'il reste moins de temps que de
+  minutes de visionnage encore nécessaires, il le dit à l'avance.
 - **Il choisit tout seul.** Quatre modes : par liste de priorité, par échéance la
   plus proche, par meilleur ajustement (pour boucler un maximum de campagnes) ou
   uniquement ce à quoi le compte est lié et où un vrai objet est remis.
@@ -121,7 +123,7 @@ prennent effet après un redémarrage.
 inconnu qui trouverait le bot ne pourra pas piloter le miner.
 
 Commandes : `/status`, `/inventory`, `/campaigns`, `/pause`, `/resume`,
-`/switch <chaîne>`, `/priority add|remove <jeu>`, `/reload`, `/reboot`,
+`/switch <chaîne>`, `/priority add|remove <jeu>`, `/reload`, `/hide`, `/show`, `/reboot`,
 `/menu`, `/help`. Tout sauf les deux qui prennent des arguments est accessible
 par bouton.
 

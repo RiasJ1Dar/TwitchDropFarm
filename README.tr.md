@@ -17,6 +17,8 @@ kullanılır (Edge veya Chrome).
 
 ## Neler yapar
 
+- **Yetişemeyeceğini önceden söyler**: kalan süre, hâlâ gereken izleme
+  dakikalarından azsa bunu vaktinde bildirir.
 - **Kendi seçer.** Dört kip: öncelik listesine göre, en yakın bitiş tarihine
   göre, en sıkı uyuma göre (mümkün olduğunca çok kampanyayı bitirmek için) veya
   yalnızca hesabın bağlı olduğu ve gerçek bir eşya verilen kampanyalar.
@@ -117,7 +119,7 @@ elle. Dosyadaki değişiklikler yeniden başlatmadan sonra geçerli olur.
 yabancı miner'ı yönetemez.
 
 Komutlar: `/status`, `/inventory`, `/campaigns`, `/pause`, `/resume`,
-`/switch <kanal>`, `/priority add|remove <oyun>`, `/reload`, `/reboot`,
+`/switch <kanal>`, `/priority add|remove <oyun>`, `/reload`, `/hide`, `/show`, `/reboot`,
 `/menu`, `/help`. Argüman alan ikisi dışında hepsi düğme olarak da vardır.
 
 ## Durum nerede tutulur

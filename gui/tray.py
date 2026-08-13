@@ -18,6 +18,7 @@ from core.events import (
     CommandType,
     ConnectionLost,
     ConnectionRestored,
+    DeadlineRisk,
     DropClaimed,
     Event,
     LoginRequired,
@@ -132,6 +133,10 @@ class Tray:
             self.notify(f"{event.rewards} — {event.game}", "Отримано дроп")
         elif isinstance(event, CampaignFinished):
             self.notify(f"{event.campaign_name} ({event.game})", "Кампанію завершено")
+        elif isinstance(event, DeadlineRisk):
+            first = event.campaigns[0]
+            tail = f" і ще {len(event.campaigns) - 1}" if len(event.campaigns) > 1 else ""
+            self.notify(f"{first.name} ({first.game}){tail}", "Не встигаємо закрити")
         elif isinstance(event, ProgressStalled):
             self.notify(
                 f"{event.minutes_without_progress} хв без приросту на "
