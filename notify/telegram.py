@@ -24,6 +24,7 @@ from core.events import (
     CommandType,
     ConnectionLost,
     ConnectionRestored,
+    DeadlineRisk,
     DropClaimed,
     Event,
     LoginRequired,
@@ -53,6 +54,8 @@ COMMANDS: tuple[tuple[str, str, str], ...] = (
     ("switch", "перемкнутись на канал", " &lt;канал&gt;"),
     ("priority", "керувати пріоритетом ігор", " add|remove &lt;гра&gt;"),
     ("reload", "перечитати інвентар", ""),
+    ("hide", "згорнути вікно в трей", ""),
+    ("show", "розгорнути вікно", ""),
     ("reboot", "повністю перезапустити програму", ""),
     ("menu", "показати панель кнопок", ""),
     ("help", "довідка по командах", ""),
@@ -69,6 +72,7 @@ CONTROL_BUTTONS: tuple[tuple[tuple[str, str], ...], ...] = (
     (("📊 Стан", "status"), ("🎒 Дропи", "inventory")),
     (("📋 Кампанії", "campaigns"), ("🔄 Оновити", "reload")),
     (("⏸ Пауза", "pause"), ("▶️ Продовжити", "resume")),
+    (("🙈 Сховати вікно", "hide"), ("🖥 Показати вікно", "show")),
     (("♻️ Перезапуск", "reboot"), ("❓ Довідка", "help")),
 )
 
@@ -315,6 +319,16 @@ class TelegramNotifier:
                     f"Канал: {esc(event.channel_name)}\n"
                     "Найімовірніша причина — цим же акаунтом хтось дивиться Twitch вручну."
                 )
+            if isinstance(event, DeadlineRisk):
+                lines = [f"⏳ <b>Не встигаємо закрити</b> ({len(event.campaigns)})"]
+                for item in event.campaigns[:5]:
+                    lines.append(
+                        f"• {esc(item.name)} ({esc(item.game)}): треба "
+                        f"{item.minutes_needed} хв, лишилось {item.minutes_available}"
+                    )
+                if len(event.campaigns) > 5:
+                    lines.append(f"…і ще {len(event.campaigns) - 5}")
+                return "\n".join(lines)
             if isinstance(event, ConnectionLost):
                 return f"📡 <b>Втрачено зв'язок</b>: {esc(event.reason)}. Перепідключаюсь…"
             if isinstance(event, ConnectionRestored):
@@ -567,6 +581,12 @@ class TelegramNotifier:
                 chat_id=chat_id,
             )
             control.send(Command(CommandType.REBOOT))
+        elif command == "hide":
+            control.send(Command(CommandType.HIDE_WINDOW))
+            await self.send("🙈 Вікно згорнуто в трей.", chat_id=chat_id, keyboard=True)
+        elif command == "show":
+            control.send(Command(CommandType.SHOW_WINDOW))
+            await self.send("🖥 Вікно розгорнуто.", chat_id=chat_id, keyboard=True)
         elif command == "switch":
             if not argument:
                 await self.send("Вкажи канал: <code>/switch назва</code>", chat_id=chat_id)

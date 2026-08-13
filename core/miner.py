@@ -37,6 +37,7 @@ from core.events import (
     ConnectionLost,
     ConnectionRestored,
     ControlBus,
+    DeadlineRisk,
     DropClaimed,
     DropProgress,
     DropSnapshot,
@@ -46,8 +47,10 @@ from core.events import (
     MinerError,
     MinerStopped,
     ProgressStalled,
+    RiskSnapshot,
     StreamOffline,
     WatchingChanged,
+    WindowVisibility,
 )
 from core.identity import Identity
 from core.model import Campaign, Drop
@@ -126,6 +129,10 @@ class Miner:
         self._stall_count = 0
         self._last_progress: tuple[str, int] | None = None
         self._shown_progress: dict[str, tuple[int, int]] = {}
+        # Кампанії, про безнадійність яких уже сказали. Живе тут, а не в самій
+        # кампанії: `_rebuild` створює об'єкти заново на кожне читання
+        # інвентаря, тож позначка всередині них не пережила б жодного оновлення.
+        self._risk_reported: set[str] = set()
 
     # ================================================================ послуги
 
@@ -445,6 +452,41 @@ class Miner:
             self._upkeep_task.cancel()
         self._upkeep_task = self._tasks.launch(self._upkeep())
         self._publish_inventory()
+        self._check_deadlines()
+
+    def _check_deadlines(self) -> None:
+        """Попереджає про кампанії, які вже не встигнути закрити.
+
+        Про кожну кажемо один раз: інвентар перечитується часто, а повторювати
+        погану новину щогодини — це лише привчити її не читати.
+        """
+        now = datetime.now(timezone.utc)
+        risky: list[RiskSnapshot] = []
+        for campaign in self.campaigns:
+            if campaign.id in self._risk_reported:
+                continue
+            # безнадійною може бути лише та кампанія, яку ми взагалі беремося
+            # фармити: чужі й завершені сюди потрапляти не повинні
+            if not campaign.farmable() or campaign.slack >= 1:
+                continue
+            self._risk_reported.add(campaign.id)
+            risky.append(RiskSnapshot(
+                name=campaign.name,
+                game=campaign.game.name,
+                minutes_needed=campaign.minutes_left,
+                minutes_available=max(
+                    0, int((campaign.closes_at - now).total_seconds() // 60)
+                ),
+            ))
+        if not risky:
+            return
+        for item in risky:
+            log.warning(
+                f"Не встигаємо закрити «{item.name}» ({item.game}): треба "
+                f"{item.minutes_needed} хв перегляду, лишилось "
+                f"{item.minutes_available} хв часу"
+            )
+        self.events.emit(DeadlineRisk(campaigns=tuple(risky)))
 
     async def find_streams(self, game: Game, *, limit: int = 20) -> list[Channel]:
         try:
@@ -774,6 +816,11 @@ class Miner:
             self.request_stop()
         elif kind is CommandType.SWITCH:
             self._switch_by_name(command.argument)
+        elif kind in (CommandType.SHOW_WINDOW, CommandType.HIDE_WINDOW):
+            # вікном розпоряджається інтерфейс, ядро лише переказує прохання
+            self.events.emit(
+                WindowVisibility(visible=kind is CommandType.SHOW_WINDOW)
+            )
         elif kind in (CommandType.PRIORITY_ADD, CommandType.PRIORITY_REMOVE):
             self._edit_list("priority", command)
         elif kind in (CommandType.EXCLUDE_ADD, CommandType.EXCLUDE_REMOVE):

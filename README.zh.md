@@ -14,6 +14,7 @@
 
 ## 功能
 
+- **来不及时提前告知**：如果剩余时间少于还需要的观看分钟数，它会提前说明。
 - **自己做选择。** 四种模式：按优先级列表、按最近截止时间、按最紧凑匹配（尽量多完成几个
   活动），或者只做账号已绑定、且发放真实道具的活动。
 - **通过 PubSub 同时盯住多达 198 个频道**，直播一停就切换。
@@ -108,7 +109,7 @@ dist\TwitchDropFarm.exe
 控制挖矿程序。
 
 命令：`/status`、`/inventory`、`/campaigns`、`/pause`、`/resume`、
-`/switch <频道>`、`/priority add|remove <游戏>`、`/reload`、`/reboot`、
+`/switch <频道>`、`/priority add|remove <游戏>`、`/reload`、`/hide`、`/show`、`/reboot`、
 `/menu`、`/help`。除了带参数的那两个，其余都有按钮。
 
 ## 状态存放在哪里
