@@ -13,6 +13,7 @@ import argparse
 import asyncio
 import logging
 import sys
+import tempfile
 import types
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -40,6 +41,7 @@ from core.events import (
 from core.exceptions import RequestInvalid
 from core.miner import Miner
 from core.settings import Settings
+from core.toolbox import rotating_log_handler
 from gui.tray import Tray
 
 ok = 0
@@ -295,6 +297,35 @@ def stale_request_checks() -> None:
         check("протухле вікно → RequestInvalid", False, "виняток не кинуто")
 
 
+# ------------------------------------------------------------------ журнал
+
+def log_rotation_checks() -> None:
+    print("\n[7] Ротація журналу")
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "log.txt"
+        handler = rotating_log_handler(
+            path, max_bytes=2000, backups=2,
+            formatter=logging.Formatter("{message}", style="{"),
+        )
+        probe = logging.getLogger("перевірка-ротації")
+        probe.propagate = False
+        probe.setLevel(logging.INFO)
+        probe.addHandler(handler)
+        try:
+            for n in range(400):
+                probe.info(f"рядок {n:04d} " + "х" * 60)
+        finally:
+            probe.removeHandler(handler)
+            handler.close()
+
+        files = sorted(p.name for p in Path(folder).iterdir())
+        biggest = max(p.stat().st_size for p in Path(folder).iterdir())
+        check("журнал розрізано на файли", len(files) == 3, str(files))
+        check("старі копії не накопичуються без меж",
+              files == ["log.txt", "log.txt.1", "log.txt.2"], str(files))
+        check("жоден файл не переріс стелю", biggest <= 2000 * 1.1, f"{biggest} Б")
+
+
 def main() -> int:
     logging.getLogger("TwitchDrops").setLevel(logging.CRITICAL)
     stall_checks()
@@ -303,6 +334,7 @@ def main() -> int:
     window_checks()
     tray_checks()
     stale_request_checks()
+    log_rotation_checks()
     print("\n" + "=" * 50)
     print(f"Пройдено: {ok}   Провалено: {fail}")
     return 1 if fail else 0

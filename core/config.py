@@ -127,6 +127,12 @@ VERBOSITY = {
     3: TRACE,
     4: logging.DEBUG,
 }
+# Журнал росте помірно — близько 0,1 МБ на добу при -vvv, — але темп не сталий:
+# шторм помилок або -vvvv дають на порядок більше, а програма розрахована на те,
+# щоб місяцями працювати без нагляду. Тримаємо стелю: 5 МБ на файл, три копії.
+LOG_MAX_BYTES = 5 * 1024 * 1024
+LOG_BACKUPS = 3
+
 FILE_LOG_FORMAT = logging.Formatter(
     "{asctime}.{msecs:03.0f}:\t{levelname:>7}:\t{message}",
     style="{",
