@@ -35,6 +35,7 @@ from core.events import (
     StatusChanged,
     WatchingChanged,
     WebsocketStatus,
+    WindowVisibility,
 )
 
 if TYPE_CHECKING:
@@ -320,7 +321,14 @@ class GUI:
             pass  # вікно вже знищене
 
     def _render(self, event: Event) -> None:
-        if isinstance(event, StatusChanged):
+        if isinstance(event, WindowVisibility):
+            # Ховати нема куди, поки трей не піднявся: вікно зникло б, а
+            # повернути його не було б чим.
+            if event.visible:
+                self.show_window()
+            elif self._tray_available:
+                self.hide_to_tray()
+        elif isinstance(event, StatusChanged):
             self.status_var.set(event.text)
         elif isinstance(event, LogLine):
             self._append_log(event.text)

@@ -17,6 +17,8 @@ Chrome).
 
 ## O que ele faz
 
+- **Avisa quando não vai dar tempo**: se resta menos tempo do que os minutos de
+  exibição ainda necessários, ele diz com antecedência.
 - **Escolhe sozinho.** Quatro modos: por lista de prioridade, pelo prazo mais
   próximo, pelo melhor encaixe (para concluir o máximo de campanhas) ou apenas
   aquilo a que a conta está vinculada e onde é entregue um item de verdade.
@@ -118,7 +120,7 @@ mão, no arquivo. Mudanças no arquivo valem após reiniciar.
 um estranho que encontre o bot não conseguirá controlar o miner.
 
 Comandos: `/status`, `/inventory`, `/campaigns`, `/pause`, `/resume`,
-`/switch <canal>`, `/priority add|remove <jogo>`, `/reload`, `/reboot`,
+`/switch <canal>`, `/priority add|remove <jogo>`, `/reload`, `/hide`, `/show`, `/reboot`,
 `/menu`, `/help`. Tudo, exceto os dois que levam argumentos, está disponível como
 botão.
 

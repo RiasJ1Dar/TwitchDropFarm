@@ -17,6 +17,7 @@ Chrome).
 
 ## What it does
 
+- **Warns when a campaign is out of reach**: if less time is left than the watch minutes still needed, it says so in advance.
 - **Chooses on its own.** Four modes: by priority list, by nearest deadline, by
   tightest fit (to finish as many campaigns as possible), or only what your
   account is linked to and where a real in-game item is granted.
@@ -118,7 +119,7 @@ the file. Changes to the file take effect after a restart.
 stranger who finds the bot cannot control the miner.
 
 Commands: `/status`, `/inventory`, `/campaigns`, `/pause`, `/resume`,
-`/switch <channel>`, `/priority add|remove <game>`, `/reload`, `/reboot`,
+`/switch <channel>`, `/priority add|remove <game>`, `/reload`, `/hide`, `/show`, `/reboot`,
 `/menu`, `/help`. Everything except the two that take arguments is available as
 buttons.
 

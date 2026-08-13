@@ -17,6 +17,8 @@ genutzt, der ohnehin im System steckt (Edge oder Chrome).
 
 ## Was es kann
 
+- **Warnt, wenn es nicht mehr reicht**: bleibt weniger Zeit übrig als noch
+  benötigte Zuschauminuten, sagt es das rechtzeitig.
 - **Entscheidet selbst.** Vier Modi: nach Prioritätenliste, nach nächstem Ablauf,
   nach engster Passung (um möglichst viele Kampagnen zu schaffen) oder nur das,
   womit das Konto verknüpft ist und wo es einen echten Gegenstand gibt.
@@ -119,7 +121,7 @@ von Hand in der Datei. Änderungen an der Datei greifen nach einem Neustart.
 ein Fremder, der den Bot findet, kann den Miner also nicht steuern.
 
 Befehle: `/status`, `/inventory`, `/campaigns`, `/pause`, `/resume`,
-`/switch <Kanal>`, `/priority add|remove <Spiel>`, `/reload`, `/reboot`,
+`/switch <Kanal>`, `/priority add|remove <Spiel>`, `/reload`, `/hide`, `/show`, `/reboot`,
 `/menu`, `/help`. Alles außer den beiden mit Argumenten gibt es als Schaltfläche.
 
 ## Wo der Zustand liegt

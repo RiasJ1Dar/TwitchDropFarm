@@ -147,6 +147,28 @@ class ProgressStalled(Event):
 
 
 @dataclass(frozen=True)
+class DeadlineRisk(Event):
+    """Кампанії, які вже не встигнути закрити до кінця їх вікна.
+
+    Рахунок робився й раніше — `slack` менший за одиницю означає, що часу
+    лишилось менше, ніж потрібно хвилин перегляду. Але бачив його лише
+    сортувальник режиму TIGHTEST_FIT, а людина дізнавалась про програш аж тоді,
+    коли кампанія тихо зникала з інвентаря.
+    """
+    campaigns: tuple[RiskSnapshot, ...]
+
+
+@dataclass(frozen=True)
+class WindowVisibility(Event):
+    """Просимо інтерфейс сховати вікно в трей або дістати його назад.
+
+    Ядро не викликає вікно напряму: воно про інтерфейс нічого не знає, і саме
+    тому команда з Telegram доходить сюди подією, а не викликом методу GUI.
+    """
+    visible: bool
+
+
+@dataclass(frozen=True)
 class WebsocketStatus(Event):
     index: int
     status: str
@@ -154,6 +176,15 @@ class WebsocketStatus(Event):
 
 
 # ---- знімки станів (щоб не тягнути живі об'єкти ядра в інтерфейси)
+
+@dataclass(frozen=True)
+class RiskSnapshot:
+    """Кампанія під загрозою: скільки хвилин ще треба і скільки часу лишилось."""
+    name: str
+    game: str
+    minutes_needed: int
+    minutes_available: int
+
 
 @dataclass(frozen=True)
 class ChannelSnapshot:
@@ -269,6 +300,9 @@ class CommandType(Enum):
     # повний перезапуск процесу, на відміну від RELOAD (лише перечитати інвентар)
     REBOOT = auto()
     SWITCH = auto()
+    # згорнути вікно в трей або дістати його назад
+    SHOW_WINDOW = auto()
+    HIDE_WINDOW = auto()
     PRIORITY_ADD = auto()
     PRIORITY_REMOVE = auto()
     EXCLUDE_ADD = auto()
