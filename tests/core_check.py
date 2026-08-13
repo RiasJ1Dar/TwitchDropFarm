@@ -104,16 +104,46 @@ def stall_checks() -> None:
     fired, count = run([None, ("drop", 5), ("drop", 6)])
     check("початок фарму не рахується застоєм", count == 0, f"лічильник={count}")
 
-    # Найважливіше: позначка мусить брати лише підтверджені Twitch хвилини.
-    # Якщо туди повернуться домальовані наосліп, застій знову маскуватиме сам
-    # себе — саме так він і не спрацьовував жодного разу.
-    drop = types.SimpleNamespace(id="d", counted_minutes=40, blind_minutes=7,
-                                 minutes=47)
+    # Позначка мусить брати лише підтверджені Twitch хвилини. Якщо туди
+    # повернуться домальовані наосліп, застій знову маскуватиме сам себе —
+    # саме так він і не спрацьовував жодного разу.
+    #
+    # І рахувати мусить по ВСІХ придатних кампаніях. Кампаній однієї гри буває
+    # кілька; коли одна росте, а друга стоїть, вибір «активної» за найменшим
+    # залишком вказував на нерухому — і тривога била під час здорового фарму.
+    def drop(counted, blind=0):
+        return types.SimpleNamespace(
+            counted_minutes=counted, blind_minutes=blind,
+            minutes=counted + blind, farmable=lambda _c: True,
+        )
+
+    def campaign(*drops):
+        return types.SimpleNamespace(all_drops=drops, farmable=lambda _c: True)
+
     box = types.SimpleNamespace(
-        active_campaign=lambda: types.SimpleNamespace(next_drop=drop)
+        watching=types.SimpleNamespace(peek=lambda _d: object()),
+        wanted=["гра"],
+        campaigns=[campaign(drop(40, blind=7)), campaign(drop(151), drop(151))],
     )
-    mark = Miner._progress_mark(box)
-    check("позначка бере лише підтверджене Twitch", mark == ("d", 40), str(mark))
+    check("позначка бере лише підтверджене Twitch",
+          Miner._progress_mark(box) == 40 + 151 + 151, str(Miner._progress_mark(box)))
+
+    # росте лише одна з двох кампаній — це не застій
+    growing = drop(40)
+    frozen = drop(151)
+    box.campaigns = [campaign(growing), campaign(frozen)]
+    fake = types.SimpleNamespace(_stall_count=0, events=Bus())
+    channel = types.SimpleNamespace(name="канал")
+    before = None
+    for minute in range(STALL_LIMIT + 3):
+        growing.counted_minutes = 40 + minute
+        mark = Miner._progress_mark(box)
+        fake._progress_mark = lambda m=mark: m
+        Miner._check_stall(fake, before, channel)
+        before = mark
+    fired = [e for e in fake.events.sent if isinstance(e, ProgressStalled)]
+    check("сусідня нерухома кампанія не дає хибної тривоги", not fired,
+          f"тривог={len(fired)}")
 
 
 # ------------------------------------------------------------------ клейм

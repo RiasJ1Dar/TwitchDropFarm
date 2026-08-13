@@ -658,16 +658,32 @@ class Miner:
 
     # ================================================================ перегляд
 
-    def _progress_mark(self) -> tuple[str, int] | None:
-        campaign = self.active_campaign()
-        if campaign is None or (drop := campaign.next_drop) is None:
+    def _progress_mark(self) -> int | None:
+        """Скільки хвилин Twitch підтвердив по всьому, що зараз фармиться.
+
+        Саме по всьому, а не по одному «активному» дропу. Кампаній тієї самої
+        гри буває кілька одночасно, Twitch зараховує перегляд котрійсь із них,
+        а `active_campaign` обирає за найменшим залишком — і легко вказує на ту,
+        що стоїть. Тоді детектор бачив нерухому позначку й бив тривогу, поки
+        сусідня кампанія спокійно росла щохвилини. Спіймано на живому:
+        одна йшла 2/60 → 9/60, друга стояла на 151/180, тривога — про другу.
+        """
+        channel = self.watching.peek(None)
+        if channel is None or not self.wanted:
+            return None
+        counted = [
+            drop.counted_minutes
+            for campaign in self.campaigns if campaign.farmable(channel)
+            for drop in campaign.all_drops if drop.farmable(channel)
+        ]
+        if not counted:
             return None
         # Лише підтверджені Twitch хвилини. Якщо брати `minutes`, туди входять
         # і домальовані наосліп — а їх додає щохвилини саме той шлях, яким
         # майнер іде, коли Twitch мовчить. Позначка щоразу мінялась би, і
         # застій маскував би сам себе: лічильник скидався в нуль, тривога
         # не спрацьовувала жодного разу.
-        return drop.id, drop.counted_minutes
+        return sum(counted)
 
     @guard_task(vital=True)
     async def _watch_loop(self) -> None:
@@ -694,16 +710,25 @@ class Miner:
             await sleep_unless(self._restart_watch, max(0.0, period - waited))
 
     async def _confirm_progress(self, channel: Channel) -> bool:
-        """Питає Twitch, скільки він нам нарахував. False — не вдалось."""
+        """Питає Twitch, скільки він нам нарахував. False — не вдалось.
+
+        Кожен вихід із False лишає слід у журналі. Без цього чотири різні
+        причини мовчання виглядають однаково, а від них залежить, чи вважати
+        зупинку приросту застоєм: «Twitch не віддав сесію» і «Twitch рахує
+        іншу гру» — стани зовсім різної ваги.
+        """
         try:
             context = await self.graphql(protocol.CURRENT_DROP(channelID=str(channel.id)))
             session = context["data"]["currentUser"]["dropCurrentSession"]
-        except (ApiError, Aborted):
+        except (ApiError, Aborted) as error:
+            log.log(TRACE, f"Підтвердження не вдалось: {type(error).__name__}")
             return False
         if session is None:
+            log.log(TRACE, "Twitch не віддав поточну сесію дропа")
             return False
         drop = self._drops.get(session["dropID"])
         if drop is None:
+            log.log(TRACE, f"Twitch звітує невідомий нам дроп {session['dropID']}")
             return False
         if drop.taken:
             # Кілька секунд після клейму Twitch віддає щойно забраний дроп як
@@ -741,7 +766,8 @@ class Miner:
             return
         self._stall_count += 1
         if self._stall_count == STALL_LIMIT:
-            log.error(f"Прогрес стоїть {self._stall_count} хв поспіль")
+            # у журнал це пише підписник подій у main; другий рядок звідси лише
+            # дублював би той самий факт
             self.events.emit(ProgressStalled(
                 minutes_without_progress=self._stall_count,
                 channel_name=channel.name,
