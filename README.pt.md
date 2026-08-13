@@ -161,6 +161,7 @@ Três jeitos fáceis de se queimar:
 ```bash
 main.py --dump-inventory     todas as campanhas da Twitch real
 main.py --test-telegram      o bot
+tests\core_check.py          lógica do núcleo (sem rede)
 tests\bot_check.py           testes do bot (sem rede)
 tests\live_check.py          o núcleo contra a Twitch real
 ```

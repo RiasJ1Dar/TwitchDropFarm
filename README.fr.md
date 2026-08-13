@@ -164,6 +164,7 @@ Trois pièges faciles :
 ```bash
 main.py --dump-inventory     toutes les campagnes du Twitch réel
 main.py --test-telegram      le bot
+tests\core_check.py          logique du cœur (sans réseau)
 tests\bot_check.py           tests du bot (sans réseau)
 tests\live_check.py          le cœur face au Twitch réel
 ```

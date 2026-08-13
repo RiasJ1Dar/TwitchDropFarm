@@ -159,6 +159,7 @@ Kolayca yanılabileceğiniz üç nokta:
 ```bash
 main.py --dump-inventory     canlı Twitch'ten tüm kampanyalar
 main.py --test-telegram      bot
+tests\core_check.py          çekirdek mantığı (ağsız)
 tests\bot_check.py           bot testleri (ağsız)
 tests\live_check.py          çekirdek, canlı Twitch'e karşı
 ```
