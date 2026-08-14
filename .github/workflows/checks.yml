@@ -1,0 +1,46 @@
+# Перевірки на кожен push. Мета вузька: не дати тихо зламатись тому, що вже
+# одного разу було зламане. Обидва набори не ходять у мережу й разом ідуть
+# швидше за хвилину, тож приводу їх пропускати немає.
+#
+# Windows, а не Linux: програма прив'язана до Windows (шляхи браузера, трей,
+# pywin32), і перевіряти її на іншій платформі означало б перевіряти не те.
+name: Перевірки
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  checks:
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # 3.10 — мінімум, заявлений у README. Перевіряємо саме його: якщо в
+          # код пролізе синтаксис новіших версій, тут це й спливе.
+          python-version: "3.10"
+          cache: pip
+
+      - name: Залежності
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff
+
+      - name: Лінтер
+        run: ruff check .
+
+      - name: Логіка ядра (без мережі)
+        run: python tests/core_check.py
+
+      - name: Telegram-бот (без мережі)
+        run: python tests/bot_check.py
+
+      # live_check тут не запускається навмисно: він б'є по живому Twitch і
+      # вимагає токена. Його місце — на робочій машині, а не в CI.
