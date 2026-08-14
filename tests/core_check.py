@@ -41,7 +41,7 @@ from core.events import (
 from core.exceptions import RequestInvalid
 from core.miner import Miner
 from core.settings import Settings
-from core.toolbox import rotating_log_handler
+from core.toolbox import force_utf8_console, rotating_log_handler
 from gui.tray import Tray
 
 ok = 0
@@ -357,6 +357,7 @@ def log_rotation_checks() -> None:
 
 
 def main() -> int:
+    force_utf8_console()
     logging.getLogger("TwitchDrops").setLevel(logging.CRITICAL)
     stall_checks()
     claim_checks()

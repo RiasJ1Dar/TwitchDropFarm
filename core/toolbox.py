@@ -26,6 +26,23 @@ from yarl import URL
 log = logging.getLogger("TwitchDrops")
 
 
+def force_utf8_console() -> None:
+    """Перемикає stdout і stderr на UTF-8.
+
+    Консоль Windows за замовчуванням не в UTF-8, і кирилиця в ній падає з
+    `UnicodeEncodeError` — не десь у логіці, а на першому ж друкованому рядку.
+    Python 3.15 робить UTF-8 типовим, але проєкт заявляє мінімум 3.10, і на
+    ньому це справді ламається: перевірки в CI впали саме тут.
+    """
+    for name in ("stdout", "stderr"):
+        stream = getattr(sys, name, None)
+        if isinstance(stream, io.TextIOWrapper):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (AttributeError, ValueError):
+                pass
+
+
 def rotating_log_handler(
     path: Path, *, max_bytes: int, backups: int, formatter: logging.Formatter
 ) -> logging.Handler:
