@@ -34,11 +34,13 @@ from core.events import (
     MinerStarted,
     MinerStopped,
     ProgressStalled,
+    RiskSnapshot,
     StatusChanged,
     WatchingChanged,
     WindowVisibility,
 )
 from core.exceptions import RequestInvalid
+from core.history import History
 from core.miner import Miner
 from core.settings import Settings
 from core.toolbox import force_utf8_console, rotating_log_handler
@@ -356,6 +358,52 @@ def log_rotation_checks() -> None:
         check("жоден файл не переріс стелю", biggest <= 2000 * 1.1, f"{biggest} Б")
 
 
+# ------------------------------------------------------------------ історія
+
+def history_checks() -> None:
+    print("\n[8] Історія фарму")
+    with tempfile.TemporaryDirectory() as folder:
+        history = History(Path(folder) / "history.jsonl")
+
+        # порожня історія не має падати — це стан першого запуску
+        check("порожня історія читається", history.entries() == [])
+        check("порожній звіт зрозумілий", "жодної нагороди" in history.summary())
+
+        bus = Bus()
+        history.attach(types.SimpleNamespace(subscribe=lambda fn: None))
+        for event in (
+            DropClaimed(drop_name="Скін", game="EVE Online", rewards="Cyber Knight"),
+            DropClaimed(drop_name="Бустер", game="World of Tanks", rewards="XP"),
+            CampaignFinished(campaign_name="Foundation Day", game="EVE Online"),
+            DeadlineRisk(campaigns=(
+                RiskSnapshot(id="c-1", name="Пізно", game="THE FINALS",
+                             minutes_needed=600, minutes_available=60),
+            )),
+        ):
+            history._on_event(event)
+            bus.emit(event)
+
+        check("записано всі події", len(history.entries()) == 4,
+              str(len(history.entries())))
+        check("звіт рахує дропи", "2 дропів" in history.summary(),
+              history.summary())
+        check("звіт показує ігри", "EVE Online: 1" in history.summary(),
+              history.summary())
+
+        # головне заради чого все: пам'ять про попередження переживає перезапуск
+        again = History(history.path)
+        check("попереджені кампанії піднімаються з файлу",
+              again.campaigns_warned() == {"c-1"}, str(again.campaigns_warned()))
+
+        # зіпсований рядок не має забирати з собою решту історії
+        with history.path.open("a", encoding="utf-8") as handle:
+            handle.write("{це не json\n")
+        check("зіпсований рядок пропускається", len(History(history.path).entries()) == 4,
+              str(len(History(history.path).entries())))
+        check("і не ламає пам'ять про попередження",
+              History(history.path).campaigns_warned() == {"c-1"})
+
+
 def main() -> int:
     force_utf8_console()
     logging.getLogger("TwitchDrops").setLevel(logging.CRITICAL)
@@ -366,6 +414,7 @@ def main() -> int:
     tray_checks()
     stale_request_checks()
     log_rotation_checks()
+    history_checks()
     print("\n" + "=" * 50)
     print(f"Пройдено: {ok}   Провалено: {fail}")
     return 1 if fail else 0
