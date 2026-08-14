@@ -11,7 +11,7 @@ from datetime import timedelta
 from enum import Enum, auto
 from pathlib import Path
 
-VERSION = "1.0.3"
+VERSION = "1.0.3.1"
 
 # Запущено зі зібраного .exe, а не з вихідників
 FROZEN: bool = hasattr(sys, "_MEIPASS")
