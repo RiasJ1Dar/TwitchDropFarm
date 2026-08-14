@@ -147,6 +147,19 @@ class ProgressStalled(Event):
 
 
 @dataclass(frozen=True)
+class WatchUncounted(Event):
+    """Хвилина не вийшла з машини — ні через spade, ні через запасний GQL.
+
+    Окремо від застою: той ловить «Twitch мовчить про прогрес», а це —
+    «перегляд взагалі не доставили». Типова причина — блокувальник ріже
+    `spade.twitch.tv`, а GraphQL при цьому живий, тож вікно показує
+    «зв'язок є».
+    """
+    channel_name: str
+    consecutive: int
+
+
+@dataclass(frozen=True)
 class DeadlineRisk(Event):
     """Кампанії, які вже не встигнути закрити до кінця їх вікна.
 

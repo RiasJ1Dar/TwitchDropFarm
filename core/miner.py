@@ -52,6 +52,7 @@ from core.events import (
     RiskSnapshot,
     StreamOffline,
     WatchingChanged,
+    WatchUncounted,
     WindowVisibility,
 )
 from core.history import History
@@ -130,8 +131,9 @@ class Miner:
         self._upcoming: deque[datetime] = deque()
 
         self._full_sweep = False
-        self._stall_count = 0
-        self._last_progress: tuple[str, int] | None = None
+        self._stall_since: float | None = None
+        self._stall_alerted = False
+        self._delivery_failures = 0
         self._shown_progress: dict[str, tuple[int, int]] = {}
 
         # Ядро історію лише читає. Підписку на запис робить `main`, і не з
@@ -152,11 +154,11 @@ class Miner:
     async def graphql(self, payload: Any) -> Any:
         return await self.api.graphql(payload)
 
-    async def fetch_text(self, url: str) -> str:
-        return await self.api.fetch_text(url)
+    async def fetch_text(self, url: str, **kwargs: Any) -> str:
+        return await self.api.fetch_text(url, **kwargs)
 
-    async def post_form(self, url: str, body: dict[str, Any]) -> int:
-        return await self.api.post_form(url, body)
+    async def post_form(self, url: str, body: dict[str, Any], **kwargs: Any) -> int:
+        return await self.api.post_form(url, body, **kwargs)
 
     def campaign_by_id(self, campaign_id: str) -> Campaign | None:
         return self._by_id.get(campaign_id)
@@ -364,8 +366,9 @@ class Miner:
 
     def watch(self, channel: Channel, *, announce: bool = True) -> None:
         self.watching.put(channel)
-        self._stall_count = 0
-        self._last_progress = None
+        self._stall_since = None
+        self._stall_alerted = False
+        self._delivery_failures = 0
         self.events.emit(WatchingChanged(channel=self._snapshot(channel)))
         if announce:
             self.events.status(f"Дивимось {channel.name}")
@@ -726,8 +729,10 @@ class Miner:
 
             before = self._progress_mark()
             sent_at = monotonic()
-            if not await channel.report_watching():
-                log.log(TRACE, f"Хвилина не зарахувалась: {channel.name}")
+            if await channel.report_watching():
+                self._note_delivery_ok(channel)
+            else:
+                self._note_delivery_failed(channel)
 
             # даємо Twitch час відзвітувати самому
             await asyncio.sleep(PROGRESS_GRACE.total_seconds())
@@ -786,20 +791,49 @@ class Miner:
             return
         campaign.add_blind_minute(channel)
 
-    def _check_stall(self, before: tuple[str, int] | None, channel: Channel) -> None:
+    def _note_delivery_failed(self, channel: Channel) -> None:
+        """Обидва шляхи доставки хвилини відмовили.
+
+        Раніше це йшло в TRACE, а вікно лишало «Дивимось» — бо GQL живий.
+        Для користувача це виглядало як робота, хоча хвилини не рахувались.
+        """
+        self._delivery_failures += 1
+        log.warning(f"Хвилина не зарахувалась: {channel.name}")
+        self.events.status("Перегляд не зараховується")
+        if self._delivery_failures == 2:
+            self.events.emit(WatchUncounted(
+                channel_name=channel.name,
+                consecutive=self._delivery_failures,
+            ))
+
+    def _note_delivery_ok(self, channel: Channel) -> None:
+        if not self._delivery_failures:
+            return
+        self._delivery_failures = 0
+        self.events.status(f"Дивимось {channel.name}")
+
+    def _check_stall(self, before: int | None, channel: Channel,
+                     *, now: float | None = None) -> None:
         after = self._progress_mark()
         if after is None:
             return  # нема чого фармити — це не застій
+        clock = monotonic() if now is None else now
         # before is None — фарм щойно почався, порівнювати ще нема з чим
         if before is None or after != before:
-            self._stall_count = 0
+            self._stall_since = clock
+            self._stall_alerted = False
             return
-        self._stall_count += 1
-        if self._stall_count == STALL_LIMIT:
+        started = self._stall_since
+        if started is None:
+            self._stall_since = clock
+            return
+        elapsed = clock - started
+        if elapsed >= STALL_LIMIT * 60 and not self._stall_alerted:
+            self._stall_alerted = True
             # у журнал це пише підписник подій у main; другий рядок звідси лише
             # дублював би той самий факт
             self.events.emit(ProgressStalled(
-                minutes_without_progress=self._stall_count,
+                minutes_without_progress=max(STALL_LIMIT, int(elapsed // 60)),
                 channel_name=channel.name,
             ))
 

@@ -44,6 +44,7 @@ if __name__ == "__main__":
         ProgressStalled,
         StatusChanged,
         WatchingChanged,
+        WatchUncounted,
     )
     from core.miner import Miner as Twitch
     from core.settings import Settings
@@ -142,6 +143,11 @@ if __name__ == "__main__":
                 f"Прогрес стоїть {event.minutes_without_progress} хв "
                 f"на {event.channel_name}"
             )
+        elif isinstance(event, WatchUncounted):
+            logger.error(
+                f"Перегляд не зараховується на {event.channel_name}: "
+                f"{event.consecutive} хвилини поспіль не дійшли до Twitch"
+            )
         elif isinstance(event, MinerStopped):
             logger.warning(f"Майнер зупинено: {event.reason}")
 
@@ -175,6 +181,12 @@ if __name__ == "__main__":
                 f"[!] Прогрес стоїть {event.minutes_without_progress} хв на "
                 f"{event.channel_name}. Можлива причина — цим акаунтом хтось "
                 f"дивиться Twitch вручну."
+            )
+        elif isinstance(event, WatchUncounted):
+            print(
+                f"[!] Перегляд не зараховується на {event.channel_name}. "
+                f"Хвилина не доходить до Twitch — перевірте, чи не блокується "
+                f"spade.twitch.tv."
             )
         elif isinstance(event, ConnectionLost):
             print(f"[!] Втрачено зв'язок: {event.reason}. Перепідключаюсь…")

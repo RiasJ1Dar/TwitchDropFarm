@@ -25,6 +25,7 @@ from core.events import (
     MinerStopped,
     ProgressStalled,
     WatchingChanged,
+    WatchUncounted,
 )
 from gui.icon import make_icon
 
@@ -135,6 +136,12 @@ class Tray:
                 f"{event.minutes_without_progress} хв без приросту на "
                 f"{event.channel_name}",
                 "Прогрес стоїть",
+            )
+        elif isinstance(event, WatchUncounted):
+            self.set_state("error")
+            self.notify(
+                f"Хвилина не доходить до Twitch на {event.channel_name}",
+                "Перегляд не зараховується",
             )
         elif isinstance(event, MinerError):
             self.set_state("error")

@@ -21,10 +21,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import autostart, protocol
 from core.api import TwitchApi
+from core.channels import WatchReporter
 from core.config import (
     DEFAULT_IMAGE_SIZE,
     MAX_IMAGE_SIZE,
     MIN_IMAGE_SIZE,
+    SPADE_ATTEMPTS,
     STALL_LIMIT,
     clamp_image_size,
 )
@@ -43,6 +45,7 @@ from core.events import (
     RiskSnapshot,
     StatusChanged,
     WatchingChanged,
+    WatchUncounted,
     WindowVisibility,
 )
 from core.exceptions import RequestInvalid
@@ -92,27 +95,52 @@ def miner() -> Miner:
 def stall_checks() -> None:
     print("\n[1] Детектор застою")
 
-    def run(marks: list[tuple[str, int] | None]) -> tuple[int, int]:
-        fake = types.SimpleNamespace(_stall_count=0, events=Bus())
+    def fresh():
+        return types.SimpleNamespace(
+            _stall_since=None, _stall_alerted=False, events=Bus(),
+        )
+
+    def run(marks: list[int | None], *, step: float = 60.0) -> tuple[int, bool]:
+        fake = fresh()
         channel = types.SimpleNamespace(name="канал")
         before = None
+        clock = 0.0
         for mark in marks:
             fake._progress_mark = lambda m=mark: m
-            Miner._check_stall(fake, before, channel)
+            Miner._check_stall(fake, before, channel, now=clock)
             before = mark
+            clock += step
         fired = [e for e in fake.events.sent if isinstance(e, ProgressStalled)]
-        return len(fired), fake._stall_count
+        return len(fired), fake._stall_alerted
 
-    frozen = [("drop", 40)] * (STALL_LIMIT + 3)
-    fired, count = run(frozen)
-    check("застій ловиться", fired == 1, f"тривог={fired}, лічильник={count}")
+    frozen = [40] * (STALL_LIMIT + 3)
+    fired, alerted = run(frozen)
+    check("застій ловиться", fired == 1 and alerted, f"тривог={fired}")
 
-    growing = [("drop", 40 + n) for n in range(STALL_LIMIT + 3)]
+    growing = [40 + n for n in range(STALL_LIMIT + 3)]
     fired, _ = run(growing)
     check("здоровий фарм не тривожить", fired == 0, f"тривог={fired}")
 
-    fired, count = run([None, ("drop", 5), ("drop", 6)])
-    check("початок фарму не рахується застоєм", count == 0, f"лічильник={count}")
+    fired, alerted = run([None, 5, 6])
+    check("початок фарму не рахується застоєм", not alerted, f"тривога={alerted}")
+
+    # Спіймано 14.08: фарм стояв 11 хвилин, тривоги не було, бо STALL_LIMIT
+    # рахував ітерації циклу, а не хвилини. При збоях мережі одна ітерація
+    # розтягувалась на чотири хвилини — чим гірша мережа, тим пізніше скарга.
+    fired, _ = run([40] * 20, step=1.0)
+    check("багато швидких ітерацій без хвилин — не тривожать",
+          fired == 0, f"тривог={fired}")
+
+    fake = fresh()
+    channel = types.SimpleNamespace(name="канал")
+    fake._progress_mark = lambda: 40
+    Miner._check_stall(fake, None, channel, now=0.0)
+    Miner._check_stall(fake, 40, channel, now=4 * 60)
+    Miner._check_stall(fake, 40, channel, now=8 * 60)
+    fired = [e for e in fake.events.sent if isinstance(e, ProgressStalled)]
+    check("дві довгі ітерації ловлять застій",
+          len(fired) == 1 and fired[0].minutes_without_progress == 8,
+          f"події={fired}")
 
     # Позначка мусить брати лише підтверджені Twitch хвилини. Якщо туди
     # повернуться домальовані наосліп, застій знову маскуватиме сам себе —
@@ -142,15 +170,17 @@ def stall_checks() -> None:
     growing = drop(40)
     frozen = drop(151)
     box.campaigns = [campaign(growing), campaign(frozen)]
-    fake = types.SimpleNamespace(_stall_count=0, events=Bus())
+    fake = fresh()
     channel = types.SimpleNamespace(name="канал")
     before = None
+    clock = 0.0
     for minute in range(STALL_LIMIT + 3):
         growing.counted_minutes = 40 + minute
         mark = Miner._progress_mark(box)
         fake._progress_mark = lambda m=mark: m
-        Miner._check_stall(fake, before, channel)
+        Miner._check_stall(fake, before, channel, now=clock)
         before = mark
+        clock += 60
     fired = [e for e in fake.events.sent if isinstance(e, ProgressStalled)]
     check("сусідня нерухома кампанія не дає хибної тривоги", not fired,
           f"тривог={len(fired)}")
@@ -280,6 +310,7 @@ def tray_checks() -> None:
         DropClaimed(drop_name="д", game="гра", rewards="нагорода"),
         CampaignFinished(campaign_name="к", game="гра"),
         ProgressStalled(minutes_without_progress=5, channel_name="канал"),
+        WatchUncounted(channel_name="канал", consecutive=2),
         ConnectionLost(reason="таймаут", attempt=1),
         ConnectionRestored(downtime_seconds=1.0, attempts=1),
         LoginRequired(verification_uri="https://twitch.tv", user_code="КОД"),
@@ -293,11 +324,11 @@ def tray_checks() -> None:
         tray._on_event(event)
         states.append(tray._state)
     check("колір слідує за станом",
-          states[2] == "active" and states[7] == "error" and states[-1] == "idle",
+          states[2] == "active" and states[8] == "error" and states[-1] == "idle",
           str(states))
     check("та сама подія не перемальовує іконку", tray._icon.redraws == 5,
           f"перемальовувань={tray._icon.redraws}")
-    check("сповіщення надіслані", len(tray._icon.notices) == 7,
+    check("сповіщення надіслані", len(tray._icon.notices) == 8,
           str(len(tray._icon.notices)))
     check("рутина мовчить",
           all("рутина" not in m for _t, m in tray._icon.notices))
@@ -495,6 +526,144 @@ def autostart_checks() -> None:
         autostart.KEY_PATH = real
 
 
+# ------------------------------------------------------------------ доставка
+
+def delivery_checks() -> None:
+    print("\n[11] Доставка перегляду")
+
+    class FakeBackend:
+        def __init__(self, *, post_error=None, post_status=204, gql_ok=True):
+            self.post_error = post_error
+            self.post_status = post_status
+            self.gql_ok = gql_ok
+            self.posts = 0
+            self.gqls = 0
+            self.user_id = 1
+            self.fetch_kwargs: dict = {}
+            self.post_kwargs: dict = {}
+
+        async def fetch_text(self, url, **kwargs):
+            self.fetch_kwargs = kwargs
+            return '"spade_url": "https://spade.twitch.tv/process"'
+
+        async def post_form(self, url, body, **kwargs):
+            self.posts += 1
+            self.post_kwargs = kwargs
+            if self.post_error is not None:
+                raise self.post_error
+            return self.post_status
+
+        async def graphql(self, payload):
+            self.gqls += 1
+            if not self.gql_ok:
+                raise RuntimeError("gql down")
+            return {"data": {"sendSpadeEvents": {"statusCode": 204}}}
+
+    stream = types.SimpleNamespace(
+        broadcast_id=99, game=types.SimpleNamespace(id="1", name="гра"),
+    )
+    channel = types.SimpleNamespace(
+        id=1, login="ibeast", name="ibeast",
+        url="https://www.twitch.tv/ibeast", stream=stream,
+    )
+
+    def send(backend: FakeBackend) -> bool:
+        return asyncio.run(WatchReporter(backend).report(channel))
+
+    ok_spade = FakeBackend()
+    check("живий spade — без GQL", send(ok_spade) and ok_spade.posts == 1
+          and ok_spade.gqls == 0)
+    check("spade не чіпає глобальний індикатор мережі",
+          ok_spade.post_kwargs.get("count_as_network") is False
+          and ok_spade.post_kwargs.get("attempts") == SPADE_ATTEMPTS,
+          str(ok_spade.post_kwargs))
+
+    blocked = FakeBackend(post_error=OSError("sinkhole"))
+    check("заблокований spade падає на GQL",
+          send(blocked) and blocked.posts == 1 and blocked.gqls == 1)
+
+    http_fail = FakeBackend(post_status=403)
+    check("чужий статус spade теж іде на GQL",
+          send(http_fail) and http_fail.gqls == 1)
+
+    both_down = FakeBackend(post_error=OSError("down"), gql_ok=False)
+    check("обидва шляхи мертві — False", not send(both_down))
+
+    # Якщо витяг сторінки впав, раніше метод одразу повертав False і GQL
+    # навіть не пробували. Тепер це теж фолбек.
+    class NoPage(FakeBackend):
+        async def fetch_text(self, url, **kwargs):
+            raise OSError("dns")
+
+    no_page = NoPage()
+    check("немає сторінки каналу — теж GQL",
+          send(no_page) and no_page.gqls == 1 and no_page.posts == 0)
+
+    fake = types.SimpleNamespace(
+        _delivery_failures=0, events=Bus(),
+    )
+    ch = types.SimpleNamespace(name="канал")
+    Miner._note_delivery_failed(fake, ch)
+    Miner._note_delivery_failed(fake, ch)
+    Miner._note_delivery_failed(fake, ch)
+    uncounted = [e for e in fake.events.sent if isinstance(e, WatchUncounted)]
+    statuses = [e.text for e in fake.events.sent if isinstance(e, StatusChanged)]
+    check("друга відмова доставки б'є тривогу один раз",
+          len(uncounted) == 1 and uncounted[0].consecutive == 2,
+          f"подій={len(uncounted)}")
+    check("вікно каже прямо, що перегляд не йде",
+          "Перегляд не зараховується" in statuses)
+
+    Miner._note_delivery_ok(fake, ch)
+    check("успіх скидає лічильник відмов", fake._delivery_failures == 0)
+    recovered = [e.text for e in fake.events.sent if isinstance(e, StatusChanged)]
+    check("після успіху статус повертається",
+          recovered[-1] == "Дивимось канал", str(recovered[-1]))
+
+
+def request_limit_checks() -> None:
+    print("\n[12] Стеля повторів")
+
+    class FakeSession:
+        closed = False
+        timeout = types.SimpleNamespace(total=20)
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def request(self, *args, **kwargs):
+            self.calls += 1
+            raise OSError("down")
+
+    lost: list[tuple[str, int]] = []
+    api = TwitchApi(
+        client=protocol.ANDROID,
+        should_stop=lambda: False,
+        on_network_lost=lambda reason, attempt: lost.append((reason, attempt)),
+    )
+    session = FakeSession()
+    api._session = session  # type: ignore[assignment]
+
+    async def run() -> BaseException | None:
+        try:
+            async with api.request(
+                "POST", "https://spade.example/process",
+                attempts=2, count_as_network=False,
+            ):
+                pass
+        except BaseException as error:
+            return error
+        return None
+
+    error = asyncio.run(run())
+    check("обмежені спроби піднімають помилку",
+          isinstance(error, OSError), f"{type(error).__name__}: {error}")
+    check("рівно стільки спроб, скільки просили",
+          session.calls == 2, f"викликів={session.calls}")
+    check("відмова доставки не малює «немає зв'язку»",
+          not lost, f"втрат={lost}")
+
+
 def main() -> int:
     force_utf8_console()
     logging.getLogger("TwitchDrops").setLevel(logging.CRITICAL)
@@ -508,6 +677,8 @@ def main() -> int:
     history_checks()
     image_cache_checks()
     autostart_checks()
+    delivery_checks()
+    request_limit_checks()
     print("\n" + "=" * 50)
     print(f"Пройдено: {ok}   Провалено: {fail}")
     return 1 if fail else 0
