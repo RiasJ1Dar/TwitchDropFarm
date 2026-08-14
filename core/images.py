@@ -15,7 +15,7 @@ import logging
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-from core.config import IMAGE_SIZE
+from core.config import THUMBNAIL_SIZE
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -31,9 +31,8 @@ PARALLEL = 6
 # Більше за це — уже не картинка нагороди, а щось стороннє
 MAX_BYTES = 2 * 1024 * 1024
 ALLOWED_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif")
-# Сторона мініатюри, яку кладемо на диск. Удвічі більша за показ у списку:
-# на екранах із масштабуванням різниця помітна, а важить це копійки.
-THUMBNAIL = IMAGE_SIZE * 2
+# Сторона мініатюри на диску — з запасом на найбільший дозволений показ
+THUMBNAIL = THUMBNAIL_SIZE
 
 
 class ImageCache:
@@ -121,8 +120,8 @@ class ImageCache:
 def _shrink(body: bytes) -> bytes:
     """Зменшує картинку до розміру, у якому її справді показують.
 
-    Twitch віддає нагороди по 30–60 КБ кожна, а в списку вони займають рядок
-    заввишки з текст. Без цього кеш на 460 картинок важив 24 МБ — у десятки
+    Twitch віддає нагороди по 30–60 КБ кожна, а в списку вони займають кілька
+    десятків пікселів. Без цього кеш на 460 картинок важив 24 МБ — у десятки
     разів більше за все інше, що програма тримає на диску, і все заради
     пікселів, яких ніхто не побачить.
 

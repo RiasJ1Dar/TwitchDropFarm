@@ -21,7 +21,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import protocol
 from core.api import TwitchApi
-from core.config import STALL_LIMIT
+from core.config import (
+    DEFAULT_IMAGE_SIZE,
+    MAX_IMAGE_SIZE,
+    MIN_IMAGE_SIZE,
+    STALL_LIMIT,
+    clamp_image_size,
+)
 from core.events import (
     CampaignFinished,
     CommandType,
@@ -436,6 +442,14 @@ def image_cache_checks() -> None:
         first.write_bytes(b"\x89PNG")
         added = asyncio.run(cache.fetch_all([url, url, ""]))
         check("наявне не перезавантажується", added == 0, str(added))
+
+    # Розмір показу приходить із файлу налаштувань, тобто там може лежати будь-що
+    print("      межі розміру:")
+    for value, expect in ((48, 48), (0, MIN_IMAGE_SIZE), (-10, MIN_IMAGE_SIZE),
+                          (10_000, MAX_IMAGE_SIZE), ("сорок", DEFAULT_IMAGE_SIZE),
+                          (None, DEFAULT_IMAGE_SIZE), ("64", 64)):
+        got = clamp_image_size(value)
+        check(f"  {value!r} → {expect}", got == expect, str(got))
 
 
 def main() -> int:

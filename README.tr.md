@@ -87,7 +87,7 @@ oluşur. Örnek: [`settings.example.json`](settings.example.json).
 | `start_in_tray` | küçültülmüş başlat |
 | `tray_notifications` | açılır bildirimler |
 | `dark_theme` | koyu pencere teması |
-| `drop_images` | ödül görsellerini indir ve listede göster (~2,5 MB önbellek) |
+| `drop_images` | ödül görsellerini indir ve listede göster (~6 MB önbellek) |
 | `browser_path` | otomatik bulma başarısız olursa tarayıcı yolu |
 | `proxy` | istekler için vekil sunucu |
 
