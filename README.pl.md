@@ -89,7 +89,7 @@ pierwszym uruchomieniu. Wzór:
 | `start_in_tray` | start zminimalizowany |
 | `tray_notifications` | powiadomienia wyskakujące |
 | `dark_theme` | ciemny motyw okna |
-| `drop_images` | pobierać obrazki nagród i pokazywać je na liście (pamięć podręczna ~2,5 MB) |
+| `drop_images` | pobierać obrazki nagród i pokazywać je na liście (pamięć podręczna ~6 MB) |
 | `browser_path` | ścieżka do przeglądarki, jeśli wykrywanie zawiodło |
 | `proxy` | proxy dla zapytań |
 
