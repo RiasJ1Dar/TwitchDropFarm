@@ -18,9 +18,11 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      # v4/v5 тримались на Node.js 20, який GitHub уже виводить з ужитку й
+      # підміняє на Node 24 із попередженням у кожному запуску
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           # 3.10 — мінімум, заявлений у README. Перевіряємо саме його: якщо в
           # код пролізе синтаксис новіших версій, тут це й спливе.
