@@ -10,8 +10,6 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
-from PIL import Image, ImageDraw
-
 from core.events import (
     CampaignFinished,
     Command,
@@ -28,28 +26,23 @@ from core.events import (
     ProgressStalled,
     WatchingChanged,
 )
+from gui.icon import make_icon
 
 if TYPE_CHECKING:
+    from PIL import Image
+
     from core.miner import Miner as Twitch
     from gui.app import GUI
 
 logger = logging.getLogger("TwitchDrops")
 
-ICON_COLOURS = {
-    "active": (145, 71, 255),
-    "idle": (110, 110, 120),
-    "error": (200, 60, 60),
-}
-
-
 def _make_icon(state: str) -> Image.Image:
-    """Малюємо іконку кодом, щоб не тягнути .ico у збірку."""
-    colour = ICON_COLOURS.get(state, ICON_COLOURS["idle"])
-    image = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-    draw.ellipse((6, 6, 58, 58), fill=colour)
-    draw.ellipse((22, 22, 42, 42), fill=(255, 255, 255, 230))
-    return image
+    """Той самий значок, що у вікна й у `.exe`, лише з кольором стану.
+
+    Раніше тут малювалось власне коло — і трей був єдиним місцем, де програма
+    хоч якось себе позначала. Тепер малюнок один на всіх, у `gui/icon.py`.
+    """
+    return make_icon(64, state)
 
 
 class Tray:

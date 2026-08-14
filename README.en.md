@@ -25,7 +25,7 @@ Chrome).
   stream goes down.
 - **Claims drops automatically** and moves straight on to the next one.
 - **A window** with four tabs: Mining, Channels, Inventory, Settings.
-- **Tray**: minimise, notifications, start in background.
+- **Tray**: minimise, notifications, start with Windows.
 - **Telegram bot**: status, inventory, campaigns, pause/resume, channel
   switching, priority management, full restart — by buttons or commands.
 - **Survives failures**: network loss, DNS disappearing, the computer sleeping,
@@ -89,6 +89,8 @@ automatically on first launch. Sample:
 | `tray_notifications` | pop-up notifications |
 | `dark_theme` | dark window theme |
 | `drop_images` | download reward images and show them in the list (~6 MB cache) |
+| `image_size` | image size in the list, 16–96 |
+| `inventory_view` | `list` — dense list, `tiles` — cards with large images |
 | `browser_path` | path to the browser if auto-detection failed |
 | `proxy` | proxy for requests |
 

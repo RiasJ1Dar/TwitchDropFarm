@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from tkinter import messagebox, ttk
 from typing import TYPE_CHECKING, Any
 
+from core import autostart
 from core.config import MAX_IMAGE_SIZE, MIN_IMAGE_SIZE, TILE_SIZE, clamp_image_size
 from core.config import VERSION as __version__
 from core.config import FarmMode as PriorityMode
@@ -86,10 +87,28 @@ class GUI:
         self._images: dict[tuple[str, int], Any] = {}
         self._last_inventory: InventoryUpdated | None = None
         self.root.protocol("WM_DELETE_WINDOW", self.on_window_x)
+        self._set_window_icon()
         self._apply_theme()
 
         self._build_layout()
         twitch.events.subscribe(self._on_event)
+
+    def _set_window_icon(self) -> None:
+        """Значок у заголовку й на панелі завдань.
+
+        Малюємо той самий, що в треї, — інакше програма мала б два різні
+        обличчя. Посилання доводиться тримати в атрибуті: Tk його не зберігає,
+        і без цього збирач сміття забере картинку разом із значком.
+        """
+        try:
+            from PIL import ImageTk
+
+            from gui.icon import make_icon
+            self._icon_image = ImageTk.PhotoImage(make_icon(64))
+            self.root.iconphoto(True, self._icon_image)
+        except Exception as error:
+            # без значка програма працює так само — падати тут нема за що
+            logger.debug(f"Значок вікна не встановлено: {error}")
 
     @property
     def _image_size(self) -> int:
@@ -360,6 +379,13 @@ class GUI:
             misc, text="Стартувати одразу згорнутим у трей",
             variable=self.autostart_var, command=self._misc_changed,
         ).pack(anchor="w")
+        # Стан читаємо з реєстру, а не з налаштувань: запис могли зняти ззовні —
+        # диспетчером завдань, чистилкою автозавантаження чи іншою збіркою.
+        self.boot_var = tk.BooleanVar(value=autostart.is_enabled())
+        ttk.Checkbutton(
+            misc, text="Запускати разом із Windows",
+            variable=self.boot_var, command=self._autostart_changed,
+        ).pack(anchor="w")
         self.images_var = tk.BooleanVar(value=settings.drop_images)
         ttk.Checkbutton(
             misc, text="Завантажувати зображення дропів",
@@ -433,6 +459,21 @@ class GUI:
     def _mode_changed(self) -> None:
         self._twitch.settings.farm_mode = PriorityMode[self.mode_var.get()]
         self._send(CommandType.RELOAD)
+
+    def _autostart_changed(self) -> None:
+        """Показуємо те, що вийшло насправді, а не те, що просили.
+
+        Запис у реєстр може не вдатись — політика, антивірус, обмежений
+        профіль. Галочка, яка стоїть, коли автозапуску немає, гірша за
+        відсутність галочки взагалі.
+        """
+        got = autostart.apply(self.boot_var.get())
+        self.boot_var.set(got)
+        self._append_log(
+            "Запуск разом із Windows увімкнено" if got
+            else "Запуск разом із Windows вимкнено",
+            "ok" if got == self.boot_var.get() else "warn",
+        )
 
     def _image_size_changed(self, _value: str = "") -> None:
         """Новий розмір застосовується одразу, без перезапуску й без мережі."""

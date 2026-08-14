@@ -47,6 +47,11 @@ exe = EXE(
     a.datas,
     [],
     name="TwitchDropFarm",
+    # Той самий значок, що у вікна й трея. Файл робить tools/make_icon.py із
+    # gui/icon.py — тому вони не можуть розійтись. PyInstaller читає його як
+    # готовий файл на етапі збірки й запікає всередину, тож правило «один
+    # самодостатній .exe» не порушується.
+    icon="icon.ico",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
