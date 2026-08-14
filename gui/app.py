@@ -1,7 +1,9 @@
 """Компактний Tkinter-інтерфейс.
 
-Свідомо мінімальний: без власних канвасів для прогрес-барів, без локалізації,
-без завантаження картинок кампаній із CDN. Усе, що потрібно, дає штатний ttk.
+Свідомо мінімальний: без власних канвасів для прогрес-барів, без локалізації.
+Усе, що потрібно, дає штатний ttk. Картинки нагород показуються, лише коли їх
+увімкнули в налаштуваннях, і беруться з кешу на диску — сам інтерфейс у мережу
+не ходить.
 
 Інтеграція з asyncio: замість `root.mainloop()` крутимо `root.update()` з
 asyncio-таски. Так усе лишається однопотоковим, і не потрібні ні
@@ -14,8 +16,9 @@ import logging
 import tkinter as tk
 from datetime import datetime, timezone
 from tkinter import messagebox, ttk
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from core.config import IMAGE_SIZE
 from core.config import VERSION as __version__
 from core.config import FarmMode as PriorityMode
 from core.events import (
@@ -101,7 +104,10 @@ class GUI:
         style.map("TButton", background=[("active", p["accent"])])
         style.configure("TCheckbutton", background=p["bg"], foreground=p["fg"])
         style.configure("Treeview", background=p["alt"], fieldbackground=p["alt"],
-                        foreground=p["fg"], rowheight=24, borderwidth=0)
+                        # рядок трохи вищий за мініатюру, інакше картинка
+                        # обрізається зверху й знизу
+                        foreground=p["fg"], rowheight=IMAGE_SIZE + 4,
+                        borderwidth=0)
         style.configure("Treeview.Heading", background=p["bg"], foreground=p["fg"])
         style.map("Treeview", background=[("selected", p["accent"])])
         style.configure("TProgressbar", background=p["accent"], troughcolor=p["alt"])
@@ -247,6 +253,16 @@ class GUI:
             misc, text="Стартувати одразу згорнутим у трей",
             variable=self.autostart_var, command=self._misc_changed,
         ).pack(anchor="w")
+        self.images_var = tk.BooleanVar(value=settings.drop_images)
+        ttk.Checkbutton(
+            misc, text="Завантажувати зображення дропів",
+            variable=self.images_var, command=self._misc_changed,
+        ).pack(anchor="w")
+        ttk.Label(
+            misc, text="Картинки беруться раз і лишаються на диску; "
+                       "з'являться після наступного читання інвентаря.",
+            wraplength=320, justify="left",
+        ).pack(anchor="w", pady=(0, 4))
         self.dark_var = tk.BooleanVar(value=settings.dark_theme)
         ttk.Checkbutton(
             misc, text="Темна тема (застосується після перезапуску)",
@@ -306,7 +322,13 @@ class GUI:
         settings.farm_cosmetics = self.badges_var.get()
         settings.start_in_tray = self.autostart_var.get()
         settings.dark_theme = self.dark_var.get()
+        images_were = settings.drop_images
+        settings.drop_images = self.images_var.get()
         settings.save()
+        if settings.drop_images and not images_were:
+            # щойно ввімкнули — перечитуємо інвентар, інакше картинки
+            # з'явились би аж за годину, разом із наступним оновленням
+            self._send(CommandType.RELOAD)
 
     def _telegram_changed(self) -> None:
         self._twitch.settings.telegram["enabled"] = self.tg_var.get()
@@ -426,6 +448,10 @@ class GUI:
         # і вони навмисно не змінюються разом із внутрішньою моделлю — інакше
         # кожне перейменування в ядрі ламало б інтерфейс.
         self.inv_tree.delete(*self.inv_tree.get_children())
+        # Tk не тримає власних посилань на картинки: якщо їх не зберегти тут,
+        # збирач сміття забере зображення, і рядки лишаться порожніми. Скидаємо
+        # разом зі списком, інакше набір ріс би з кожним оновленням інвентаря.
+        self._images: dict[str, Any] = {}
         now = datetime.now(timezone.utc)
         for campaign in event.campaigns:
             if campaign.expired:
@@ -440,7 +466,7 @@ class GUI:
             parent = self.inv_tree.insert(
                 "", "end", text=f"{campaign.game} — {campaign.name}",
                 values=(f"{campaign.claimed_drops}/{campaign.total_drops}", state),
-                open=False,
+                open=False, image=self._thumbnail(campaign.image),
             )
             for drop in campaign.drops:
                 self.inv_tree.insert(
@@ -449,7 +475,31 @@ class GUI:
                         f"{drop.current_minutes}/{drop.required_minutes} хв",
                         "отримано" if drop.claimed else "",
                     ),
+                    image=self._thumbnail(drop.image),
                 )
+
+    def _thumbnail(self, url: str) -> Any:
+        """Мініатюра з кешу або порожньо, якщо картинки немає.
+
+        Порожній рядок — саме те, що Treeview очікує замість зображення, тож
+        вимкнені картинки не потребують окремої гілки при вставці рядка.
+        """
+        if not url or not self._twitch.settings.drop_images:
+            return ""
+        if url in self._images:
+            return self._images[url]
+        path = self._twitch.images.ready(url)
+        if path is None:
+            return ""
+        try:
+            from PIL import Image, ImageTk
+            with Image.open(path) as picture:
+                picture.thumbnail((IMAGE_SIZE, IMAGE_SIZE))
+                photo = ImageTk.PhotoImage(picture.convert("RGBA"))
+        except Exception:
+            return ""
+        self._images[url] = photo
+        return photo
 
     # ------------------------------------------------------------ цикл Tk
 

@@ -37,6 +37,7 @@ class ConfigShape(TypedDict):
     tray_notifications: bool
     farm_cosmetics: bool
     verify_channel_drops: bool
+    drop_images: bool
     browser_path: str
     proxy: str
     telegram: TelegramConfig
@@ -66,6 +67,9 @@ DEFAULTS: ConfigShape = {
     "tray_notifications": True,
     "farm_cosmetics": False,
     "verify_channel_drops": False,
+    # Типово вимкнено: програма мовчазна за задумом, і ходити в мережу заради
+    # картинок має лише тоді, коли про це попросили.
+    "drop_images": False,
     "browser_path": "",
     "proxy": "",
     "telegram": DEFAULT_TELEGRAM,

@@ -88,6 +88,7 @@ automatically on first launch. Sample:
 | `start_in_tray` | start minimised |
 | `tray_notifications` | pop-up notifications |
 | `dark_theme` | dark window theme |
+| `drop_images` | download reward images and show them in the list (~2.5 MB cache) |
 | `browser_path` | path to the browser if auto-detection failed |
 | `proxy` | proxy for requests |
 

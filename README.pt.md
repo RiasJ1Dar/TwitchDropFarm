@@ -89,6 +89,7 @@ primeira execução. Modelo:
 | `start_in_tray` | iniciar minimizado |
 | `tray_notifications` | notificações pop-up |
 | `dark_theme` | tema escuro da janela |
+| `drop_images` | baixar as imagens das recompensas e mostrá-las na lista (cache ~2,5 MB) |
 | `browser_path` | caminho do navegador se a detecção automática falhar |
 | `proxy` | proxy para as requisições |
 
