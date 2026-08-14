@@ -90,6 +90,8 @@ primeira execução. Modelo:
 | `tray_notifications` | notificações pop-up |
 | `dark_theme` | tema escuro da janela |
 | `drop_images` | baixar as imagens das recompensas e mostrá-las na lista (cache ~6 MB) |
+| `image_size` | tamanho da imagem na lista, 16–96 |
+| `inventory_view` | `list` — lista densa, `tiles` — cartões com imagens grandes |
 | `browser_path` | caminho do navegador se a detecção automática falhar |
 | `proxy` | proxy para as requisições |
 

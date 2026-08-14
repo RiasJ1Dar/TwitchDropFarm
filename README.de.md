@@ -91,6 +91,8 @@ Start selbst angelegt. Vorlage:
 | `tray_notifications` | Einblendungen |
 | `dark_theme` | dunkles Fensterdesign |
 | `drop_images` | Belohnungsbilder laden und in der Liste zeigen (Cache ~6 MB) |
+| `image_size` | Bildgröße in der Liste, 16–96 |
+| `inventory_view` | `list` — dichte Liste, `tiles` — Karten mit großen Bildern |
 | `browser_path` | Pfad zum Browser, falls die Erkennung fehlschlägt |
 | `proxy` | Proxy für Anfragen |
 

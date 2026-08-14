@@ -88,6 +88,8 @@ oluşur. Örnek: [`settings.example.json`](settings.example.json).
 | `tray_notifications` | açılır bildirimler |
 | `dark_theme` | koyu pencere teması |
 | `drop_images` | ödül görsellerini indir ve listede göster (~6 MB önbellek) |
+| `image_size` | listedeki görsel boyutu, 16–96 |
+| `inventory_view` | `list` — yoğun liste, `tiles` — büyük görselli kartlar |
 | `browser_path` | otomatik bulma başarısız olursa tarayıcı yolu |
 | `proxy` | istekler için vekil sunucu |
 

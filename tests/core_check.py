@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from core import protocol
+from core import autostart, protocol
 from core.api import TwitchApi
 from core.config import (
     DEFAULT_IMAGE_SIZE,
@@ -461,6 +461,40 @@ def image_cache_checks() -> None:
         check(f"  {value!r} → {wanted}", got == wanted, str(got))
 
 
+# ------------------------------------------------------------------ автозапуск
+
+def autostart_checks() -> None:
+    print("\n[10] Автозапуск разом із Windows")
+    if sys.platform != "win32":
+        print("  — не Windows, пропускаємо")
+        return
+
+    # Пишемо у власний тимчасовий ключ: справжній HKCU\...\Run чіпати не можна,
+    # інакше перевірка зробила б із машини те, чого ніхто не просив.
+    import winreg
+    probe = r"Software\TwitchDropFarm-перевірка"
+    autostart.KEY_PATH, real = probe, autostart.KEY_PATH
+    winreg.CreateKey(winreg.HKEY_CURRENT_USER, probe)
+    try:
+        check("спочатку вимкнено", autostart.is_enabled() is False)
+        check("вмикається", autostart.enable() is True)
+        check("і це видно", autostart.is_enabled() is True)
+        check("повторне вмикання не ламає", autostart.apply(True) is True)
+        check("вимикається", autostart.disable() is True)
+        check("і це теж видно", autostart.is_enabled() is False)
+        check("зняття неіснуючого — не помилка", autostart.disable() is True)
+
+        # запис від іншої збірки: команда чужа, отже автозапуск не наш
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, probe, 0,
+                            winreg.KEY_SET_VALUE) as key:
+            winreg.SetValueEx(key, autostart.VALUE_NAME, 0, winreg.REG_SZ,
+                              r'"C:\інша\копія.exe" --tray')
+        check("чужий запис не вважається нашим", autostart.is_enabled() is False)
+    finally:
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, probe)
+        autostart.KEY_PATH = real
+
+
 def main() -> int:
     force_utf8_console()
     logging.getLogger("TwitchDrops").setLevel(logging.CRITICAL)
@@ -473,6 +507,7 @@ def main() -> int:
     log_rotation_checks()
     history_checks()
     image_cache_checks()
+    autostart_checks()
     print("\n" + "=" * 50)
     print(f"Пройдено: {ok}   Провалено: {fail}")
     return 1 if fail else 0
