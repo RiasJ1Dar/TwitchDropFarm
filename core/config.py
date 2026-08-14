@@ -61,6 +61,9 @@ THUMBNAIL_SIZE = 96
 # типове значення: користувач міняє його налаштуванням `image_size`.
 DEFAULT_IMAGE_SIZE = 48
 MIN_IMAGE_SIZE, MAX_IMAGE_SIZE = 16, THUMBNAIL_SIZE
+# Сторона картинки в плитковому вигляді. Тут місця вистачає, тож беремо все,
+# що є на диску: саме заради цього вигляду картинки й завантажуються.
+TILE_SIZE = THUMBNAIL_SIZE
 
 
 def clamp_image_size(value: object) -> int:
