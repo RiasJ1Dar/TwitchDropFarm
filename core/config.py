@@ -46,6 +46,9 @@ TOKEN_FILE = STATE_DIR / "auth.json"
 COOKIE_FILE = STATE_DIR / "cookies.jar"
 CONFIG_FILE = STATE_DIR / "settings.json"
 LOG_FILE = STATE_DIR / "log.txt"
+# Історія нагород. Окремо від журналу: той ротується, а нагороди мають
+# лишатись назавжди — інакше сліду про них не буде взагалі.
+HISTORY_FILE = STATE_DIR / "history.jsonl"
 LOCK_FILE = STATE_DIR / "lock.file"
 BROWSER_PROFILE = STATE_DIR / "browser_profile"
 

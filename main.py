@@ -191,6 +191,9 @@ if __name__ == "__main__":
         client = Twitch(settings)
         client.events.subscribe(console_reporter)
         client.events.subscribe(log_reporter)
+        # Історія нагород пишеться лише зі справжнього запуску: ядро її тільки
+        # читає, щоб тести не дописували вигадані дропи у файл користувача.
+        client.history.attach(client.events)
 
         gui = tray = None
         started_in_tray = False
