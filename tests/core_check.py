@@ -51,6 +51,7 @@ from core.images import ImageCache
 from core.miner import Miner
 from core.settings import Settings
 from core.toolbox import force_utf8_console, rotating_log_handler
+from gui.app import GUI
 from gui.tray import Tray
 
 ok = 0
@@ -445,11 +446,19 @@ def image_cache_checks() -> None:
 
     # Розмір показу приходить із файлу налаштувань, тобто там може лежати будь-що
     print("      межі розміру:")
-    for value, expect in ((48, 48), (0, MIN_IMAGE_SIZE), (-10, MIN_IMAGE_SIZE),
+    # Сітка плиток: Tk для ще не показаного віджета віддає ширину 1, і на ній
+    # сітка згорталась в один стовпчик — картки йшли колонкою замість рядків.
+    print("      колонки сітки:")
+    for width, expect in ((1, 6), (0, 6), (100, 6), (1600, 12), (300, 2)):
+        got = GUI._columns_for(width)
+        check(f"  ширина {width} → {expect}", got == expect, str(got))
+
+    print("      межі розміру:")
+    for value, wanted in ((48, 48), (0, MIN_IMAGE_SIZE), (-10, MIN_IMAGE_SIZE),
                           (10_000, MAX_IMAGE_SIZE), ("сорок", DEFAULT_IMAGE_SIZE),
                           (None, DEFAULT_IMAGE_SIZE), ("64", 64)):
         got = clamp_image_size(value)
-        check(f"  {value!r} → {expect}", got == expect, str(got))
+        check(f"  {value!r} → {wanted}", got == wanted, str(got))
 
 
 def main() -> int:

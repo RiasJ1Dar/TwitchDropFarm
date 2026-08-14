@@ -254,10 +254,31 @@ class GUI:
             lambda _e: canvas.configure(scrollregion=canvas.bbox("all")),
         )
         # картки мусять займати всю ширину полотна, інакше сітка тулиться ліворуч
-        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(window, width=e.width))
+        canvas.bind("<Configure>", lambda e: self._tiles_resized(window, e.width))
+        self._tiles_columns = 0
         canvas.bind_all("<MouseWheel>", self._tiles_scroll)
         self.tiles_canvas = canvas
         self.tiles_holder = holder
+
+    def _tiles_resized(self, window: int, width: int) -> None:
+        """Полотно змінило ширину — у сітку може влізти інша кількість карток."""
+        self.tiles_canvas.itemconfigure(window, width=width)
+        if (self._columns_for(width) != self._tiles_columns
+                and self._last_inventory is not None
+                and self._inventory_view == "tiles"):
+            self._render_tiles(self._last_inventory)
+
+    @staticmethod
+    def _columns_for(width: int) -> int:
+        """Скільки карток влізе в рядок.
+
+        Ширина приходить від Tk, а він для ще не показаного віджета віддає
+        одиницю — не нуль. Саме через це сітка спершу малювалась одним
+        стовпчиком: 1 // 120 дає нуль колонок, і лишалась одна.
+        """
+        if width <= 100:
+            width = 800
+        return max(1, width // (TILE_SIZE + 28))
 
     def _tiles_scroll(self, event: Any) -> None:
         # колесо крутить плитки лише тоді, коли вони на екрані
@@ -603,7 +624,11 @@ class GUI:
         for child in self.tiles_holder.winfo_children():
             child.destroy()
         p = self.palette
-        columns = max(1, (self.tiles_canvas.winfo_width() or 800) // (TILE_SIZE + 24))
+        columns = self._columns_for(self.tiles_canvas.winfo_width())
+        self._tiles_columns = columns
+        # рівні колонки: інакше картки з довгими назвами розтягують сусідів
+        for column in range(columns):
+            self.tiles_holder.columnconfigure(column, weight=1, uniform="tile")
         shown = 0
         for campaign in event.campaigns:
             if campaign.expired:
