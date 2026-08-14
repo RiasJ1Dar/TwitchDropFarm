@@ -171,17 +171,35 @@ class TwitchApi:
 
     @asynccontextmanager
     async def request(self, method: str, url: str, *,
-                      valid_until: datetime | None = None, **kwargs: Any):
-        """HTTP-запит із повторами. Мережеві збої не пропускаються нагору."""
+                      valid_until: datetime | None = None,
+                      attempts: int | None = None,
+                      count_as_network: bool = True,
+                      **kwargs: Any):
+        """HTTP-запит із повторами. Мережеві збої не пропускаються нагору.
+
+        `attempts` обмежує кількість спроб. Без нього повтори ростуть до стелі
+        backoff — це правильно для GraphQL, але для доставки хвилини швидка
+        відмова корисніша: інакше цикл перегляду стоїть усередині повторів,
+        і детектор застою навіть не прокидається.
+
+        `count_as_network=False` — не чіпати глобальний індикатор зв'язку.
+        Інакше відмова `spade.twitch.tv` при живому GQL дає «немає зв'язку»,
+        а наступний успішний інвентар — зелене «зв'язок відновлено».
+        """
         session = await self.session()
         if self.proxy and "proxy" not in kwargs:
             kwargs["proxy"] = self.proxy
         budget = session.timeout.total or 0
         backoff = Backoff(ceiling=300.0)
+        last_error: BaseException | None = None
 
-        for delay in backoff:
+        for tried, delay in enumerate(backoff, start=1):
             if self._should_stop():
                 raise Aborted()
+            if attempts is not None and tried > attempts:
+                if last_error is not None:
+                    raise last_error
+                raise ApiError(f"Не вдалося звернутись до {url}")
             if valid_until is not None:
                 # враховуємо, що запит може завершитись уже після протухання
                 deadline = valid_until.timestamp() - budget
@@ -193,26 +211,43 @@ class TwitchApi:
                 response = await session.request(method.upper(), url, **kwargs)
                 if response.status < 500:
                     await response.read()  # дочитуємо в межах контексту
-                    self._network_ok()
+                    if count_as_network:
+                        self._network_ok()
                     yield response
                     return
+                last_error = ApiError(f"Twitch віддав {response.status}")
                 log.warning(f"Twitch віддав {response.status}, повтор через {delay:.0f}с")
             except aiohttp.ClientConnectorCertificateError:
                 raise  # проблема з сертифікатом: повторювати марно
             except NETWORK_FAULTS as error:
-                self._network_failed(type(error).__name__)
+                last_error = error
+                if count_as_network:
+                    self._network_failed(type(error).__name__)
                 log.log(TRACE, f"{type(error).__name__} на {url}, повтор через {delay:.0f}с")
             finally:
                 if response is not None:
                     response.release()
+            if attempts is not None and tried >= attempts:
+                if last_error is not None:
+                    raise last_error
+                raise ApiError(f"Не вдалося звернутись до {url}")
             await asyncio.sleep(delay)
 
-    async def fetch_text(self, url: str) -> str:
-        async with self.request("GET", url) as response:
+    async def fetch_text(self, url: str, *,
+                         attempts: int | None = None,
+                         count_as_network: bool = True) -> str:
+        async with self.request(
+            "GET", url, attempts=attempts, count_as_network=count_as_network,
+        ) as response:
             return await response.text(encoding="utf8")
 
-    async def post_form(self, url: str, body: dict[str, Any]) -> int:
-        async with self.request("POST", url, data=body) as response:
+    async def post_form(self, url: str, body: dict[str, Any], *,
+                        attempts: int | None = None,
+                        count_as_network: bool = True) -> int:
+        async with self.request(
+            "POST", url, data=body,
+            attempts=attempts, count_as_network=count_as_network,
+        ) as response:
             return response.status
 
     # ------------------------------------------------------------ GraphQL

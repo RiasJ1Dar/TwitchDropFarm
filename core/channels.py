@@ -12,7 +12,7 @@ import re
 from typing import Any, Protocol
 
 from core import protocol
-from core.config import STREAM_UP_DELAY, TRACE
+from core.config import SPADE_ATTEMPTS, STREAM_UP_DELAY, TRACE
 from core.toolbox import Game
 
 log = logging.getLogger("TwitchDrops")
@@ -22,8 +22,8 @@ class Backend(Protocol):
     """Те, що канал очікує від ядра."""
 
     async def graphql(self, payload: Any) -> Any: ...
-    async def fetch_text(self, url: str) -> str: ...
-    async def post_form(self, url: str, body: dict[str, Any]) -> int: ...
+    async def fetch_text(self, url: str, **kwargs: Any) -> str: ...
+    async def post_form(self, url: str, body: dict[str, Any], **kwargs: Any) -> int: ...
     def channel_state_changed(self, channel: Channel, was_live: bool) -> None: ...
     def channel_display_changed(self, channel: Channel) -> None: ...
     def campaign_by_id(self, campaign_id: str) -> Any: ...
@@ -93,13 +93,17 @@ class WatchReporter:
         self._use_mutation = False
 
     async def _resolve_spade_url(self, channel_url: str) -> str | None:
-        page = await self._backend.fetch_text(channel_url)
+        page = await self._backend.fetch_text(
+            channel_url, attempts=SPADE_ATTEMPTS, count_as_network=False,
+        )
         if found := re.search(protocol.SPADE_IN_PAGE, page, re.IGNORECASE):
             return found.group(1)
         script = re.search(protocol.SETTINGS_SCRIPT, page, re.IGNORECASE)
         if script is None:
             return None
-        config = await self._backend.fetch_text(script.group(1))
+        config = await self._backend.fetch_text(
+            script.group(1), attempts=SPADE_ATTEMPTS, count_as_network=False,
+        )
         found = re.search(protocol.SPADE_IN_PAGE, config, re.IGNORECASE)
         return found.group(1) if found else None
 
@@ -121,22 +125,33 @@ class WatchReporter:
                 try:
                     self._spade_url = await self._resolve_spade_url(channel.url)
                 except Exception as error:
-                    log.log(TRACE, f"Сторінка {channel.login} недоступна: {error}")
-                    return False
-                if self._spade_url is None:
-                    log.warning("Адресу spade не знайдено — переходжу на GQL")
+                    log.warning(
+                        f"Сторінка {channel.login} недоступна "
+                        f"({type(error).__name__}) — переходжу на GQL"
+                    )
                     self._use_mutation = True
-            if self._spade_url is not None:
+                else:
+                    if self._spade_url is None:
+                        log.warning("Адресу spade не знайдено — переходжу на GQL")
+                        self._use_mutation = True
+            if self._spade_url is not None and not self._use_mutation:
                 try:
                     status = await self._backend.post_form(
-                        self._spade_url, protocol.spade_body(event)
+                        self._spade_url, protocol.spade_body(event),
+                        attempts=SPADE_ATTEMPTS, count_as_network=False,
                     )
-                except Exception:
-                    return False
-                if status == 204:
-                    return True
-                log.warning(f"spade відповів {status} — переходжу на GQL")
-                self._use_mutation = True
+                except Exception as error:
+                    # Раніше виняток обривав метод і GQL навіть не пробували.
+                    # Якщо блокувальник ріже лише spade, запасний шлях живий.
+                    log.warning(
+                        f"spade недоступний ({type(error).__name__}) — переходжу на GQL"
+                    )
+                    self._use_mutation = True
+                else:
+                    if status == 204:
+                        return True
+                    log.warning(f"spade відповів {status} — переходжу на GQL")
+                    self._use_mutation = True
 
         try:
             answer = await self._backend.graphql(protocol.spade_mutation(event))
