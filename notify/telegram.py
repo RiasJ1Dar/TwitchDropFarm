@@ -53,6 +53,7 @@ COMMANDS: tuple[tuple[str, str, str], ...] = (
     ("resume", "продовжити фарм", ""),
     ("switch", "перемкнутись на канал", " &lt;канал&gt;"),
     ("priority", "керувати пріоритетом ігор", " add|remove &lt;гра&gt;"),
+    ("report", "звіт за тиждень", " [днів]"),
     ("reload", "перечитати інвентар", ""),
     ("hide", "згорнути вікно в трей", ""),
     ("show", "розгорнути вікно", ""),
@@ -70,10 +71,11 @@ HELP_TEXT = "<b>Команди</b>\n" + "\n".join(
 # куди прийняти назву каналу чи гри, тож вони лишаються текстовими.
 CONTROL_BUTTONS: tuple[tuple[tuple[str, str], ...], ...] = (
     (("📊 Стан", "status"), ("🎒 Дропи", "inventory")),
-    (("📋 Кампанії", "campaigns"), ("🔄 Оновити", "reload")),
+    (("📋 Кампанії", "campaigns"), ("📈 Звіт", "report")),
     (("⏸ Пауза", "pause"), ("▶️ Продовжити", "resume")),
     (("🙈 Сховати вікно", "hide"), ("🖥 Показати вікно", "show")),
-    (("♻️ Перезапуск", "reboot"), ("❓ Довідка", "help")),
+    (("🔄 Оновити", "reload"), ("♻️ Перезапуск", "reboot")),
+    (("❓ Довідка", "help"),),
 )
 
 # Напис кнопки -> команда. Клавіатура під полем вводу шле саме текст напису,
@@ -581,6 +583,13 @@ class TelegramNotifier:
                 chat_id=chat_id,
             )
             control.send(Command(CommandType.REBOOT))
+        elif command == "report":
+            days = 7
+            if argument.strip().isdigit():
+                days = max(1, min(365, int(argument.strip())))
+            body = html.escape(self._twitch.history.summary(days))
+            await self.send(f"📈 <b>Звіт</b>\n<pre>{body}</pre>",
+                            chat_id=chat_id, keyboard=True)
         elif command == "hide":
             control.send(Command(CommandType.HIDE_WINDOW))
             await self.send("🙈 Вікно згорнуто в трей.", chat_id=chat_id, keyboard=True)

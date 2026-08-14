@@ -18,6 +18,7 @@ from core.api import Aborted, ApiError, TwitchApi
 from core.channels import Channel
 from core.config import (
     CHANNEL_REFRESH_DELAY,
+    HISTORY_FILE,
     MAX_CHANNELS,
     PROGRESS_GRACE,
     RESTART_PAUSE,
@@ -52,6 +53,7 @@ from core.events import (
     WatchingChanged,
     WindowVisibility,
 )
+from core.history import History
 from core.identity import Identity
 from core.model import Campaign, Drop
 from core.settings import Settings
@@ -129,10 +131,18 @@ class Miner:
         self._stall_count = 0
         self._last_progress: tuple[str, int] | None = None
         self._shown_progress: dict[str, tuple[int, int]] = {}
-        # Кампанії, про безнадійність яких уже сказали. Живе тут, а не в самій
-        # кампанії: `_rebuild` створює об'єкти заново на кожне читання
-        # інвентаря, тож позначка всередині них не пережила б жодного оновлення.
-        self._risk_reported: set[str] = set()
+
+        # Ядро історію лише читає. Підписку на запис робить `main`, і не з
+        # педантизму: `Miner` створюють і тести, а вони не сміють дописувати
+        # вигадані нагороди у справжній файл користувача. Одного разу вже
+        # дописали.
+        self.history = History(HISTORY_FILE)
+        # Кампанії, про безнадійність яких уже сказали. Не в самій кампанії:
+        # `_rebuild` створює об'єкти заново на кожне читання інвентаря, тож
+        # позначка всередині них не пережила б жодного оновлення. І не лише в
+        # пам'яті: набір піднімається з історії, інакше після кожного
+        # перезапуску та сама кампанія скаржилась би вдруге.
+        self._risk_reported: set[str] = self.history.campaigns_warned()
 
     # ================================================================ послуги
 
@@ -471,6 +481,7 @@ class Miner:
                 continue
             self._risk_reported.add(campaign.id)
             risky.append(RiskSnapshot(
+                id=campaign.id,
                 name=campaign.name,
                 game=campaign.game.name,
                 minutes_needed=campaign.minutes_left,
