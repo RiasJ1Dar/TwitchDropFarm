@@ -27,6 +27,7 @@ from core.events import (
 )
 from core.miner import Miner as Twitch
 from core.settings import Settings
+from core.toolbox import force_utf8_console
 from notify.telegram import TelegramNotifier
 
 OWNER = 111111
@@ -47,6 +48,7 @@ def check(name: str, condition: bool, detail: str = "") -> None:
 
 
 async def main() -> int:
+    force_utf8_console()
     args = argparse.Namespace(log=False, tray=False, logging_level=50,
                               debug_ws=0, debug_gql=0)
     twitch = Twitch(Settings(args))

@@ -8,7 +8,6 @@ if __name__ == "__main__":
 
     import argparse
     import asyncio
-    import io
     import logging
     import os
     import sys
@@ -16,13 +15,9 @@ if __name__ == "__main__":
 
     # Консоль Windows за замовчуванням не в UTF-8, і весь український текст
     # перетворюється на кашу. Лагодимо до першого рядка логів.
-    for stream_name in ("stdout", "stderr"):
-        stream = getattr(sys, stream_name, None)
-        if isinstance(stream, io.TextIOWrapper):
-            try:
-                stream.reconfigure(encoding="utf-8", errors="replace")
-            except (AttributeError, ValueError):
-                pass
+    from core.toolbox import force_utf8_console
+
+    force_utf8_console()
 
     from core.config import CONSOLE_LOG_FORMAT as OUTPUT_FORMATTER
     from core.config import FILE_LOG_FORMAT as FILE_FORMATTER
