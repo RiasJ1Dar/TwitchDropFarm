@@ -24,6 +24,7 @@ from core.events import (
     ProgressStalled,
     StreamOffline,
     WatchingChanged,
+    WatchUncounted,
 )
 from core.miner import Miner as Twitch
 from core.settings import Settings
@@ -80,6 +81,8 @@ async def main() -> int:
                                                 game="EVE Online"), "Foundation Day"),
         ("застій прогресу", ProgressStalled(minutes_without_progress=5,
                                             channel_name="ibeast"), "вручну"),
+        ("перегляд не йде", WatchUncounted(channel_name="ibeast", consecutive=2),
+         "spade.twitch.tv"),
         ("звʼязок втрачено", ConnectionLost(reason="TimeoutError", attempt=2), "Втрачено"),
         ("звʼязок відновлено", ConnectionRestored(downtime_seconds=42.0, attempts=3), "42"),
         ("помилка", MinerError(message="щось пішло не так"), "щось пішло не так"),

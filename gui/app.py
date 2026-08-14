@@ -38,6 +38,7 @@ from core.events import (
     ProgressStalled,
     StatusChanged,
     WatchingChanged,
+    WatchUncounted,
     WebsocketStatus,
     WindowVisibility,
 )
@@ -556,6 +557,12 @@ class GUI:
             self._append_log(
                 f"Прогрес стоїть {event.minutes_without_progress} хв на "
                 f"{event.channel_name} — можливо, Twitch відкритий вручну", "err"
+            )
+        elif isinstance(event, WatchUncounted):
+            self._append_log(
+                f"Перегляд не зараховується на {event.channel_name} — "
+                f"хвилина не дійшла до Twitch",
+                "err",
             )
         elif isinstance(event, ConnectionLost):
             self.conn_var.set("● немає зв'язку")

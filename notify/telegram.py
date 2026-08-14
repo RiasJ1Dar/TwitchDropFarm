@@ -34,6 +34,7 @@ from core.events import (
     ProgressStalled,
     StreamOffline,
     WatchingChanged,
+    WatchUncounted,
 )
 from core.protocol import TELEGRAM_ENDPOINT as TELEGRAM_API
 
@@ -320,6 +321,14 @@ class TelegramNotifier:
                     f"⚠️ <b>Прогрес стоїть</b> {event.minutes_without_progress} хв\n"
                     f"Канал: {esc(event.channel_name)}\n"
                     "Найімовірніша причина — цим же акаунтом хтось дивиться Twitch вручну."
+                )
+            if isinstance(event, WatchUncounted):
+                return (
+                    f"⚠️ <b>Перегляд не зараховується</b>\n"
+                    f"Канал: {esc(event.channel_name)}\n"
+                    "Хвилина не доходить до Twitch. Якщо інтернет при цьому "
+                    "живий — перевірте, чи не блокується <code>spade.twitch.tv</code> "
+                    "(часто так роблять блокувальники реклами на роутері)."
                 )
             if isinstance(event, DeadlineRisk):
                 lines = [f"⏳ <b>Не встигаємо закрити</b> ({len(event.campaigns)})"]
