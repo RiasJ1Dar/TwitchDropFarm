@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from tkinter import messagebox, ttk
 from typing import TYPE_CHECKING, Any
 
-from core.config import IMAGE_SIZE
+from core.config import MAX_IMAGE_SIZE, MIN_IMAGE_SIZE, clamp_image_size
 from core.config import VERSION as __version__
 from core.config import FarmMode as PriorityMode
 from core.events import (
@@ -75,11 +75,16 @@ class GUI:
         self._tray_available = False
         # стан кожного вебсокета окремо: індекс -> (статус, кількість топіків)
         self._ws_state: dict[int, tuple[str, int]] = {}
+        self._images: dict[str, Any] = {}
         self.root.protocol("WM_DELETE_WINDOW", self.on_window_x)
         self._apply_theme()
 
         self._build_layout()
         twitch.events.subscribe(self._on_event)
+
+    @property
+    def _image_size(self) -> int:
+        return clamp_image_size(self._twitch.settings.image_size)
 
     # ------------------------------------------------------------ оформлення
 
@@ -103,11 +108,11 @@ class GUI:
         style.configure("TButton", background=p["alt"], foreground=p["fg"], padding=6)
         style.map("TButton", background=[("active", p["accent"])])
         style.configure("TCheckbutton", background=p["bg"], foreground=p["fg"])
+        # рядок трохи вищий за картинку, інакше вона обрізається зверху й знизу;
+        # без картинок висота лишається звичайною, щоб список не був розрідженим
+        row = self._image_size + 4 if self._twitch.settings.drop_images else 24
         style.configure("Treeview", background=p["alt"], fieldbackground=p["alt"],
-                        # рядок трохи вищий за мініатюру, інакше картинка
-                        # обрізається зверху й знизу
-                        foreground=p["fg"], rowheight=IMAGE_SIZE + 4,
-                        borderwidth=0)
+                        foreground=p["fg"], rowheight=row, borderwidth=0)
         style.configure("Treeview.Heading", background=p["bg"], foreground=p["fg"])
         style.map("Treeview", background=[("selected", p["accent"])])
         style.configure("TProgressbar", background=p["accent"], troughcolor=p["alt"])
@@ -258,9 +263,19 @@ class GUI:
             misc, text="Завантажувати зображення дропів",
             variable=self.images_var, command=self._misc_changed,
         ).pack(anchor="w")
+        size_row = ttk.Frame(misc)
+        size_row.pack(fill="x", pady=(2, 0))
+        ttk.Label(size_row, text="Розмір:").pack(side="left")
+        self.size_var = tk.IntVar(value=self._image_size)
+        self.size_label = ttk.Label(size_row, text=f"{self._image_size} px", width=7)
+        self.size_label.pack(side="right")
+        ttk.Scale(
+            size_row, from_=MIN_IMAGE_SIZE, to=MAX_IMAGE_SIZE, orient="horizontal",
+            variable=self.size_var, command=self._image_size_changed,
+        ).pack(side="left", fill="x", expand=True, padx=6)
         ttk.Label(
             misc, text="Картинки беруться раз і лишаються на диску; "
-                       "з'являться після наступного читання інвентаря.",
+                       "розмір можна міняти будь-коли, качати наново не треба.",
             wraplength=320, justify="left",
         ).pack(anchor="w", pady=(0, 4))
         self.dark_var = tk.BooleanVar(value=settings.dark_theme)
@@ -317,6 +332,19 @@ class GUI:
         self._twitch.settings.farm_mode = PriorityMode[self.mode_var.get()]
         self._send(CommandType.RELOAD)
 
+    def _image_size_changed(self, _value: str = "") -> None:
+        """Новий розмір застосовується одразу, без перезапуску й без мережі."""
+        size = self.size_var.get()
+        if size == self._twitch.settings.image_size:
+            return
+        self._twitch.settings.image_size = size
+        self._twitch.settings.save()
+        self.size_label.configure(text=f"{self._image_size} px")
+        # мініатюри вже готові під старий розмір — доведеться зібрати наново
+        self._images.clear()
+        self._apply_theme()
+        self._send(CommandType.RELOAD)
+
     def _misc_changed(self) -> None:
         settings = self._twitch.settings
         settings.farm_cosmetics = self.badges_var.get()
@@ -325,10 +353,13 @@ class GUI:
         images_were = settings.drop_images
         settings.drop_images = self.images_var.get()
         settings.save()
-        if settings.drop_images and not images_were:
-            # щойно ввімкнули — перечитуємо інвентар, інакше картинки
-            # з'явились би аж за годину, разом із наступним оновленням
-            self._send(CommandType.RELOAD)
+        if settings.drop_images != images_were:
+            # висота рядка залежить від того, чи є картинки
+            self._apply_theme()
+            if settings.drop_images:
+                # щойно ввімкнули — перечитуємо інвентар, інакше картинки
+                # з'явились би аж за годину, разом із наступним оновленням
+                self._send(CommandType.RELOAD)
 
     def _telegram_changed(self) -> None:
         self._twitch.settings.telegram["enabled"] = self.tg_var.get()
@@ -491,10 +522,11 @@ class GUI:
         path = self._twitch.images.ready(url)
         if path is None:
             return ""
+        side = self._image_size
         try:
             from PIL import Image, ImageTk
             with Image.open(path) as picture:
-                picture.thumbnail((IMAGE_SIZE, IMAGE_SIZE))
+                picture.thumbnail((side, side))
                 photo = ImageTk.PhotoImage(picture.convert("RGBA"))
         except Exception:
             return ""

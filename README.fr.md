@@ -91,7 +91,7 @@ seul au premier démarrage. Modèle :
 | `start_in_tray` | démarrer réduit |
 | `tray_notifications` | notifications contextuelles |
 | `dark_theme` | thème sombre de la fenêtre |
-| `drop_images` | télécharger les images des récompenses et les afficher dans la liste (cache ~2,5 Mo) |
+| `drop_images` | télécharger les images des récompenses et les afficher dans la liste (cache ~6 Mo) |
 | `browser_path` | chemin du navigateur si la détection échoue |
 | `proxy` | proxy pour les requêtes |
 

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, TypedDict
 
-from core.config import CONFIG_FILE, FarmMode
+from core.config import CONFIG_FILE, DEFAULT_IMAGE_SIZE, FarmMode
 from core.toolbox import load_json, register_enum, save_json
 
 if TYPE_CHECKING:
@@ -38,6 +38,7 @@ class ConfigShape(TypedDict):
     farm_cosmetics: bool
     verify_channel_drops: bool
     drop_images: bool
+    image_size: int
     browser_path: str
     proxy: str
     telegram: TelegramConfig
@@ -70,6 +71,9 @@ DEFAULTS: ConfigShape = {
     # Типово вимкнено: програма мовчазна за задумом, і ходити в мережу заради
     # картинок має лише тоді, коли про це попросили.
     "drop_images": False,
+    # Розмір картинки в списку. Кеш на диску завжди більший, тож це число
+    # можна міняти будь-коли — качати наново нічого не доведеться.
+    "image_size": DEFAULT_IMAGE_SIZE,
     "browser_path": "",
     "proxy": "",
     "telegram": DEFAULT_TELEGRAM,

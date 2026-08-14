@@ -53,8 +53,28 @@ HISTORY_FILE = STATE_DIR / "history.jsonl"
 # трафік невеликий, але це все ж мережа заради краси, і вибір лишається за
 # користувачем.
 IMAGE_DIR = STATE_DIR / "images"
-# Висота рядка в списку інвентаря, вона ж розмір мініатюри
-IMAGE_SIZE = 28
+# На диску тримаємо один розмір — із запасом. Тоді зміна розміру показу не
+# вимагає качати все наново, а збільшення не дає мила: зменшити картинку можна
+# завжди, збільшити без втрати — ніколи.
+THUMBNAIL_SIZE = 96
+# Скільки пікселів займає картинка в списку. Смак у всіх різний, тож це лише
+# типове значення: користувач міняє його налаштуванням `image_size`.
+DEFAULT_IMAGE_SIZE = 48
+MIN_IMAGE_SIZE, MAX_IMAGE_SIZE = 16, THUMBNAIL_SIZE
+
+
+def clamp_image_size(value: object) -> int:
+    """Розмір картинки в дозволених межах.
+
+    Значення приходить із файлу налаштувань, тобто там може лежати що завгодно:
+    нуль, від'ємне, рядок, мільйон. Понад мініатюру на диску теж немає сенсу —
+    збільшення дало б лише мило.
+    """
+    try:
+        wanted = int(value)  # type: ignore[call-overload]
+    except (TypeError, ValueError):
+        return DEFAULT_IMAGE_SIZE
+    return max(MIN_IMAGE_SIZE, min(MAX_IMAGE_SIZE, wanted))
 LOCK_FILE = STATE_DIR / "lock.file"
 BROWSER_PROFILE = STATE_DIR / "browser_profile"
 
