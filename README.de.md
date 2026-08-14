@@ -90,6 +90,7 @@ Start selbst angelegt. Vorlage:
 | `start_in_tray` | minimiert starten |
 | `tray_notifications` | Einblendungen |
 | `dark_theme` | dunkles Fensterdesign |
+| `drop_images` | Belohnungsbilder laden und in der Liste zeigen (Cache ~2,5 MB) |
 | `browser_path` | Pfad zum Browser, falls die Erkennung fehlschlägt |
 | `proxy` | Proxy für Anfragen |
 

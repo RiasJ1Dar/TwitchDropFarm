@@ -41,6 +41,7 @@ from core.events import (
 )
 from core.exceptions import RequestInvalid
 from core.history import History
+from core.images import ImageCache
 from core.miner import Miner
 from core.settings import Settings
 from core.toolbox import force_utf8_console, rotating_log_handler
@@ -404,6 +405,39 @@ def history_checks() -> None:
               History(history.path).campaigns_warned() == {"c-1"})
 
 
+# ------------------------------------------------------------------ картинки
+
+def image_cache_checks() -> None:
+    print("\n[9] Кеш зображень")
+    with tempfile.TemporaryDirectory() as folder:
+        cache = ImageCache(Path(folder) / "images", api=None)
+        url = "https://static-cdn.twitch.tv/твоя/нагорода.png"
+
+        first = cache.path_for(url)
+        check("ім'я файлу стабільне", first == cache.path_for(url))
+        check("розширення збережено", first.suffix == ".png", str(first))
+        check("різні адреси — різні файли",
+              cache.path_for(url) != cache.path_for(url + "?v=2"))
+        check("порожня адреса не дає шляху", cache.path_for("") is None)
+        check("невідоме розширення не ламає імені",
+              cache.path_for("https://a/b").suffix == ".img")
+
+        check("порожнього кешу немає", cache.ready(url) is None)
+        first.parent.mkdir(parents=True, exist_ok=True)
+        first.write_bytes(b"\x89PNG")
+        check("готовий файл знайдено", cache.ready(url) == first)
+
+        # порожній файл — не картинка: інакше збій завантаження назавжди
+        # лишив би в кеші нуль байтів, який виглядає готовим
+        first.write_bytes(b"")
+        check("порожній файл не вважається готовим", cache.ready(url) is None)
+
+        # api=None: якби воно спробувало піти в мережу, тут був би виняток
+        first.write_bytes(b"\x89PNG")
+        added = asyncio.run(cache.fetch_all([url, url, ""]))
+        check("наявне не перезавантажується", added == 0, str(added))
+
+
 def main() -> int:
     force_utf8_console()
     logging.getLogger("TwitchDrops").setLevel(logging.CRITICAL)
@@ -415,6 +449,7 @@ def main() -> int:
     stale_request_checks()
     log_rotation_checks()
     history_checks()
+    image_cache_checks()
     print("\n" + "=" * 50)
     print(f"Пройдено: {ok}   Провалено: {fail}")
     return 1 if fail else 0
