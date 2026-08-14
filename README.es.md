@@ -91,6 +91,7 @@ primer arranque. Ejemplo:
 | `start_in_tray` | arrancar minimizado |
 | `tray_notifications` | notificaciones emergentes |
 | `dark_theme` | tema oscuro de la ventana |
+| `drop_images` | descargar las imágenes de las recompensas y mostrarlas en la lista (caché ~2,5 MB) |
 | `browser_path` | ruta al navegador si la detección automática falla |
 | `proxy` | proxy para las peticiones |
 

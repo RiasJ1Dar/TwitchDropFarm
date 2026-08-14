@@ -49,6 +49,12 @@ LOG_FILE = STATE_DIR / "log.txt"
 # Історія нагород. Окремо від журналу: той ротується, а нагороди мають
 # лишатись назавжди — інакше сліду про них не буде взагалі.
 HISTORY_FILE = STATE_DIR / "history.jsonl"
+# Картинки нагород і обкладинки ігор. Вимикається налаштуванням `drop_images`:
+# трафік невеликий, але це все ж мережа заради краси, і вибір лишається за
+# користувачем.
+IMAGE_DIR = STATE_DIR / "images"
+# Висота рядка в списку інвентаря, вона ж розмір мініатюри
+IMAGE_SIZE = 28
 LOCK_FILE = STATE_DIR / "lock.file"
 BROWSER_PROFILE = STATE_DIR / "browser_profile"
 

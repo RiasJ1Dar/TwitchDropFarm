@@ -1,6 +1,7 @@
 {
     "browser_path": "",
     "dark_theme": true,
+    "drop_images": false,
     "exclude": [],
     "farm_cosmetics": false,
     "farm_mode": {

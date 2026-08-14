@@ -210,6 +210,8 @@ class DropSnapshot:
     required_minutes: int
     claimed: bool
     can_claim: bool
+    # адреса картинки нагороди; порожня, якщо Twitch її не дав
+    image: str = ""
 
 
 @dataclass(frozen=True)
@@ -224,6 +226,8 @@ class CampaignSnapshot:
     claimed_drops: int
     total_drops: int
     drops: tuple[DropSnapshot, ...]
+    # обкладинка гри
+    image: str = ""
 
 
 # ================================================================ шина подій

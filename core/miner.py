@@ -19,6 +19,7 @@ from core.channels import Channel
 from core.config import (
     CHANNEL_REFRESH_DELAY,
     HISTORY_FILE,
+    IMAGE_DIR,
     MAX_CHANNELS,
     PROGRESS_GRACE,
     RESTART_PAUSE,
@@ -55,6 +56,7 @@ from core.events import (
 )
 from core.history import History
 from core.identity import Identity
+from core.images import ImageCache
 from core.model import Campaign, Drop
 from core.settings import Settings
 from core.toolbox import (
@@ -137,6 +139,7 @@ class Miner:
         # вигадані нагороди у справжній файл користувача. Одного разу вже
         # дописали.
         self.history = History(HISTORY_FILE)
+        self.images = ImageCache(IMAGE_DIR, self.api)
         # Кампанії, про безнадійність яких уже сказали. Не в самій кампанії:
         # `_rebuild` створює об'єкти заново на кожне читання інвентаря, тож
         # позначка всередині них не пережила б жодного оновлення. І не лише в
@@ -310,12 +313,14 @@ class Miner:
                 active=c.running, upcoming=c.not_started, expired=c.over,
                 ends_at=c.closes_at,
                 claimed_drops=c.taken_count, total_drops=c.total,
+                image=c.image,
                 drops=tuple(
                     DropSnapshot(
                         id=d.id, name=d.name,
                         current_minutes=d.minutes,
                         required_minutes=d.required_minutes,
                         claimed=d.taken, can_claim=d.ready_to_take,
+                        image=d.rewards[0].image if d.rewards else "",
                     )
                     for d in c.all_drops
                 ),
@@ -463,6 +468,20 @@ class Miner:
         self._upkeep_task = self._tasks.launch(self._upkeep())
         self._publish_inventory()
         self._check_deadlines()
+        if self.settings.drop_images:
+            # У фоні: картинки — прикраса, і чекати на них перед фармом безглуздо
+            self._tasks.launch(self._fetch_images())
+
+    async def _fetch_images(self) -> None:
+        urls: list[str] = []
+        for campaign in self.campaigns:
+            urls.append(campaign.image)
+            for drop in campaign.all_drops:
+                urls.extend(reward.image for reward in drop.rewards)
+        added = await self.images.fetch_all(urls)
+        if added:
+            # список перемальовується вже з картинками
+            self._publish_inventory()
 
     def _check_deadlines(self) -> None:
         """Попереджає про кампанії, які вже не встигнути закрити.

@@ -79,6 +79,7 @@ dist\TwitchDropFarm.exe
 | `start_in_tray` | 启动时最小化 |
 | `tray_notifications` | 弹出通知 |
 | `dark_theme` | 窗口深色主题 |
+| `drop_images` | 下载奖励图片并在列表中显示（缓存约 2.5 MB） |
 | `browser_path` | 自动探测失败时的浏览器路径 |
 | `proxy` | 请求使用的代理 |
 
