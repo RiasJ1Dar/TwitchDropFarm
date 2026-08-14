@@ -8,6 +8,8 @@
         "__type": "FarmMode",
         "data": 1
     },
+    "image_size": 48,
+    "inventory_view": "list",
     "priority": [
         "World of Warships",
         "THE FINALS"

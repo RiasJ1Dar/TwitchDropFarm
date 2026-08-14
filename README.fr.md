@@ -92,6 +92,8 @@ seul au premier démarrage. Modèle :
 | `tray_notifications` | notifications contextuelles |
 | `dark_theme` | thème sombre de la fenêtre |
 | `drop_images` | télécharger les images des récompenses et les afficher dans la liste (cache ~6 Mo) |
+| `image_size` | taille de l'image dans la liste, 16–96 |
+| `inventory_view` | `list` — liste dense, `tiles` — cartes avec grandes images |
 | `browser_path` | chemin du navigateur si la détection échoue |
 | `proxy` | proxy pour les requêtes |
 

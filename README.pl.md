@@ -90,6 +90,8 @@ pierwszym uruchomieniu. Wzór:
 | `tray_notifications` | powiadomienia wyskakujące |
 | `dark_theme` | ciemny motyw okna |
 | `drop_images` | pobierać obrazki nagród i pokazywać je na liście (pamięć podręczna ~6 MB) |
+| `image_size` | rozmiar obrazka na liście, 16–96 |
+| `inventory_view` | `list` — gęsta lista, `tiles` — kafelki z dużymi obrazkami |
 | `browser_path` | ścieżka do przeglądarki, jeśli wykrywanie zawiodło |
 | `proxy` | proxy dla zapytań |
 

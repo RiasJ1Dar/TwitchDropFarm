@@ -92,6 +92,8 @@ primer arranque. Ejemplo:
 | `tray_notifications` | notificaciones emergentes |
 | `dark_theme` | tema oscuro de la ventana |
 | `drop_images` | descargar las imágenes de las recompensas y mostrarlas en la lista (caché ~6 MB) |
+| `image_size` | tamaño de la imagen en la lista, 16–96 |
+| `inventory_view` | `list` — lista densa, `tiles` — tarjetas con imágenes grandes |
 | `browser_path` | ruta al navegador si la detección automática falla |
 | `proxy` | proxy para las peticiones |
 

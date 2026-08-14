@@ -80,6 +80,8 @@ dist\TwitchDropFarm.exe
 | `tray_notifications` | 弹出通知 |
 | `dark_theme` | 窗口深色主题 |
 | `drop_images` | 下载奖励图片并在列表中显示（缓存约 6 MB） |
+| `image_size` | 列表中的图片尺寸，16–96 |
+| `inventory_view` | `list` —— 紧凑列表，`tiles` —— 大图卡片 |
 | `browser_path` | 自动探测失败时的浏览器路径 |
 | `proxy` | 请求使用的代理 |
 
