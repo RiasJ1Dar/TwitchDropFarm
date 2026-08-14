@@ -39,6 +39,7 @@ class ConfigShape(TypedDict):
     verify_channel_drops: bool
     drop_images: bool
     image_size: int
+    inventory_view: str
     browser_path: str
     proxy: str
     telegram: TelegramConfig
@@ -74,6 +75,9 @@ DEFAULTS: ConfigShape = {
     # Розмір картинки в списку. Кеш на диску завжди більший, тож це число
     # можна міняти будь-коли — качати наново нічого не доведеться.
     "image_size": DEFAULT_IMAGE_SIZE,
+    # "list" або "tiles". Список щільний і показує все відразу; плитки
+    # показують саме нагороду — заради них картинки й завантажуються.
+    "inventory_view": "list",
     "browser_path": "",
     "proxy": "",
     "telegram": DEFAULT_TELEGRAM,

@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from tkinter import messagebox, ttk
 from typing import TYPE_CHECKING, Any
 
-from core.config import MAX_IMAGE_SIZE, MIN_IMAGE_SIZE, clamp_image_size
+from core.config import MAX_IMAGE_SIZE, MIN_IMAGE_SIZE, TILE_SIZE, clamp_image_size
 from core.config import VERSION as __version__
 from core.config import FarmMode as PriorityMode
 from core.events import (
@@ -47,6 +47,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger("TwitchDrops")
 
 WINDOW_TITLE = f"Twitch Drop Farm v{__version__}"
+# Скільки карток малюємо щонайбільше. Кожна — це кілька віджетів Tk, і на
+# кількох сотнях перемальовування стає помітним для ока.
+TILE_LIMIT = 120
+
+
+def _shorten(text: str, limit: int = 34) -> str:
+    """Довгі назви нагород ламають сітку — рівні картки читаються краще."""
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 # як часто прокручуємо цикл Tk; 20 к/с — непомітно для ока й дешево для CPU
 TK_TICK = 0.05
 
@@ -75,7 +83,8 @@ class GUI:
         self._tray_available = False
         # стан кожного вебсокета окремо: індекс -> (статус, кількість топіків)
         self._ws_state: dict[int, tuple[str, int]] = {}
-        self._images: dict[str, Any] = {}
+        self._images: dict[tuple[str, int], Any] = {}
+        self._last_inventory: InventoryUpdated | None = None
         self.root.protocol("WM_DELETE_WINDOW", self.on_window_x)
         self._apply_theme()
 
@@ -195,6 +204,26 @@ class GUI:
     def _build_inventory_tab(self, notebook: ttk.Notebook) -> None:
         tab = ttk.Frame(notebook, padding=10)
         notebook.add(tab, text="Інвентар")
+
+        bar = ttk.Frame(tab)
+        bar.pack(fill="x", pady=(0, 6))
+        ttk.Label(bar, text="Вигляд:").pack(side="left")
+        self.view_var = tk.StringVar(value=self._inventory_view)
+        for value, label in (("list", "Список"), ("tiles", "Плитки")):
+            ttk.Radiobutton(bar, text=label, value=value, variable=self.view_var,
+                            command=self._view_changed).pack(side="left", padx=(8, 0))
+        self.tiles_note = ttk.Label(bar, text="")
+        self.tiles_note.pack(side="right")
+
+        self.inv_body = ttk.Frame(tab)
+        self.inv_body.pack(fill="both", expand=True)
+        self._build_inventory_list(self.inv_body)
+        self._build_inventory_tiles(self.inv_body)
+        self._show_inventory_view()
+
+    def _build_inventory_list(self, parent: ttk.Frame) -> None:
+        tab = ttk.Frame(parent)
+        self.inv_list = tab
         self.inv_tree = ttk.Treeview(tab, columns=("progress", "state"), show="tree headings")
         self.inv_tree.heading("#0", text="Кампанія / дроп")
         self.inv_tree.heading("progress", text="Прогрес")
@@ -206,6 +235,58 @@ class GUI:
         self.inv_tree.configure(yscrollcommand=scroll.set)
         scroll.pack(side="right", fill="y")
         self.inv_tree.pack(fill="both", expand=True)
+
+    def _build_inventory_tiles(self, parent: ttk.Frame) -> None:
+        """Сітка карток. Tk не має готового такого віджета, тож збираємо з
+        полотна й фрейма всередині: інакше вміст не прокручується."""
+        wrap = ttk.Frame(parent)
+        self.inv_tiles = wrap
+        canvas = tk.Canvas(wrap, bg=self.palette["alt"], highlightthickness=0)
+        scroll = ttk.Scrollbar(wrap, command=canvas.yview)
+        canvas.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        holder = ttk.Frame(canvas)
+        window = canvas.create_window((0, 0), window=holder, anchor="nw")
+        holder.bind(
+            "<Configure>",
+            lambda _e: canvas.configure(scrollregion=canvas.bbox("all")),
+        )
+        # картки мусять займати всю ширину полотна, інакше сітка тулиться ліворуч
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(window, width=e.width))
+        canvas.bind_all("<MouseWheel>", self._tiles_scroll)
+        self.tiles_canvas = canvas
+        self.tiles_holder = holder
+
+    def _tiles_scroll(self, event: Any) -> None:
+        # колесо крутить плитки лише тоді, коли вони на екрані
+        if self.inv_tiles.winfo_ismapped():
+            self.tiles_canvas.yview_scroll(-int(event.delta / 120), "units")
+
+    @property
+    def _inventory_view(self) -> str:
+        view = self._twitch.settings.inventory_view
+        return view if view in ("list", "tiles") else "list"
+
+    def _view_changed(self) -> None:
+        self._twitch.settings.inventory_view = self.view_var.get()
+        self._twitch.settings.save()
+        self._show_inventory_view()
+        # перемальовуємо з того, що вже маємо: чекати на наступне читання
+        # інвентаря заради зміни вигляду безглуздо
+        if self._last_inventory is not None:
+            self._render_inventory(self._last_inventory)
+
+    def _show_inventory_view(self) -> None:
+        tiles = self._inventory_view == "tiles"
+        self.inv_list.pack_forget()
+        self.inv_tiles.pack_forget()
+        (self.inv_tiles if tiles else self.inv_list).pack(fill="both", expand=True)
+        self.tiles_note.configure(
+            text="Картинки вимкнені — увімкніть у налаштуваннях"
+            if tiles and not self._twitch.settings.drop_images else ""
+        )
 
     def _build_settings_tab(self, notebook: ttk.Notebook) -> None:
         settings = self._twitch.settings
@@ -478,11 +559,15 @@ class GUI:
         # Тут не об'єкти моделі, а знімки з події: у них власні імена полів,
         # і вони навмисно не змінюються разом із внутрішньою моделлю — інакше
         # кожне перейменування в ядрі ламало б інтерфейс.
-        self.inv_tree.delete(*self.inv_tree.get_children())
         # Tk не тримає власних посилань на картинки: якщо їх не зберегти тут,
         # збирач сміття забере зображення, і рядки лишаться порожніми. Скидаємо
         # разом зі списком, інакше набір ріс би з кожним оновленням інвентаря.
-        self._images: dict[str, Any] = {}
+        self._images = {}
+        self._last_inventory = event
+        if self._inventory_view == "tiles":
+            self._render_tiles(event)
+            return
+        self.inv_tree.delete(*self.inv_tree.get_children())
         now = datetime.now(timezone.utc)
         for campaign in event.campaigns:
             if campaign.expired:
@@ -509,7 +594,42 @@ class GUI:
                     image=self._thumbnail(drop.image),
                 )
 
-    def _thumbnail(self, url: str) -> Any:
+    def _render_tiles(self, event: InventoryUpdated) -> None:
+        """Картки з нагородами. Тут головна саме картинка, а не рядок тексту.
+
+        Показуємо лише те, що ще має сенс: минулі кампанії й забрані дропи в
+        плитках лише заважали б — заради них картинки не завантажують.
+        """
+        for child in self.tiles_holder.winfo_children():
+            child.destroy()
+        p = self.palette
+        columns = max(1, (self.tiles_canvas.winfo_width() or 800) // (TILE_SIZE + 24))
+        shown = 0
+        for campaign in event.campaigns:
+            if campaign.expired:
+                continue
+            for drop in campaign.drops:
+                if drop.claimed or shown >= TILE_LIMIT:
+                    continue
+                card = ttk.Frame(self.tiles_holder, padding=6)
+                card.grid(row=shown // columns, column=shown % columns,
+                          sticky="n", padx=4, pady=4)
+                picture = self._thumbnail(drop.image or campaign.image, TILE_SIZE)
+                if picture:
+                    ttk.Label(card, image=picture).pack()
+                ttk.Label(card, text=_shorten(drop.name), wraplength=TILE_SIZE + 20,
+                          justify="center").pack(pady=(4, 0))
+                ttk.Label(card, text=f"{drop.current_minutes}/{drop.required_minutes} хв",
+                          foreground=p["accent"]).pack()
+                ttk.Label(card, text=_shorten(campaign.game, 22),
+                          foreground=p["fg"]).pack()
+                shown += 1
+        if not shown:
+            ttk.Label(self.tiles_holder,
+                      text="Немає незабраних дропів в активних кампаніях").pack(pady=20)
+        self.tiles_canvas.yview_moveto(0)
+
+    def _thumbnail(self, url: str, size: int | None = None) -> Any:
         """Мініатюра з кешу або порожньо, якщо картинки немає.
 
         Порожній рядок — саме те, що Treeview очікує замість зображення, тож
@@ -517,12 +637,13 @@ class GUI:
         """
         if not url or not self._twitch.settings.drop_images:
             return ""
-        if url in self._images:
-            return self._images[url]
+        side = size or self._image_size
+        key = (url, side)
+        if key in self._images:
+            return self._images[key]
         path = self._twitch.images.ready(url)
         if path is None:
             return ""
-        side = self._image_size
         try:
             from PIL import Image, ImageTk
             with Image.open(path) as picture:
@@ -530,7 +651,7 @@ class GUI:
                 photo = ImageTk.PhotoImage(picture.convert("RGBA"))
         except Exception:
             return ""
-        self._images[url] = photo
+        self._images[key] = photo
         return photo
 
     # ------------------------------------------------------------ цикл Tk
