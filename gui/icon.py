@@ -5,10 +5,13 @@
 виняток — `icon.ico`, який потрібен збирачу; його робить `tools/make_icon.py`
 із цієї ж функції, тож розходитись їм нема з чого.
 
-Що на ньому: крапля падає у скриню. `drops` — це буквально краплі, і програма
-саме ловить те, що падає, поки людини немає за комп'ютером. Перший підхід був
-із кайлом, бо в назві стоїть «miner», але нічого не копають — і значок брехав
-про те, що робить програма.
+Що на ньому: кайло в мовному балоні. Балон — натяк на Twitch кольором і
+формою, але **не копія логотипа**: це чужий товарний знак, а репозиторій
+публічний.
+
+Про сам малюнок кайла, щоб не переробляти його втретє: лезо мусить бути
+полігоном змінної товщини й уся фігура — нахиленою. Тонка дуга сталої ширини
+читається як цифра «сім», а симетрична смуга без загострень — як парасолька.
 """
 from __future__ import annotations
 
@@ -23,49 +26,59 @@ STATE_COLOURS = {
     "error": (200, 60, 60),     # червоний — зв'язок утрачено або збій
 }
 INK = (255, 255, 255, 245)
-# Малюємо збільшено й зменшуємо: діагоналі краплі інакше виходять драбинкою
+# Малюємо збільшено й зменшуємо: на нахиленій фігурі краї інакше рвані
 SUPER = 8
-# Нижче цього розміру дрібні деталі скрині зливаються в пляму, тож їх немає
-DETAIL_FROM = 24
+
+
+def _pick(size: int, blade: float, thick: float, grip: float,
+          tilt: int = -32) -> Image.Image:
+    """Кайло на прозорому шарі того ж розміру."""
+    big = size * SUPER
+    layer = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    centre_x, centre_y = big * 0.5, big * 0.62
+    radius = big * blade
+
+    outer: list[tuple[float, float]] = []
+    inner: list[tuple[float, float]] = []
+    steps = 60
+    for step in range(steps + 1):
+        part = step / steps
+        angle = math.radians(20 + 140 * part)
+        # товщина максимальна посередині й сходить у вістря на кінцях
+        width = big * thick * math.sin(math.pi * part) ** 0.55
+        for store, r in ((outer, radius), (inner, radius - width)):
+            store.append((centre_x + r * math.cos(angle),
+                          centre_y - r * math.sin(angle)))
+    draw.polygon(outer + inner[::-1], fill=INK)
+
+    half = big * 0.052
+    draw.rectangle((centre_x - half, centre_y - radius + big * thick * 0.5,
+                    centre_x + half, centre_y + big * grip), fill=INK)
+    return layer.rotate(tilt, resample=Image.BICUBIC, expand=False).resize(
+        (size, size), Image.LANCZOS)
 
 
 def make_icon(size: int = 64, state: str = "active") -> Image.Image:
     """Значок заданого розміру. `state` міняє лише колір тла."""
     colour = STATE_COLOURS.get(state, STATE_COLOURS["idle"])
-    big = size * SUPER
-    image = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
 
     def at(fraction: float) -> float:
-        return big * fraction
+        return size * fraction
 
-    # Тло — скруглений квадрат, а не коло: у дрібних розмірах він дає більше
-    # площі під силует і краще тримає форму серед круглих сусідів у треї.
-    draw.rounded_rectangle((0, 0, big - 1, big - 1), radius=at(0.24), fill=colour)
+    # балон: тіло й хвостик
+    draw.rounded_rectangle((at(0.05), at(0.05), at(0.95), at(0.76)),
+                           radius=at(0.17), fill=colour)
+    draw.polygon([(at(0.60), at(0.74)), (at(0.82), at(0.74)), (at(0.64), at(0.98))],
+                 fill=colour)
 
-    # ---- крапля: коло знизу, вістря вгорі
-    centre_x, centre_y, radius = at(0.50), at(0.30), at(0.13)
-    draw.ellipse((centre_x - radius, centre_y - radius,
-                  centre_x + radius, centre_y + radius), fill=INK)
-    flank = math.radians(52)
-    draw.polygon([
-        (centre_x, centre_y - radius * 2.5),
-        (centre_x - radius * math.cos(flank), centre_y - radius * math.sin(flank)),
-        (centre_x + radius * math.cos(flank), centre_y - radius * math.sin(flank)),
-    ], fill=INK)
-
-    # ---- скриня, у яку падає нагорода
-    top, bottom = at(0.56), at(0.84)
-    draw.rounded_rectangle((at(0.20), top, at(0.80), bottom),
-                           radius=at(0.03), fill=INK)
-    if size >= DETAIL_FROM:
-        # прорізь кришки й замок — лише там, де їх видно
-        draw.rectangle((at(0.20), top + at(0.07), at(0.80), top + at(0.11)),
-                       fill=colour)
-        draw.rectangle((at(0.46), top + at(0.04), at(0.54), top + at(0.15)),
-                       fill=colour)
-
-    return image.resize((size, size), Image.LANCZOS)
+    image.alpha_composite(
+        _pick(size, blade=0.36, thick=0.13, grip=0.28),
+        (0, -int(at(0.07))),
+    )
+    return image
 
 
 def ico_sizes() -> list[int]:
