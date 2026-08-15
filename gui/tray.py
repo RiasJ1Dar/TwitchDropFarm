@@ -132,9 +132,13 @@ class Tray:
             tail = f" і ще {len(event.campaigns) - 1}" if len(event.campaigns) > 1 else ""
             self.notify(f"{first.name} ({first.game}){tail}", "Не встигаємо закрити")
         elif isinstance(event, ProgressStalled):
+            why = (
+                f"; зараховується «{event.counted_elsewhere}»"
+                if event.counted_elsewhere else ""
+            )
             self.notify(
                 f"{event.minutes_without_progress} хв без приросту на "
-                f"{event.channel_name}",
+                f"{event.channel_name}{why}",
                 "Прогрес стоїть",
             )
         elif isinstance(event, WatchUncounted):

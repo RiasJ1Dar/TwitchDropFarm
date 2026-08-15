@@ -184,7 +184,7 @@ class GUI:
         self.pause_btn = ttk.Button(controls, text="Призупинити", command=self._toggle_pause)
         self.pause_btn.pack(side="left")
         ttk.Button(controls, text="Перечитати інвентар",
-                   command=lambda: self._send(CommandType.RELOAD)).pack(side="left", padx=6)
+                   command=self._reload_now).pack(side="left", padx=6)
         ttk.Button(controls, text="Згорнути в трей",
                    command=self.hide_to_tray).pack(side="right")
         ttk.Button(controls, text="Вимкнути майнер",
@@ -417,13 +417,14 @@ class GUI:
         tg.pack(fill="x", pady=(8, 0))
         self.tg_var = tk.BooleanVar(value=settings.telegram["enabled"])
         ttk.Checkbutton(
-            tg, text="Увімкнено (налаштування — у settings.json)",
-            variable=self.tg_var, command=self._telegram_changed,
+            tg, text="Увімкнено", variable=self.tg_var,
+            command=self._telegram_changed,
         ).pack(anchor="w")
-        ttk.Label(
-            tg, text="Потрібні bot_token і chat_ids; зміни діють після перезапуску.",
-            wraplength=320,
-        ).pack(anchor="w", pady=(4, 0))
+        ttk.Button(
+            tg, text="Підключити бота…", command=self._open_telegram_setup,
+        ).pack(anchor="w", pady=(6, 0))
+        self.tg_hint = ttk.Label(tg, text=self._telegram_hint(), wraplength=320)
+        self.tg_hint.pack(anchor="w", pady=(4, 0))
 
     # ------------------------------------------------------------ дії користувача
 
@@ -505,9 +506,49 @@ class GUI:
                 # з'явились би аж за годину, разом із наступним оновленням
                 self._send(CommandType.RELOAD)
 
+    def _reload_now(self) -> None:
+        """Ручне «спитати Twitch просто зараз».
+
+        Команда лягає в чергу й виконається на початку наступної ітерації —
+        і поки цикл сидить у довгій стадії, кнопка на вигляд не робить нічого.
+        Тому пишемо в журнал одразу: натиснуто, чекаємо. Мовчазна кнопка
+        змушує тиснути її ще раз, а другий RELOAD нічого не пришвидшує.
+        """
+        self._append_log("Перечитую інвентар за вашим запитом…")
+        self._send(CommandType.RELOAD)
+
     def _telegram_changed(self) -> None:
         self._twitch.settings.telegram["enabled"] = self.tg_var.get()
         self._twitch.settings.alter()
+        self.tg_hint["text"] = self._telegram_hint()
+
+    def _telegram_hint(self) -> str:
+        """Одним рядком: чи бот узагалі готовий працювати.
+
+        Галочка «Увімкнено» сама по собі нічого не варта — без токена й чату
+        бот мовчить, і раніше про це не було сказано ніде, крім журналу.
+        """
+        telegram = self._twitch.settings.telegram
+        if not telegram["bot_token"]:
+            return "Бот не підключений — натисни «Підключити бота…»."
+        if not telegram["chat_ids"]:
+            return "Токен є, але невідомо, кому писати. Пройди майстер до кінця."
+        return "Бот підключений. Зміни діють після перезапуску."
+
+    def _open_telegram_setup(self) -> None:
+        from gui.telegram_setup import TelegramSetup
+
+        window = TelegramSetup(self.root, self._twitch.settings)
+        # підказка й галочка мають наздогнати те, що майстер зберіг
+        window.bind("<Destroy>", lambda _event: self._telegram_saved(), add=True)
+
+    def _telegram_saved(self) -> None:
+        try:
+            telegram = self._twitch.settings.telegram
+            self.tg_var.set(telegram["enabled"])
+            self.tg_hint["text"] = self._telegram_hint()
+        except tk.TclError:
+            pass  # вікно вже закривають
 
     # ------------------------------------------------------------ події ядра
 
@@ -554,9 +595,15 @@ class GUI:
         elif isinstance(event, DropClaimed):
             self._append_log(f"Отримано: {event.rewards} ({event.game})", "ok")
         elif isinstance(event, ProgressStalled):
+            why = (
+                f"Twitch зараховує «{event.counted_elsewhere}» — інший дроп "
+                f"цього ж каналу"
+                if event.counted_elsewhere
+                else "можливо, Twitch відкритий вручну"
+            )
             self._append_log(
                 f"Прогрес стоїть {event.minutes_without_progress} хв на "
-                f"{event.channel_name} — можливо, Twitch відкритий вручну", "err"
+                f"{event.channel_name} — {why}", "err"
             )
         elif isinstance(event, WatchUncounted):
             self._append_log(

@@ -139,9 +139,13 @@ if __name__ == "__main__":
         elif isinstance(event, CampaignFinished):
             logger.warning(f"КАМПАНІЮ ЗАВЕРШЕНО: {event.campaign_name} ({event.game})")
         elif isinstance(event, ProgressStalled):
+            where = (
+                f", зараховується «{event.counted_elsewhere}»"
+                if event.counted_elsewhere else ""
+            )
             logger.error(
                 f"Прогрес стоїть {event.minutes_without_progress} хв "
-                f"на {event.channel_name}"
+                f"на {event.channel_name}{where}"
             )
         elif isinstance(event, WatchUncounted):
             logger.error(
@@ -177,10 +181,15 @@ if __name__ == "__main__":
         elif isinstance(event, CampaignFinished):
             print(f"[ГОТОВО] Кампанію завершено: {event.campaign_name} ({event.game})")
         elif isinstance(event, ProgressStalled):
+            why = (
+                f"Twitch зараховує «{event.counted_elsewhere}» — інший дроп "
+                f"цього ж каналу."
+                if event.counted_elsewhere
+                else "Можлива причина — цим акаунтом хтось дивиться Twitch вручну."
+            )
             print(
                 f"[!] Прогрес стоїть {event.minutes_without_progress} хв на "
-                f"{event.channel_name}. Можлива причина — цим акаунтом хтось "
-                f"дивиться Twitch вручну."
+                f"{event.channel_name}. {why}"
             )
         elif isinstance(event, WatchUncounted):
             print(

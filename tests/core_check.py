@@ -32,9 +32,11 @@ from core.config import (
 )
 from core.events import (
     CampaignFinished,
+    Command,
     CommandType,
     ConnectionLost,
     ConnectionRestored,
+    ControlBus,
     DeadlineRisk,
     DropClaimed,
     LoginRequired,
@@ -98,6 +100,7 @@ def stall_checks() -> None:
     def fresh():
         return types.SimpleNamespace(
             _stall_since=None, _stall_alerted=False, events=Bus(),
+            _counted_elsewhere="",
         )
 
     def run(marks: list[int | None], *, step: float = 60.0) -> tuple[int, bool]:
@@ -149,22 +152,43 @@ def stall_checks() -> None:
     # І рахувати мусить по ВСІХ придатних кампаніях. Кампаній однієї гри буває
     # кілька; коли одна росте, а друга стоїть, вибір «активної» за найменшим
     # залишком вказував на нерухому — і тривога била під час здорового фарму.
-    def drop(counted, blind=0):
+    def drop(counted, blind=0, fits=True):
         return types.SimpleNamespace(
             counted_minutes=counted, blind_minutes=blind,
-            minutes=counted + blind, farmable=lambda _c: True,
+            minutes=counted + blind,
+            farmable=lambda _c, ignore_channel_state=False: fits,
         )
 
-    def campaign(*drops):
-        return types.SimpleNamespace(all_drops=drops, farmable=lambda _c: True)
+    def campaign(*drops, fits=True, channels=()):
+        return types.SimpleNamespace(
+            all_drops=drops, channels=channels,
+            farmable=lambda _c, ignore_channel_state=False: (
+                fits or ignore_channel_state
+            ),
+        )
 
+    here = types.SimpleNamespace(name="канал")
     box = types.SimpleNamespace(
-        watching=types.SimpleNamespace(peek=lambda _d: object()),
+        watching=types.SimpleNamespace(peek=lambda _d: here),
         wanted=["гра"],
         campaigns=[campaign(drop(40, blind=7)), campaign(drop(151), drop(151))],
+        _counts_here=lambda c, ch: Miner._counts_here(box, c, ch),
     )
     check("позначка бере лише підтверджене Twitch",
           Miner._progress_mark(box) == 40 + 151 + 151, str(Miner._progress_mark(box)))
+
+    # Кампанія події зараховується на каналі, який стоїть у категорії гри:
+    # за категорією вона не проходить, але канал є в її списку. 15.08 через це
+    # EWC Platinum ріс щохвилини, а тривога била кожні десять.
+    event_campaign = campaign(drop(260), fits=False, channels=[here])
+    box.campaigns = [campaign(drop(40)), event_campaign]
+    check("позначка бачить кампанію події",
+          Miner._progress_mark(box) == 40 + 260, str(Miner._progress_mark(box)))
+
+    stranger = campaign(drop(999), fits=False, channels=[])
+    box.campaigns = [campaign(drop(40)), stranger]
+    check("чужа кампанія в позначку не лізе",
+          Miner._progress_mark(box) == 40, str(Miner._progress_mark(box)))
 
     # росте лише одна з двох кампаній — це не застій
     growing = drop(40)
@@ -272,6 +296,168 @@ def window_checks() -> None:
         got = [e for e in box.events.sent if isinstance(e, WindowVisibility)]
         check(f"{kind.name} → подія", len(got) == 1 and got[0].visible is visible,
               str(box.events.sent))
+
+    # Затримка розгортання вікна: команда чекала кінця стадії головного циклу,
+    # а «Шукаю канали» тривала до хвилини.
+    bus = ControlBus()
+    seen: list = []
+    bus.set_immediate_handler(seen.append)
+    bus.send(Command(CommandType.SHOW_WINDOW))
+    check("показати вікно — повз чергу", len(seen) == 1 and bus.get_nowait() is None)
+
+    bus.send(Command(CommandType.RELOAD))
+    check("решта команд — через чергу",
+          len(seen) == 1 and len(bus.drain_pending()) == 1)
+
+    plain = ControlBus()
+    plain.send(Command(CommandType.SHOW_WINDOW))
+    check("без обробника команда не губиться", len(plain.drain_pending()) == 1)
+
+    # Сигнал гасився після вигрібання: команда, що надійшла посеред нього,
+    # лишалась у черзі з погашеним сигналом — і цикл спав до зміни стану.
+    race = ControlBus()
+    race.send(Command(CommandType.RELOAD))
+    real = race.get_nowait
+
+    injected = False
+
+    def get_then_send():
+        nonlocal injected
+        got = real()
+        if got is not None and not injected:
+            injected = True
+            race.send(Command(CommandType.RESUME))
+        return got
+
+    race.get_nowait = get_then_send
+    race.drain_pending()
+    check("команда посеред вигрібання будить цикл", race._signal.is_set())
+
+
+# ------------------------------------------------------ чужий перегляд
+
+def parallel_watch_checks() -> None:
+    """Коли «Twitch рахує іншу кампанію» — тривога, а коли норма.
+
+    Спіймано 15.08: 248 попереджень за добу на трансляції RLCS. Канал роздавав
+    дві кампанії одразу — категорія «Rocket League», а Twitch зараховував
+    «Special Events». Фарм при цьому був здоровий.
+    """
+    print("\n[3б] Паралельний перегляд")
+    import core.miner as miner_module
+
+    channel = types.SimpleNamespace(id=1, name="alphakep", game="Rocket League")
+
+    class FakeLog:
+        def __init__(self) -> None:
+            self.warnings: list[str] = []
+
+        def warning(self, text: str) -> None:
+            self.warnings.append(text)
+
+        def log(self, _level, _text) -> None:
+            pass
+
+    def run(campaign_channels: list):
+        counted: list[int] = []
+        drop = types.SimpleNamespace(
+            taken=False, name="чужий",
+            farmable=lambda _c: False,
+            set_counted=counted.append,
+            campaign=types.SimpleNamespace(
+                channels=campaign_channels,
+                game=types.SimpleNamespace(name="Special Events"),
+            ),
+        )
+
+        async def graphql(_payload):
+            return {"data": {"currentUser": {"dropCurrentSession": {
+                "dropID": "d1", "currentMinutesWatched": 5,
+            }}}}
+
+        fake = types.SimpleNamespace(graphql=graphql, _drops={"d1": drop},
+                                     _counted_elsewhere="")
+        spy, real = FakeLog(), miner_module.log
+        miner_module.log = spy
+        try:
+            confirmed = asyncio.run(Miner._confirm_progress(fake, channel))
+        finally:
+            miner_module.log = real
+        return confirmed, spy.warnings, counted, fake._counted_elsewhere
+
+    confirmed, warnings, counted, elsewhere = run([channel])
+    check("канал роздає дві кампанії — мовчимо", warnings == [], str(warnings))
+    # Головне: True зупиняє домальовування наосліп. 15.08 так намалювалось
+    # 25 хвилин, яких на боці Twitch не було — вікно показувало 266/360.
+    check("наосліп не домальовуємо", confirmed is True)
+    check("записано правду про сусідню кампанію", counted == [5], str(counted))
+    check("причину запам'ятали", elsewhere == "Special Events", elsewhere)
+
+    confirmed, warnings, counted, elsewhere = run([])
+    check("справжній чужий перегляд — попередження",
+          len(warnings) == 1 and "паралельний" in warnings[0], str(warnings))
+    check("чужий перегляд — прогрес не підтверджено",
+          confirmed is False and counted == [], str(counted))
+
+    # Причина доїжджає до повідомлення замість здогаду про ручний перегляд
+    fake = types.SimpleNamespace(
+        _progress_mark=lambda: 40, _stall_since=0.0, _stall_alerted=False,
+        events=Bus(), _counted_elsewhere="Special Events",
+    )
+    Miner._check_stall(fake, 40, channel, now=STALL_LIMIT * 60)
+    stalled = [e for e in fake.events.sent if isinstance(e, ProgressStalled)]
+    check("тривога називає справжню причину",
+          len(stalled) == 1 and stalled[0].counted_elsewhere == "Special Events",
+          str(stalled))
+
+
+# ------------------------------------------------------------ майстер Telegram
+
+def telegram_setup_checks() -> None:
+    """Розбір відповідей Bot API. Мережу підміняємо, решта — справжня.
+
+    Майстер веде людину по кроках і після кожного показує доказ; якщо доказ
+    розібрано криво, весь сенс майстра зникає — він знову каже «щось не так».
+    """
+    print("\n[4б] Майстер Telegram")
+    import notify.telegram as tg
+
+    real_probe = tg._probe
+    answer: tuple = (None, "")
+
+    async def fake_probe(token, method, **payload):
+        return answer
+
+    tg._probe = fake_probe
+    try:
+        answer = ({"username": "RiasTwich_bot"}, "")
+        name, error = asyncio.run(tg.check_token("123:ABC"))
+        check("живий токен → ім'я бота", name == "RiasTwich_bot" and not error)
+
+        answer = (None, "Telegram не знає такого токена. Скопіюй його ще раз.")
+        name, error = asyncio.run(tg.check_token("сміття"))
+        check("кривий токен → людська помилка", not name and "не знає" in error)
+
+        # той самий чат у двох оновленнях — у списку має лишитись один
+        answer = ([
+            {"message": {"chat": {"id": 42, "first_name": "Віктор"}}},
+            {"message": {"chat": {"id": 42, "first_name": "Віктор"}}},
+            {"edited_message": {"chat": {"id": 7, "username": "kolega"}}},
+            {"channel_post": {"chat": {"id": 99}}},
+        ], "")
+        chats, error = asyncio.run(tg.find_chats("123:ABC"))
+        check("чати знайдено без повторів", chats == [(42, "Віктор"), (7, "kolega")],
+              str(chats))
+
+        answer = ([], "")
+        chats, error = asyncio.run(tg.find_chats("123:ABC"))
+        check("боту ще не писали → порожньо", chats == [] and not error)
+    finally:
+        tg._probe = real_probe
+
+    # Справжня перевірка без мережі: порожній токен не має нікуди ходити.
+    name, error = asyncio.run(tg.check_token("   "))
+    check("порожній токен не йде в мережу", not name and "порожній" in error.lower())
 
 
 # ------------------------------------------------------------------ трей
@@ -670,7 +856,9 @@ def main() -> int:
     stall_checks()
     claim_checks()
     deadline_checks()
+    parallel_watch_checks()
     window_checks()
+    telegram_setup_checks()
     tray_checks()
     stale_request_checks()
     log_rotation_checks()
