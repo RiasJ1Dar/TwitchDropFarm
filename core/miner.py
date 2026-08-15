@@ -90,6 +90,8 @@ class Miner:
         self.settings = settings
         self.events = events or EventBus()
         self.control = ControlBus()
+        # показати/сховати вікно — повз чергу, інакше чекало б кінця стадії
+        self.control.set_immediate_handler(self._apply)
 
         self.api = TwitchApi(
             client=protocol.ANDROID,
@@ -133,6 +135,8 @@ class Miner:
         self._full_sweep = False
         self._stall_since: float | None = None
         self._stall_alerted = False
+        # назва кампанії, якій Twitch зараховує наш перегляд замість нашої
+        self._counted_elsewhere = ""
         self._delivery_failures = 0
         self._shown_progress: dict[str, tuple[int, int]] = {}
 
@@ -691,6 +695,21 @@ class Miner:
 
     # ================================================================ перегляд
 
+    def _counts_here(self, campaign: Campaign, channel: Channel) -> bool:
+        """Чи зараховує ця кампанія перегляд цього каналу.
+
+        Ширше за `campaign.farmable(channel)`: турнірна трансляція стоїть у
+        категорії гри, а зараховується в кампанію події («Special Events»), і
+        за категорією та кампанія не проходить. Але канал є в її списку — а це
+        і є дозвіл Twitch. Без цього детектор застою не бачив хвилин, які
+        реально набігали: 15.08 EWC Platinum ріс щохвилини, а тривога била
+        кожні десять.
+        """
+        return campaign.farmable(channel) or (
+            channel in campaign.channels
+            and campaign.farmable(channel, ignore_channel_state=True)
+        )
+
     def _progress_mark(self) -> int | None:
         """Скільки хвилин Twitch підтвердив по всьому, що зараз фармиться.
 
@@ -706,8 +725,9 @@ class Miner:
             return None
         counted = [
             drop.counted_minutes
-            for campaign in self.campaigns if campaign.farmable(channel)
-            for drop in campaign.all_drops if drop.farmable(channel)
+            for campaign in self.campaigns if self._counts_here(campaign, channel)
+            for drop in campaign.all_drops
+            if drop.farmable(channel, ignore_channel_state=True)
         ]
         if not counted:
             return None
@@ -773,14 +793,30 @@ class Miner:
             log.log(TRACE, f"Twitch ще звітує забраний дроп «{drop.name}»")
             return False
         if not drop.farmable(channel):
-            # Twitch рахує зовсім іншу кампанію — майже напевно цим акаунтом
-            # хтось дивиться Twitch вручну
+            if channel in drop.campaign.channels:
+                # Той самий канал роздає кілька кампаній, а сесія дропа в Twitch
+                # одна: після клейму він перемкнувся на сусідню й рахує тепер їй.
+                # Наш дроп тут не росте — і домальовувати йому хвилини наосліп
+                # не можна, бо це вигадка: 15.08 так намалювалось 25 хвилин, яких
+                # на боці Twitch не існувало. Записуємо правду про ту кампанію,
+                # яку він насправді рахує, і кажемо про це прямо.
+                drop.set_counted(session["currentMinutesWatched"])
+                self._counted_elsewhere = drop.campaign.game.name
+                log.log(
+                    TRACE,
+                    f"{channel.name} зараховується в «{drop.campaign.game.name}», "
+                    f"не в те, що ми фармимо"
+                )
+                return True
+            # Twitch рахує кампанію, до якої наш канал не належить — майже
+            # напевно цим акаунтом хтось дивиться Twitch вручну
             here = f"{channel.name} ({channel.game})" if channel.game else channel.name
             log.warning(
                 f"Twitch зараховує «{drop.campaign.game.name}», "
                 f"а ми дивимось {here} — схоже на паралельний перегляд"
             )
             return False
+        self._counted_elsewhere = ""
         drop.set_counted(session["currentMinutesWatched"])
         return True
 
@@ -835,6 +871,7 @@ class Miner:
             self.events.emit(ProgressStalled(
                 minutes_without_progress=max(STALL_LIMIT, int(elapsed // 60)),
                 channel_name=channel.name,
+                counted_elsewhere=self._counted_elsewhere,
             ))
 
     @guard_task(vital=True)

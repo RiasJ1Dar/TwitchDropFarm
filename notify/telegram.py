@@ -91,6 +91,79 @@ BUTTON_COMMANDS: dict[str, str] = {
 MESSAGE_LIMIT = 3900
 
 
+# ================================================================ майстер налаштування
+#
+# Окремо від `TelegramNotifier`: майстер працює з токеном, якого в налаштуваннях
+# ще немає, і має відповісти «цей токен живий?» до того, як щось збережеться.
+# Нотифаєр же піднімає довгу сесію й читає токен із конфігу — для перевірки
+# чужого рядка він не годиться.
+
+async def _probe(token: str, method: str, **payload: Any) -> tuple[Any, str]:
+    """Один короткий виклик Bot API. Повертає (результат, помилка-для-людини)."""
+    if not token.strip():
+        return None, "Токен порожній."
+    url = TELEGRAM_API.format(token=token.strip(), method=method)
+    try:
+        timeout = aiohttp.ClientTimeout(total=15)
+        async with (
+            aiohttp.ClientSession(timeout=timeout) as session,
+            session.post(url, json=payload) as response,
+        ):
+            data = await response.json()
+    except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+        return None, f"Немає зв'язку з Telegram: {type(exc).__name__}"
+    except ValueError:
+        return None, "Telegram відповів не по-людськи — схоже, токен зіпсований."
+    if not data.get("ok"):
+        # 401 при кривому токені — найчастіша помилка, і опис у неї невиразний
+        description = data.get("description", "")
+        if "unauthorized" in description.lower():
+            return None, "Telegram не знає такого токена. Скопіюй його ще раз."
+        return None, f"Telegram відмовив: {description or 'без пояснень'}"
+    return data.get("result"), ""
+
+
+async def check_token(token: str) -> tuple[str, str]:
+    """Чи живий токен. Повертає (@ім'я бота, помилка)."""
+    result, error = await _probe(token, "getMe")
+    if error:
+        return "", error
+    return (result or {}).get("username", ""), ""
+
+
+async def find_chats(token: str) -> tuple[list[tuple[int, str]], str]:
+    """Хто вже писав боту: [(chat_id, підпис)]. Порожньо — ще ніхто."""
+    result, error = await _probe(token, "getUpdates", timeout=0)
+    if error:
+        return [], error
+    found: list[tuple[int, str]] = []
+    seen: set[int] = set()
+    for update in result or []:
+        message = update.get("message") or update.get("edited_message")
+        if not message:
+            continue
+        chat = message["chat"]
+        chat_id = chat["id"]
+        if chat_id in seen:
+            continue
+        seen.add(chat_id)
+        name = chat.get("username") or " ".join(
+            bit for bit in (chat.get("first_name"), chat.get("last_name")) if bit
+        ) or chat.get("title") or str(chat_id)
+        found.append((chat_id, name))
+    return found, ""
+
+
+async def send_greeting(token: str, chat_id: int) -> str:
+    """Вітальне повідомлення в чат. Повертає помилку або порожній рядок."""
+    _, error = await _probe(
+        token, "sendMessage", chat_id=chat_id,
+        text="✅ Бот підключено. Майнер Twitch drops на зв'язку.",
+        reply_markup=control_keyboard(),
+    )
+    return error
+
+
 def _split_message(text: str) -> list[str]:
     """Ріже довгий текст по межах рядків, щоб не ламати HTML-розмітку."""
     if len(text) <= MESSAGE_LIMIT:
@@ -317,10 +390,16 @@ class TelegramNotifier:
                     f"{esc(str(event.verification_uri))}"
                 )
             if isinstance(event, ProgressStalled):
+                why = (
+                    f"Twitch зараховує «{esc(event.counted_elsewhere)}» — інший "
+                    f"дроп цього ж каналу."
+                    if event.counted_elsewhere
+                    else "Найімовірніша причина — цим же акаунтом хтось дивиться "
+                         "Twitch вручну."
+                )
                 return (
                     f"⚠️ <b>Прогрес стоїть</b> {event.minutes_without_progress} хв\n"
-                    f"Канал: {esc(event.channel_name)}\n"
-                    "Найімовірніша причина — цим же акаунтом хтось дивиться Twitch вручну."
+                    f"Канал: {esc(event.channel_name)}\n{why}"
                 )
             if isinstance(event, WatchUncounted):
                 return (

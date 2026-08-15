@@ -144,6 +144,10 @@ class ProgressStalled(Event):
     """
     minutes_without_progress: int
     channel_name: str
+    # Кампанія, якій Twitch зараховує перегляд замість нашої. Порожньо — причина
+    # невідома. Без цього поля повідомлення звинувачувало ручний перегляд навіть
+    # тоді, коли ядро точно знало справжню причину.
+    counted_elsewhere: str = ""
 
 
 @dataclass(frozen=True)
@@ -340,11 +344,18 @@ class Command:
     reply_to: Any = None
 
 
+# Команди, які стану ядра не змінюють, а лише переказуються інтерфейсу.
+# Черга для них шкідлива: головний цикл забирає команди між стадіями, а стадія
+# («Шукаю канали») триває до хвилини — і вікно розгортається аж по її кінці.
+IMMEDIATE_COMMANDS = frozenset({CommandType.SHOW_WINDOW, CommandType.HIDE_WINDOW})
+
+
 class ControlBus:
     """Черга команд ззовні до ядра.
 
     Черга, а не прямі виклики, — щоб команда з Telegram-потоку не змінювала стан майнера
-    посеред ітерації головного циклу.
+    посеред ітерації головного циклу. Виняток — `IMMEDIATE_COMMANDS`: вони стану не
+    чіпають, тож ідуть повз чергу й виконуються в момент надходження.
     """
 
     def __init__(self) -> None:
@@ -353,8 +364,16 @@ class ControlBus:
         # а не опитував чергу за таймером: опитування змушувало його щосекунди
         # переграти поточний стан і засмічувало інтерфейс повтореннями статусу.
         self._signal = asyncio.Event()
+        self._immediate: Callable[[Command], None] | None = None
+
+    def set_immediate_handler(self, handler: Callable[[Command], None]) -> None:
+        """Ставить обробник, що виконує `IMMEDIATE_COMMANDS` не чекаючи циклу."""
+        self._immediate = handler
 
     def send(self, command: Command) -> None:
+        if command.type in IMMEDIATE_COMMANDS and self._immediate is not None:
+            self._immediate(command)
+            return
         self._queue.put_nowait(command)
         self._signal.set()
 
@@ -373,8 +392,11 @@ class ControlBus:
 
     def drain_pending(self) -> list[Command]:
         """Забирає всі накопичені команди за раз — так їх обробляє головний цикл."""
+        # Гасити сигнал треба ДО вигрібання: команда, що надійшла посеред нього,
+        # інакше лишилась би в черзі з погашеним сигналом і чекала наступного
+        # пробудження — а воно настає лише зі зміною стану, тобто хвилинами.
+        self._signal.clear()
         commands: list[Command] = []
         while (command := self.get_nowait()) is not None:
             commands.append(command)
-        self._signal.clear()
         return commands
