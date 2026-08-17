@@ -151,6 +151,19 @@ class ProgressStalled(Event):
 
 
 @dataclass(frozen=True)
+class UpdateAvailable(Event):
+    """Є новіша збірка. `files` — скільки файлів з іншим хешем треба скачати."""
+    version: str
+    files: int
+    bytes_to_fetch: int
+
+
+@dataclass(frozen=True)
+class UpdateFailed(Event):
+    reason: str
+
+
+@dataclass(frozen=True)
 class WatchUncounted(Event):
     """Хвилина не вийшла з машини — ні через spade, ні через запасний GQL.
 
@@ -334,6 +347,7 @@ class CommandType(Enum):
     EXCLUDE_ADD = auto()
     EXCLUDE_REMOVE = auto()
     SHUTDOWN = auto()
+    APPLY_UPDATE = auto()
 
 
 @dataclass(frozen=True)

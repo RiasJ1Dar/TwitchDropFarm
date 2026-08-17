@@ -13,6 +13,13 @@ from pathlib import Path
 
 VERSION = "1.0.3.1"
 
+# Публічне дзеркало оновлень: манифест + блоби, названі SHA-256.
+# Саму версію `1.0.4` тут не ставимо — її займе перший реліз із цим механізмом.
+GITHUB_REPO = "RiasJ1Dar/TwitchDropFarm"
+UPDATE_MANIFEST_URL = (
+    f"https://github.com/{GITHUB_REPO}/releases/latest/download/manifest.json"
+)
+
 # Запущено зі зібраного .exe, а не з вихідників
 FROZEN: bool = hasattr(sys, "_MEIPASS")
 
