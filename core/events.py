@@ -142,6 +142,18 @@ class InventoryUpdated(Event):
 
 
 @dataclass(frozen=True)
+class CampaignAppeared(Event):
+    """З'явилась нова кампанія для гри зі списку спостереження.
+
+    Сенс саме в тому, щоб дізнатися **не перериваючи** поточний фарм: майнер
+    тримається за свій вибір, а людина сама вирішує, чи перемикатись. Тому це
+    подія-новина, а не команда.
+    """
+
+    campaigns: tuple[CampaignSnapshot, ...]
+
+
+@dataclass(frozen=True)
 class ProgressStalled(Event):
     """Кілька хвилин поспіль жоден із рівнів відліку не дав приросту.
 

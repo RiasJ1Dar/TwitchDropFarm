@@ -24,6 +24,7 @@ from core.config import MAX_IMAGE_SIZE, MIN_IMAGE_SIZE, TILE_SIZE, clamp_image_s
 from core.config import VERSION as __version__
 from core.config import FarmMode as PriorityMode
 from core.events import (
+    CampaignAppeared,
     ChannelsUpdated,
     Command,
     CommandType,
@@ -394,6 +395,30 @@ class GUI:
         ttk.Button(entry_row, text="−", width=3,
                    command=self._priority_remove).pack(side="left", padx=(2, 0))
 
+        # Спостереження — окремо від пріоритету: пріоритет міняє, що фармити
+        # зараз, а це лише новини про нові кампанії. Можна хотіти знати про
+        # Rocket League, не перериваючи фарм WoT.
+        watch_box = ttk.LabelFrame(prio_box, text="Спостерігати за іграми",
+                                   padding=8)
+        watch_box.pack(fill="both", expand=True, pady=(10, 0))
+        ttk.Label(watch_box, wraplength=240, foreground=self.palette["accent"],
+                  text="Скажу, коли зʼявиться нова кампанія цієї гри. "
+                       "Фарм не переривається.").pack(anchor="w")
+        self.watch_list = tk.Listbox(watch_box, height=4, bg=self.palette["alt"],
+                                     fg=self.palette["fg"], relief="flat",
+                                     selectbackground=self.palette["accent"])
+        self.watch_list.pack(fill="both", expand=True, pady=(6, 0))
+        for game in settings.watch_games:
+            self.watch_list.insert("end", game)
+        watch_row = ttk.Frame(watch_box)
+        watch_row.pack(fill="x", pady=(6, 0))
+        self.watch_entry = ttk.Entry(watch_row)
+        self.watch_entry.pack(side="left", fill="x", expand=True)
+        ttk.Button(watch_row, text="+", width=3,
+                   command=self._watch_add).pack(side="left", padx=(4, 0))
+        ttk.Button(watch_row, text="−", width=3,
+                   command=self._watch_remove).pack(side="left", padx=(2, 0))
+
         right = ttk.Frame(tab)
         right.pack(fill="both", expand=True, side="left")
 
@@ -505,6 +530,31 @@ class GUI:
             game = self.prio_list.get(selection[0])
             self.prio_list.delete(selection[0])
             self._send(CommandType.PRIORITY_REMOVE, game)
+
+    def _watch_add(self) -> None:
+        game = self.watch_entry.get().strip()
+        if game and game not in self.watch_list.get(0, "end"):
+            self.watch_list.insert("end", game)
+            self.watch_entry.delete(0, "end")
+            self._save_watchlist()
+
+    def _watch_remove(self) -> None:
+        selection = self.watch_list.curselection()
+        if selection:
+            self.watch_list.delete(selection[0])
+            self._save_watchlist()
+
+    def _save_watchlist(self) -> None:
+        """Пишемо напряму, без черги команд: це налаштування, не дія ядра.
+
+        Ядро читає список аж наступного разу, коли перечитує інвентар, — і це
+        правильно: додавши гру, людина хоче знати про майбутні кампанії, а не
+        отримати негайний залп про все, що вже є.
+        """
+        settings = self._twitch.settings
+        settings.watch_games = list(self.watch_list.get(0, "end"))
+        settings.alter()
+        settings.save()
 
     def _mode_changed(self) -> None:
         self._twitch.settings.farm_mode = PriorityMode[self.mode_var.get()]
@@ -701,6 +751,12 @@ class GUI:
             self._render_growing()
         elif isinstance(event, DropClaimed):
             self._append_log(f"Отримано: {event.rewards} ({event.game})", "ok")
+        elif isinstance(event, CampaignAppeared):
+            for item in event.campaigns:
+                self._append_log(
+                    f"Нова кампанія: {item.name.strip()} ({item.game}) — "
+                    f"{item.total_drops} дроп(ів)", "ok",
+                )
         elif isinstance(event, UpdateAvailable):
             if event.files == 0:
                 self._append_log(

@@ -24,6 +24,7 @@ from core.config import (
     MAX_CHANNELS,
     PROGRESS_GRACE,
     RESTART_PAUSE,
+    SEEN_CAMPAIGNS_FILE,
     STALL_LIMIT,
     TRACE,
     WATCH_PERIOD,
@@ -31,6 +32,7 @@ from core.config import (
     Stage,
 )
 from core.events import (
+    CampaignAppeared,
     CampaignFinished,
     CampaignSnapshot,
     ChannelSnapshot,
@@ -62,6 +64,7 @@ from core.history import History
 from core.identity import Identity
 from core.images import ImageCache
 from core.model import Campaign, Drop
+from core.seen import SeenCampaigns
 from core.settings import Settings
 from core.toolbox import (
     Game,
@@ -152,6 +155,9 @@ class Miner:
         # дописали.
         self.history = History(HISTORY_FILE)
         self.images = ImageCache(IMAGE_DIR, self.api)
+        # Які кампанії вже бачили — щоб «нова» означало справді нову, а перший
+        # запуск не сипав повідомленнями про все, що існувало й до нас.
+        self.seen = SeenCampaigns(SEEN_CAMPAIGNS_FILE)
         # Кампанії, про безнадійність яких уже сказали. Не в самій кампанії:
         # `_rebuild` створює об'єкти заново на кожне читання інвентаря, тож
         # позначка всередині них не пережила б жодного оновлення. І не лише в
@@ -320,26 +326,28 @@ class Miner:
             channels=tuple(self._snapshot(c) for c in self.channels.values())
         ))
 
+    def _campaign_snapshot(self, c: Campaign) -> CampaignSnapshot:
+        return CampaignSnapshot(
+            id=c.id, name=c.name, game=c.game.name,
+            active=c.running, upcoming=c.not_started, expired=c.over,
+            ends_at=c.closes_at,
+            claimed_drops=c.taken_count, total_drops=c.total,
+            image=c.image,
+            drops=tuple(
+                DropSnapshot(
+                    id=d.id, name=d.name,
+                    current_minutes=d.minutes,
+                    required_minutes=d.required_minutes,
+                    claimed=d.taken, can_claim=d.ready_to_take,
+                    image=d.rewards[0].image if d.rewards else "",
+                )
+                for d in c.all_drops
+            ),
+        )
+
     def _publish_inventory(self) -> None:
         self.events.emit(InventoryUpdated(campaigns=tuple(
-            CampaignSnapshot(
-                id=c.id, name=c.name, game=c.game.name,
-                active=c.running, upcoming=c.not_started, expired=c.over,
-                ends_at=c.closes_at,
-                claimed_drops=c.taken_count, total_drops=c.total,
-                image=c.image,
-                drops=tuple(
-                    DropSnapshot(
-                        id=d.id, name=d.name,
-                        current_minutes=d.minutes,
-                        required_minutes=d.required_minutes,
-                        claimed=d.taken, can_claim=d.ready_to_take,
-                        image=d.rewards[0].image if d.rewards else "",
-                    )
-                    for d in c.all_drops
-                ),
-            )
-            for c in self.campaigns
+            self._campaign_snapshot(c) for c in self.campaigns
         )))
 
     # ================================================================ вибір
@@ -483,6 +491,7 @@ class Miner:
         self._upkeep_task = self._tasks.launch(self._upkeep())
         self._publish_inventory()
         self._check_deadlines()
+        self._check_watchlist()
         if self.settings.drop_images:
             # У фоні: картинки — прикраса, і чекати на них перед фармом безглуздо
             self._tasks.launch(self._fetch_images())
@@ -532,6 +541,45 @@ class Miner:
                 f"{item.minutes_available} хв часу"
             )
         self.events.emit(DeadlineRisk(campaigns=tuple(risky)))
+
+    def _check_watchlist(self) -> None:
+        """Нова кампанія для гри, за якою людина просила слідкувати.
+
+        Поточний фарм не переривається: майнер тримається свого вибору, а
+        новина потрібна, щоб людина могла вирішити сама. Саме тому це подія, а
+        не перемикання.
+
+        Порівнюємо з набором уже побачених — і **перший запуск мовчить**.
+        Інакше свіжопоставлена програма вистрілила б вісьмома десятками
+        повідомлень про кампанії, що існували й до неї.
+        """
+        wanted = {name.strip().lower() for name in self.settings.watch_games
+                  if name.strip()}
+        current = {c.id for c in self.campaigns}
+        if not wanted:
+            # список порожній — сповіщати нічого, але побачене запам'ятовуємо:
+            # інакше в день, коли людина додасть гру, усе старе стане «новим»
+            self.seen.remember(current)
+            return
+        first_run = not self.seen.known
+        fresh_ids = self.seen.fresh(current)
+        self.seen.remember(current)
+        if first_run or not fresh_ids:
+            return
+        news = [
+            c for c in self.campaigns
+            if c.id in fresh_ids and c.game.name.strip().lower() in wanted
+            and not c.over
+        ]
+        if not news:
+            return
+        for campaign in news:
+            log.warning(
+                f"Нова кампанія: «{campaign.name.strip()}» ({campaign.game.name})"
+            )
+        self.events.emit(CampaignAppeared(
+            campaigns=tuple(self._campaign_snapshot(c) for c in news)
+        ))
 
     async def find_streams(self, game: Game, *, limit: int = 20) -> list[Channel]:
         try:
