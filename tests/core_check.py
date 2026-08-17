@@ -335,6 +335,55 @@ def window_checks() -> None:
     check("команда посеред вигрібання будить цикл", race._signal.is_set())
 
 
+# ------------------------------------------------- «зараз фармимо» у вікні
+
+def growing_checks() -> None:
+    """Рядок «зараз фармимо» мусить показувати всі дропи, що просуваються.
+
+    Спіймано зі скріншота 17.08: на трансляції EWC у вікні стояло «EWC Platinum
+    — Special Events», хоч паралельно ріс дроп Rocket League. Людина: «не
+    зрозуміло яка гра фармиться зараз» — і справді, відповіді там не було.
+    """
+    print("\n[3в] Зараз фармимо")
+
+    class FakeVar:
+        def __init__(self) -> None:
+            self.value = ""
+
+        def set(self, text: str) -> None:
+            self.value = text
+
+    box = types.SimpleNamespace(
+        _growing={}, _watching_name="berbatow",
+        drop_var=FakeVar(), progress={},
+        GROWING_WINDOW=GUI.GROWING_WINDOW, GROWING_LINES=GUI.GROWING_LINES,
+    )
+    now = 1000.0
+    box._growing = {
+        "EWC Platinum": (now, "Special Events", 298, 360),
+        "Inferno Collection #2": (now, "Rocket League", 272, 360),
+    }
+    GUI._render_growing(box, now=now)
+    text = box.drop_var.value
+    check("видно обидві кампанії",
+          "Special Events" in text and "Rocket League" in text, text)
+    check("найближчий до завершення — першим",
+          text.splitlines()[0].startswith("EWC Platinum"), text)
+    check("бар — по головному дропу", box.progress["value"] > 82, str(box.progress))
+
+    # Дроп, який давно не оновлювався, — це вже не «зараз»
+    box._growing["Старий"] = (now - GUI.GROWING_WINDOW - 60, "Гра", 10, 60)
+    GUI._render_growing(box, now=now)
+    check("протухлий рядок зникає", "Старий" not in box.drop_var.value,
+          box.drop_var.value)
+    check("і з пам'яті теж", "Старий" not in box._growing, str(box._growing))
+
+    box._growing.clear()
+    GUI._render_growing(box, now=now)
+    check("нічого не росте — так і кажемо",
+          box.drop_var.value == "Дроп не визначено", box.drop_var.value)
+
+
 # ------------------------------------------------------ чужий перегляд
 
 def parallel_watch_checks() -> None:
@@ -997,6 +1046,7 @@ def main() -> int:
     stall_checks()
     claim_checks()
     deadline_checks()
+    growing_checks()
     parallel_watch_checks()
     window_checks()
     telegram_setup_checks()
