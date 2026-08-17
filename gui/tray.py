@@ -25,6 +25,7 @@ from core.events import (
     MinerStarted,
     MinerStopped,
     ProgressStalled,
+    ProtocolStale,
     WatchingChanged,
     WatchUncounted,
 )
@@ -132,6 +133,13 @@ class Tray:
             first = event.campaigns[0]
             tail = f" і ще {len(event.campaigns) - 1}" if len(event.campaigns) > 1 else ""
             self.notify(f"{first.name} ({first.game}){tail}", "Не встигаємо закрити")
+        elif isinstance(event, ProtocolStale):
+            if not event.storm:
+                self.set_state("error")
+                self.notify(
+                    f"{', '.join(event.operations)} — потрібно оновити protocol.py",
+                    "Twitch змінив запити",
+                )
         elif isinstance(event, CampaignAppeared):
             # своє ім'я: вище `first` — це RiskSnapshot, тут CampaignSnapshot
             fresh = event.campaigns[0]

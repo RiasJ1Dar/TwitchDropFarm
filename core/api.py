@@ -260,9 +260,16 @@ class TwitchApi:
 
     # ------------------------------------------------------------ GraphQL
 
-    async def graphql(self, payload: Any) -> Any:
-        """Запит (або пакет запитів) до GraphQL з розбором помилок Twitch."""
-        retries = GQL_RETRIES
+    async def graphql(self, payload: Any, *, retries: int | None = None) -> Any:
+        """Запит (або пакет запитів) до GraphQL з розбором помилок Twitch.
+
+        `retries` задає кількість повторів на тимчасові помилки. Типово чотири —
+        `PersistedQueryNotFound` приходить сплеском, і однієї спроби замало.
+        Сторожа хешів просить нуль: їй саме й потрібно побачити першу відмову,
+        а не пересидіти її, і сім запитів по хвилині чекання перетворили б
+        добову перевірку на семихвилинну.
+        """
+        retries = GQL_RETRIES if retries is None else retries
         backoff = Backoff(start=1.0, ceiling=60.0)
 
         for delay in backoff:

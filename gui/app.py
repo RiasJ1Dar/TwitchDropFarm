@@ -38,6 +38,7 @@ from core.events import (
     LoginRequired,
     LogLine,
     ProgressStalled,
+    ProtocolStale,
     StatusChanged,
     UpdateAvailable,
     UpdateFailed,
@@ -751,6 +752,17 @@ class GUI:
             self._render_growing()
         elif isinstance(event, DropClaimed):
             self._append_log(f"Отримано: {event.rewards} ({event.game})", "ok")
+        elif isinstance(event, ProtocolStale):
+            if event.storm:
+                self._append_log(
+                    "Twitch не знає жодного нашого запиту — схоже на скид кешу "
+                    "на його боці", "warn",
+                )
+            else:
+                self._append_log(
+                    f"Twitch змінив запити: {', '.join(event.operations)}. "
+                    f"Потрібно оновити protocol.py — саме собою не пройде", "err",
+                )
         elif isinstance(event, CampaignAppeared):
             for item in event.campaigns:
                 self._append_log(
