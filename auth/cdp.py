@@ -23,7 +23,11 @@ logger = logging.getLogger("TwitchDrops")
 class CDPSession:
     """З'єднання з однією вкладкою браузера."""
 
-    def __init__(self, session: aiohttp.ClientSession, ws: aiohttp.ClientWebSocketResponse):
+    # `[Any]`: у aiohttp 3.14 `ClientWebSocketResponse` став генериком за типом
+    # автопінгу, і `ws_connect` віддає `[Literal[True]]`. Нам цей параметр
+    # байдужий — ми лише шлемо й читаємо кадри.
+    def __init__(self, session: aiohttp.ClientSession,
+                 ws: aiohttp.ClientWebSocketResponse[Any]):
         self._session = session
         self._ws = ws
         self._next_id = 0

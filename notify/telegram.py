@@ -289,7 +289,15 @@ class TelegramNotifier:
 
     # ------------------------------------------------------------ транспорт
 
-    async def _api(self, method: str, **payload: Any) -> dict[str, Any] | None:
+    async def _api(self, method: str, **payload: Any) -> Any:
+        """Виклик Bot API. `Any`, а не `dict`, — і це не лінь.
+
+        `result` у Telegram різного типу залежно від методу: `getUpdates` віддає
+        **список** оновлень, `getMe` — обʼєкт, `setMyCommands` — `true`. Тип
+        `dict | None` тут був просто неправдою: перевірка типів через нього
+        показувала «"str" has no attribute "get"» у місцях, де насправді все
+        гаразд, і водночас не помітила б справжньої плутанини.
+        """
         if self._session is None:
             return None
         url = TELEGRAM_API.format(token=self._config["bot_token"], method=method)
@@ -805,12 +813,14 @@ class TelegramNotifier:
         )
         try:
             async with self._session.post(url, data=form) as response:
-                data = await response.json()
+                # не `data`: цим іменем уже названо байти файлу в аргументах, і
+                # перевірка типів справедливо бачила в цьому плутанину
+                answer = await response.json()
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
             logger.warning(f"Telegram sendDocument не вдався: {type(exc).__name__}: {exc}")
             return
-        if not data.get("ok"):
-            logger.warning(f"Telegram sendDocument: {data.get('description')}")
+        if not answer.get("ok"):
+            logger.warning(f"Telegram sendDocument: {answer.get('description')}")
 
     async def _handle_priority(self, chat_id: int, argument: str) -> None:
         bits = argument.split(maxsplit=1)

@@ -46,7 +46,7 @@ HINT_CHAT = (
 class TelegramSetup(tk.Toplevel):
     """Вікно майстра. Живе поверх головного, налаштування чіпає лише наприкінці."""
 
-    def __init__(self, master: tk.Misc, settings: Settings) -> None:
+    def __init__(self, master: tk.Tk, settings: Settings) -> None:
         super().__init__(master)
         self._settings = settings
         self._token = ""

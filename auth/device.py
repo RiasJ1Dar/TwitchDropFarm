@@ -10,18 +10,33 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple, Protocol
 
 from yarl import URL
 
 from core.protocol import OAUTH_DEVICE as AUTH_DEVICE_URL
 from core.protocol import OAUTH_TOKEN as AUTH_TOKEN_URL
-from core.protocol import TwitchClient as ClientInfo
 
 if TYPE_CHECKING:
     from core.miner import Miner as Twitch
 
     JsonType = dict
+
+
+class ClientInfo(Protocol):
+    """Те, що цей модуль просить від опису клієнта — не більше.
+
+    Раніше тут стояв `core.protocol.TwitchClient`, і це була неправда: у нього
+    поля `client_id` / `user_agents`, а звертаємось ми до `CLIENT_ID`,
+    `CLIENT_URL`, `USER_AGENT`. Код працював лише тому, що `Miner._client_type`
+    віддає шим саме з такими іменами — модуль входу писався для першої версії.
+    Протокол фіксує справжній контракт, і тепер перевірка типів стежить за
+    обома сторонами, а не мовчить про розбіжність.
+    """
+
+    CLIENT_ID: str
+    CLIENT_URL: str
+    USER_AGENT: str
 
 logger = logging.getLogger("TwitchDrops")
 
