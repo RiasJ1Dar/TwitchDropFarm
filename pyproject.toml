@@ -42,3 +42,21 @@ ignore = [
 # Часові позначки в журналі інтерфейсу — навмисно локальний час: користувач читає
 # їх очима і звіряє з власним годинником, а не з UTC.
 "gui/app.py" = ["DTZ005"]
+
+# Перевірка типів. Введена 17.08 і одразу знайшла те, чого не бачив ні лінтер, ні
+# тести: `auth/device.py` звертався до `CLIENT_ID`/`CLIENT_URL`/`USER_AGENT`, яких у
+# `TwitchClient` немає — код працював лише завдяки шиму `Miner._client_type`, а
+# анотація про це брехала. Плюс `Image.BICUBIC` замість `Image.Resampling`,
+# плутанина імені `data` у `_send_document` і невірний тип `_api` (Bot API віддає
+# і список, і обʼєкт).
+[tool.mypy]
+python_version = "3.10"
+files = ["core", "notify", "gui", "auth", "main.py"]
+# Стабів немає в pystray, pywin32 і частини Pillow — це не наш борг.
+ignore_missing_imports = true
+# Помірна строгість: перевіряємо те, що вже анотоване, і не вимагаємо анотацій
+# усюди. Тести сюди не входять навмисно — там свідомі підміни на SimpleNamespace,
+# і вимагати від них типів означало б переписати перевірки на догоду інструменту.
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true

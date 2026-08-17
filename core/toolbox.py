@@ -232,7 +232,10 @@ class Slot(Generic[T]):
         self._value = None
 
     def peek(self, default: D = None) -> T | D:  # type: ignore[assignment]
-        return self._value if self._filled.is_set() else default
+        # Прапорець і значення виставляються разом у `put`, тож при піднятому
+        # `_filled` значення точно не None. Типами це не висловити: `_value`
+        # оголошене як `T | None`, бо мусить бути None до першого заповнення.
+        return self._value if self._filled.is_set() else default  # type: ignore[return-value]
 
     async def take(self) -> T:
         await self._filled.wait()

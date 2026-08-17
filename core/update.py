@@ -62,7 +62,7 @@ class FetchItem:
 
 def parse_version(text: str) -> tuple[int, ...]:
     body = text.strip().lstrip("vV")
-    parts = []
+    parts: list[int] = []
     for chunk in body.split("."):
         digits = "".join(ch for ch in chunk if ch.isdigit())
         if digits == "" and parts:
@@ -301,7 +301,7 @@ async def download_item(session: aiohttp.ClientSession, item: FetchItem) -> None
 
 
 def build_manifest(root: Path, version: str, files: Iterable[Path]) -> dict[str, Any]:
-    entries = []
+    entries: list[dict[str, Any]] = []
     for path in files:
         rel = path.relative_to(root)
         entries.append({
@@ -309,7 +309,7 @@ def build_manifest(root: Path, version: str, files: Iterable[Path]) -> dict[str,
             "sha256": file_sha256(path),
             "size": path.stat().st_size,
         })
-    entries.sort(key=lambda row: row["path"])
+    entries.sort(key=lambda row: str(row["path"]))
     return {"version": version, "files": entries}
 
 

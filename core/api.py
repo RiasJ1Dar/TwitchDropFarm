@@ -16,6 +16,7 @@ from time import monotonic
 from typing import Any
 
 import aiohttp
+from yarl import URL
 
 from core import protocol
 from core.config import COOKIE_FILE, GQL_RETRIES, TRACE
@@ -117,12 +118,18 @@ class TwitchApi:
     async def close(self) -> None:
         if self._session is None:
             return
+        # `cookie_jar` оголошено як абстрактний, а `save`/`load` є лише в
+        # `CookieJar` — тому звужуємо тип перевіркою, а не глушінням
         jar = self._session.cookie_jar
+        if not isinstance(jar, aiohttp.CookieJar):
+            await self._session.close()
+            self._session = None
+            return
         try:
             # aiohttp сам не прибирає порожні записи перед збереженням
-            for key, value in list(jar._cookies.items()):  # type: ignore[attr-defined]
+            for key, value in list(jar._cookies.items()):
                 if not value:
-                    del jar._cookies[key]  # type: ignore[attr-defined]
+                    del jar._cookies[key]
             jar.save(COOKIE_FILE)
         except Exception:
             log.log(TRACE, "Не вдалося зберегти cookie")
@@ -137,7 +144,8 @@ class TwitchApi:
     def cookie(self, name: str) -> str | None:
         if self._session is None:
             return None
-        jar = self._session.cookie_jar.filter_cookies(protocol.TWITCH_HOME)
+        # `URL`, а не рядок: рантайм приймає обидва, але контракт саме такий
+        jar = self._session.cookie_jar.filter_cookies(URL(protocol.TWITCH_HOME))
         found = jar.get(name)
         return found.value if found else None
 
@@ -303,7 +311,7 @@ class TwitchApi:
         """Занулює гілку, на яку вказала помилка, щоб читати решту відповіді."""
         if not path or not isinstance(data, dict):
             return
-        node = data
+        node: Any = data
         for step in path[:-1]:
             node = node.get(step) if isinstance(node, dict) else None
             if node is None:
