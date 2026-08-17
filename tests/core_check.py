@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import autostart, export, protocol, update
-from core.api import TwitchApi
+from core.api import ApiError, TwitchApi
 from core.channels import WatchReporter
 from core.config import (
     DEFAULT_IMAGE_SIZE,
@@ -46,6 +46,7 @@ from core.events import (
     MinerStarted,
     MinerStopped,
     ProgressStalled,
+    ProtocolStale,
     RiskSnapshot,
     StatusChanged,
     WatchingChanged,
@@ -335,6 +336,101 @@ def window_checks() -> None:
     race.get_nowait = get_then_send
     race.drain_pending()
     check("команда посеред вигрібання будить цикл", race._signal.is_set())
+
+
+# ------------------------------------------------- сторожа persisted-запитів
+
+def protocol_watch_checks() -> None:
+    """Сторожа хешів Twitch.
+
+    Головне тут — вона **ніколи** не питає мутації: перевірка «а чи живий цей
+    хеш» для `ClaimDropRewards` означала б справді заклеймити дроп. І одна
+    відмова не тривога: `PersistedQueryNotFound` приходить сплеском і минає.
+    """
+    print("\n[3д] Сторожа запитів Twitch")
+    import core.miner as miner_module
+
+    check("мутації позначені",
+          protocol.CLAIM_DROP.mutation and protocol.CLAIM_POINTS.mutation
+          and protocol.DROP_NOTIFICATION_DELETE.mutation)
+    check("у переліку для перевірки лише читання",
+          not any(q.mutation for q in protocol.READ_ONLY_QUERIES))
+
+    class Probe:
+        """Ядро з підробленим graphql: рахує, що саме питали."""
+
+        def __init__(self, dead: set[str], *, heal_after: int | None = None):
+            self.dead = dead
+            self.heal_after = heal_after
+            self.asked: list[str] = []
+            self.events = Bus()
+            self.campaigns = [types.SimpleNamespace(
+                id="c1", available_to_me=True,
+                game=types.SimpleNamespace(name="Гра", slug="hra"),
+            )]
+            self.channels = {}
+            self.identity = types.SimpleNamespace(user_id=1)
+            self.watching = types.SimpleNamespace(
+                peek=lambda _d: types.SimpleNamespace(id=7, login="channel"),
+            )
+            self.settings = types.SimpleNamespace(check_updates=True)
+
+        async def graphql(self, payload, *, retries=None):
+            name = payload["operationName"]
+            self.asked.append(name)
+            if name in self.dead:
+                if (self.heal_after is not None
+                        and self.asked.count(name) > self.heal_after):
+                    return {}
+                raise ApiError("PersistedQueryNotFound")
+            return {}
+
+        # методи ядра, які сторожа використовує як є
+        _probe_variables = Miner._probe_variables
+        probe_protocol = Miner.probe_protocol
+        _query_alive = Miner._query_alive
+        _watch_protocol = Miner._watch_protocol
+
+    real_pause = miner_module.PROTOCOL_PROBE_PAUSE
+    miner_module.PROTOCOL_PROBE_PAUSE = timedelta(seconds=0)
+    try:
+        healthy = Probe(set())
+        dead, skipped = asyncio.run(healthy.probe_protocol())
+        check("живі запити — тиші", dead == [] and skipped == [], f"{dead} {skipped}")
+        check("мутацій не питали жодного разу",
+              not {"DropsPage_ClaimDropRewards", "ClaimCommunityPoints",
+                   "OnsiteNotifications_DeleteNotification"} & set(healthy.asked),
+              str(healthy.asked))
+
+        # відмова, яка минула сама, — не новина
+        blinked = Probe({"Inventory"}, heal_after=1)
+        dead, _ = asyncio.run(blinked.probe_protocol())
+        check("сплеск не вважається зміною хеша", dead == [], str(dead))
+
+        # стійка відмова — тривога з назвою операції
+        broken = Probe({"Inventory"})
+        asyncio.run(broken._watch_protocol())
+        stale = [e for e in broken.events.sent if isinstance(e, ProtocolStale)]
+        check("стійка відмова — тривога",
+              len(stale) == 1 and stale[0].operations == ("Inventory",), str(stale))
+        check("одна операція — це не шторм", not stale[0].storm)
+
+        # усі мертві разом — радше скид кешу в Twitch, ніж наші хеші
+        everything = Probe({q.operation for q in protocol.READ_ONLY_QUERIES})
+        asyncio.run(everything._watch_protocol())
+        stale = [e for e in everything.events.sent if isinstance(e, ProtocolStale)]
+        check("усі мертві — позначено як шторм",
+              len(stale) == 1 and stale[0].storm, str(stale))
+
+        # немає стану — не перевіряємо, але й не тривожимо
+        empty = Probe(set())
+        empty.campaigns = []
+        empty.watching = types.SimpleNamespace(peek=lambda _d: None)
+        dead, skipped = asyncio.run(empty.probe_protocol())
+        check("без стану частину запитів пропущено",
+              dead == [] and len(skipped) == 5, f"{dead} {skipped}")
+    finally:
+        miner_module.PROTOCOL_PROBE_PAUSE = real_pause
 
 
 # ------------------------------------------------- список спостереження
@@ -1139,6 +1235,7 @@ def main() -> int:
     stall_checks()
     claim_checks()
     deadline_checks()
+    protocol_watch_checks()
     watchlist_checks()
     growing_checks()
     parallel_watch_checks()

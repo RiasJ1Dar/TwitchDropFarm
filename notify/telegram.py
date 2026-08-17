@@ -34,6 +34,7 @@ from core.events import (
     MinerStarted,
     MinerStopped,
     ProgressStalled,
+    ProtocolStale,
     StreamOffline,
     UpdateAvailable,
     UpdateFailed,
@@ -462,6 +463,19 @@ class TelegramNotifier:
                 )
             if isinstance(event, UpdateFailed):
                 return f"❌ Оновлення не встало: {esc(event.reason)}"
+            if isinstance(event, ProtocolStale):
+                if event.storm:
+                    return (
+                        "⚠️ <b>Twitch не відповідає на жоден наш запит</b>\n"
+                        "Схоже на скид кешу на його боці. Якщо за годину не "
+                        "пройде — це вже зміна протоколу."
+                    )
+                names = ", ".join(esc(name) for name in event.operations)
+                return (
+                    f"🛠 <b>Twitch змінив запити</b>\n{names}\n"
+                    "Фарм на цьому спиниться: хеші в <code>protocol.py</code> "
+                    "треба оновити, автоматично це не лікується."
+                )
             if isinstance(event, CampaignAppeared):
                 # свої імена: нижче той самий блок для DeadlineRisk працює з
                 # іншим типом знімка, і спільна змінна плутала і читача, і mypy
