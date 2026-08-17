@@ -116,6 +116,11 @@ class DropProgress(Event):
     game: str
     current_minutes: int
     required_minutes: int
+    # Назва кампанії. «Гра» для подій — це категорія Twitch «Special Events», і
+    # вона не відповідає на питання «за що ці дропи»: відповідає кампанія
+    # («EWC 2026»). Людина 17.08, дивлячись на «EWC Platinum — Special
+    # Events»: «і яка це гра?»
+    campaign: str = ""
 
 
 @dataclass(frozen=True)
