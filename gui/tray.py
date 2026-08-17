@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from core.events import (
+    CampaignAppeared,
     CampaignFinished,
     Command,
     CommandType,
@@ -131,6 +132,13 @@ class Tray:
             first = event.campaigns[0]
             tail = f" і ще {len(event.campaigns) - 1}" if len(event.campaigns) > 1 else ""
             self.notify(f"{first.name} ({first.game}){tail}", "Не встигаємо закрити")
+        elif isinstance(event, CampaignAppeared):
+            # своє ім'я: вище `first` — це RiskSnapshot, тут CampaignSnapshot
+            fresh = event.campaigns[0]
+            more = f" і ще {len(event.campaigns) - 1}" if len(event.campaigns) > 1 else ""
+            self.notify(
+                f"{fresh.name.strip()} ({fresh.game}){more}", "Нова кампанія",
+            )
         elif isinstance(event, ProgressStalled):
             why = (
                 f"; зараховується «{event.counted_elsewhere}»"
