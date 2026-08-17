@@ -72,6 +72,8 @@ if __name__ == "__main__":
                         help="зберегти історію та інвентар у CSV/HTML і вийти")
     parser.add_argument("--test-telegram", action="store_true",
                         help="надіслати тестове повідомлення в Telegram і вийти")
+    parser.add_argument("--probe-protocol", action="store_true",
+                        help="перевірити, чи Twitch досі знає наші запити, і вийти")
     # Прихований: сам себе перезапускає через N секунд. Потрібен, щоб перевіряти
     # шлях /reboot без участі людини — саме там ховалась проблема з теками _MEI.
     parser.add_argument("--debug-reboot", type=int, default=0,
@@ -216,7 +218,8 @@ if __name__ == "__main__":
             print(f"[стоп] {event.reason}")
 
     # разові режими завжди консольні — вікно там ні до чого
-    one_shot = args.auth_only or args.dump_inventory or args.test_telegram or args.export
+    one_shot = (args.auth_only or args.dump_inventory or args.test_telegram
+                or args.export or args.probe_protocol)
     use_gui = not (args.console or one_shot)
 
     async def main() -> int:
@@ -295,6 +298,24 @@ if __name__ == "__main__":
                 )
                 for path in paths:
                     print(path)
+                return 0
+
+            if args.probe_protocol:
+                from core import protocol
+                await client.identity.ensure()
+                await client.load_inventory()
+                dead, skipped = await client.probe_protocol()
+                for name in skipped:
+                    print(f"[?] {name}: не перевірено — немає живих даних")
+                if dead:
+                    print("[!] Twitch не знає цих запитів (хеші змінились):")
+                    for name in dead:
+                        print(f"    {name}")
+                    print("    Оновіть sha256 у core/protocol.py")
+                    return 1
+                checked = len(protocol.READ_ONLY_QUERIES) - len(skipped)
+                print(f"[+] Запити на місці: перевірено {checked}, "
+                      f"мутації не чіпались")
                 return 0
 
             if args.dump_inventory:

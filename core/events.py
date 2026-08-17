@@ -181,6 +181,23 @@ class UpdateFailed(Event):
 
 
 @dataclass(frozen=True)
+class ProtocolStale(Event):
+    """Twitch більше не знає наших persisted-запитів — змінились хеші.
+
+    `PersistedQueryNotFound` сам по собі нормальний: це стан кешу, і приходить
+    сплеском. Тут інше — запит не ожив і після повторної спроби, тобто хеш у
+    `protocol.py` треба оновлювати руками. Без цієї події таке проявлялось би
+    як безкінечні самоперезапуски ядра з невиразною причиною.
+
+    `storm=True` — провалились усі перевірені запити разом; це радше глобальний
+    скид кешу на боці Twitch, ніж зміна саме наших хешів.
+    """
+
+    operations: tuple[str, ...]
+    storm: bool = False
+
+
+@dataclass(frozen=True)
 class WatchUncounted(Event):
     """Хвилина не вийшла з машини — ні через spade, ні через запасний GQL.
 

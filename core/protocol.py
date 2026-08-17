@@ -90,6 +90,11 @@ class Query:
     operation: str
     sha256: str
     defaults: JsonDict = field(default_factory=dict)
+    # Чи змінює запит стан на боці Twitch. Потрібно сторожі хешів: перевірити
+    # мутацію «наосліп» означало б справді заклеймити дроп або бонус, тож вона
+    # їх не торкається взагалі й дізнається про зміну хеша лише в момент
+    # справжнього використання.
+    mutation: bool = False
 
     def __call__(self, **variables: Any) -> JsonDict:
         merged = _deep_merge(self.defaults, variables)
@@ -153,6 +158,7 @@ CLAIM_DROP = Query(
     "DropsPage_ClaimDropRewards",
     "a455deea71bdc9015b78eb49f4acfbce8baa7ccbedd28e549bb025bd0f751930",
     {"input": {"dropInstanceID": REQUIRED}},
+    mutation=True,
 )
 CHANNEL_DROPS = Query(
     "DropsHighlightService_AvailableDrops",
@@ -189,11 +195,21 @@ CLAIM_POINTS = Query(
     "ClaimCommunityPoints",
     "46aaeebe02c99afdf4fc97c7c0cba964124bf6b0af229395f1f6d1feed05b3d0",
     {"input": {"claimID": REQUIRED, "channelID": REQUIRED}},
+    mutation=True,
 )
 DROP_NOTIFICATION_DELETE = Query(
     "OnsiteNotifications_DeleteNotification",
     "13d463c831f28ffe17dccf55b3148ed8b3edbbd0ebadd56352f1ff0160616816",
     {"input": {"id": REQUIRED}},
+    mutation=True,
+)
+
+
+# Запити, які сторожа хешів може безпечно питати: лише читання. Перелік ведеться
+# руками, щоб додавання мутації не потрапило туди автоматично.
+READ_ONLY_QUERIES: tuple[Query, ...] = (
+    INVENTORY, CAMPAIGN_LIST, CAMPAIGN_DETAILS, CURRENT_DROP,
+    CHANNEL_DROPS, STREAM_INFO, GAME_DIRECTORY,
 )
 
 

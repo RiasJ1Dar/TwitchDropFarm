@@ -23,6 +23,8 @@ from core.config import (
     IMAGE_DIR,
     MAX_CHANNELS,
     PROGRESS_GRACE,
+    PROTOCOL_PROBE_EVERY,
+    PROTOCOL_PROBE_PAUSE,
     RESTART_PAUSE,
     SEEN_CAMPAIGNS_FILE,
     STALL_LIMIT,
@@ -52,6 +54,7 @@ from core.events import (
     MinerError,
     MinerStopped,
     ProgressStalled,
+    ProtocolStale,
     RiskSnapshot,
     StreamOffline,
     UpdateAvailable,
@@ -148,6 +151,8 @@ class Miner:
         self._update_plan: tuple | None = None
         # людина натиснула «Відкласти» — до наступного запуску не нагадуємо
         self.update_postponed = False
+        # коли востаннє питали Twitch, чи живі наші persisted-запити
+        self._protocol_checked = 0.0
 
         # Ядро історію лише читає. Підписку на запис робить `main`, і не з
         # педантизму: `Miner` створюють і тести, а вони не сміють дописувати
@@ -167,8 +172,8 @@ class Miner:
 
     # ================================================================ послуги
 
-    async def graphql(self, payload: Any) -> Any:
-        return await self.api.graphql(payload)
+    async def graphql(self, payload: Any, *, retries: int | None = None) -> Any:
+        return await self.api.graphql(payload, retries=retries)
 
     async def fetch_text(self, url: str, **kwargs: Any) -> str:
         return await self.api.fetch_text(url, **kwargs)
@@ -430,6 +435,7 @@ class Miner:
 
         self.events.status("Читаю деталі кампаній")
         details = await self._load_details(list(interesting.items()))
+        self._maybe_watch_protocol()
         for campaign_id, extra in details.items():
             merged[campaign_id] = _blend(merged.get(campaign_id, {}), extra)
 
@@ -929,6 +935,127 @@ class Miner:
                 channel_name=channel.name,
                 counted_elsewhere=self._counted_elsewhere,
             ))
+
+    def _maybe_watch_protocol(self) -> None:
+        """Раз на добу — і у фоні: перевірка не має затримувати читання інвентаря."""
+        if not self.settings.check_updates:
+            # та сама галочка, що й для оновлень: людина сказала «не ходи в
+            # мережу без потреби» — сторожа теж додаткові запити
+            return
+        now = monotonic()
+        if self._protocol_checked and now - self._protocol_checked < PROTOCOL_PROBE_EVERY:
+            return
+        self._protocol_checked = now
+        self._tasks.launch(self._watch_protocol())
+
+    def _probe_variables(self) -> dict[str, dict[str, Any]]:
+        """Живі значення для запитів, яким потрібні аргументи.
+
+        Беремо зі власного стану, а не вигадуємо: на фіктивний `dropID` Twitch
+        відповість помилкою даних, і сторожа почне кричати про поломку, якої
+        немає. Чого немає в стані — те просто не перевіряється цього разу.
+        """
+        found: dict[str, dict[str, Any]] = {}
+        login = str(self.identity.user_id)
+        campaign = next((c for c in self.campaigns if c.available_to_me), None)
+        if campaign is not None:
+            found[protocol.CAMPAIGN_DETAILS.operation] = {
+                "channelLogin": login, "dropID": campaign.id,
+            }
+            found[protocol.GAME_DIRECTORY.operation] = {
+                "slug": campaign.game.slug,
+            }
+        channel = self.watching.peek(None) or next(
+            iter(self.channels.values()), None
+        )
+        if channel is not None:
+            found[protocol.CURRENT_DROP.operation] = {"channelID": str(channel.id)}
+            found[protocol.CHANNEL_DROPS.operation] = {"channelID": str(channel.id)}
+            found[protocol.STREAM_INFO.operation] = {"channel": channel.login}
+        return found
+
+    async def probe_protocol(self) -> tuple[list[str], list[str]]:
+        """Чи знає Twitch наші persisted-запити. Повертає (мертві, пропущені).
+
+        Мутації не перевіряються **ніколи**: питання «а чи живий цей хеш» для
+        `ClaimDropRewards` означало б справді заклеймити дроп. Про них
+        дізнаємось у момент справжнього використання, і там обробка вже є.
+
+        Одна відмова нічого не значить — `PersistedQueryNotFound` це стан кешу
+        Twitch, який приходить сплеском. Тому кожен підозрюваний перепитуємо
+        після паузи, і лише друга відмова означає, що хеш змінився.
+        """
+        variables = self._probe_variables()
+        suspects: list[protocol.Query] = []
+        skipped: list[str] = []
+        for query in protocol.READ_ONLY_QUERIES:
+            needed = query.operation in {
+                protocol.CAMPAIGN_DETAILS.operation, protocol.GAME_DIRECTORY.operation,
+                protocol.CURRENT_DROP.operation, protocol.CHANNEL_DROPS.operation,
+                protocol.STREAM_INFO.operation,
+            }
+            if needed and query.operation not in variables:
+                skipped.append(query.operation)
+                continue
+            if not await self._query_alive(query, variables):
+                suspects.append(query)
+        if not suspects:
+            return [], skipped
+
+        log.log(TRACE, f"Перепитую підозрюваних: {[q.operation for q in suspects]}")
+        await asyncio.sleep(PROTOCOL_PROBE_PAUSE.total_seconds())
+        dead = [
+            query.operation for query in suspects
+            if not await self._query_alive(query, variables)
+        ]
+        return dead, skipped
+
+    async def _query_alive(self, query: protocol.Query,
+                           variables: dict[str, dict[str, Any]]) -> bool:
+        """False — Twitch не знає цього хеша просто зараз."""
+        try:
+            await self.graphql(
+                query(**variables.get(query.operation, {})), retries=0,
+            )
+        except ApiError as error:
+            if "PersistedQueryNotFound" in str(error):
+                return False
+            # інші помилки — не про хеші: немає прав, немає даних, мережа
+            log.log(TRACE, f"{query.operation}: {error}")
+        except Aborted:
+            raise
+        except Exception as error:
+            log.log(TRACE, f"{query.operation}: {describe_exception(error)}")
+        return True
+
+    async def _watch_protocol(self) -> None:
+        """Раз на добу питає, чи живі наші запити.
+
+        Хеші persisted-запитів Twitch колись зміняться, і без цієї перевірки це
+        виглядало б як безкінечні самоперезапуски ядра з невиразною причиною —
+        день на розбирання.
+        """
+        if not self.campaigns:
+            return
+        dead, skipped = await self.probe_protocol()
+        if skipped:
+            log.log(TRACE, f"Не перевірено (немає стану): {skipped}")
+        if not dead:
+            log.log(TRACE, "Запити Twitch на місці")
+            return
+        checked = len(protocol.READ_ONLY_QUERIES) - len(skipped)
+        storm = checked > 1 and len(dead) == checked
+        if storm:
+            log.warning(
+                "Twitch не знає жодного з наших запитів — схоже на скид кешу "
+                "на його боці, а не на зміну хешів"
+            )
+        else:
+            log.error(
+                f"Twitch не знає запитів: {', '.join(dead)}. "
+                f"Хеші в protocol.py треба оновити"
+            )
+        self.events.emit(ProtocolStale(operations=tuple(dead), storm=storm))
 
     @guard_task(vital=True)
     async def _upkeep(self) -> None:
