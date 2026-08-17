@@ -840,6 +840,18 @@ def update_checks() -> None:
         caught = True
     check("розмір не зійшовся — теж відмова", caught)
 
+    # Спіймано живою перевіркою 17.08: скрипт підміни писався в UTF-8, а cmd.exe
+    # читає .cmd у консольному кодуванні. Шлях `C:\Users\Гартунг\…` ставав
+    # мусором, xcopy казав «File not found», оновлення не вставало — і саме на
+    # цій машині, бо ім'я користувача кириличне.
+    body = update.write_apply_script().read_bytes()
+    check("у тілі скрипта немає жодного шляху", body.isascii(),
+          body.decode("ascii", errors="replace")[:200])
+    check("шляхи приходять аргументами", b"set STAGE=%~1" in body)
+    check("скрипт чекає виходу процесу", b"PID eq %PID%" in body)
+    check("скрипт веде власний журнал", b"waiting for pid" in body)
+    check("провал копіювання не тихий", b"XCOPY FAILED" in body)
+
 
 # ------------------------------------------------------------------ доставка
 
