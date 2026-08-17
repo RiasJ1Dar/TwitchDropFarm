@@ -65,14 +65,12 @@ jobs:
         shell: pwsh
         run: |
           $version = python -c "from core.config import VERSION; print(VERSION)"
-          $base = if ("${{ github.ref_type }}" -eq "tag") {
-            "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/"
-          } else { "" }
-          if ($base) {
-            python tools/write_manifest.py dist $version $base
-          } else {
-            python tools/write_manifest.py dist $version
-          }
+          # Базова адреса передається завжди — інакше інструмент кладе поруч
+          # блоби за хешем, тобто ще одну копію двадцятимегабайтного .exe. Для
+          # тега це справжній URL релізу; при ручному запуску там опиниться
+          # назва гілки, але той манифест нікуди й не публікується.
+          $base = "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/"
+          python tools/write_manifest.py dist $version $base
           Get-Content dist/manifest.json
 
       - name: Перевірити, що .exe узагалі запускається
