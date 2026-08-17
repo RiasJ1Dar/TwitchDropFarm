@@ -230,6 +230,10 @@ class ChannelSnapshot:
     online: bool
     drops_enabled: bool
     acl_based: bool
+    # Заголовок трансляції. На турнірах категорія Twitch — «Special Events», і
+    # з неї не видно, у що грають; гра названа саме в заголовку. Людина 17.08:
+    # «не зрозуміло яка гра фармиться зараз».
+    stream_title: str = ""
 
 
 @dataclass(frozen=True)

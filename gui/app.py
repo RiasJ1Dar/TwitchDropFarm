@@ -15,6 +15,7 @@ import asyncio
 import logging
 import tkinter as tk
 from datetime import datetime, timezone
+from time import monotonic
 from tkinter import messagebox, ttk
 from typing import TYPE_CHECKING, Any
 
@@ -89,6 +90,11 @@ class GUI:
         self._ws_state: dict[int, tuple[str, int]] = {}
         self._images: dict[tuple[str, int], Any] = {}
         self._last_inventory: InventoryUpdated | None = None
+        # дропи, які просуваються просто зараз: назва -> (коли, гра, є, треба).
+        # Турнірний канал роздає кілька кампаній одночасно, і Twitch зараховує
+        # їх усі — тому показуємо всі, а не той, чий прогрес прийшов останнім.
+        self._growing: dict[str, tuple[float, str, int, int]] = {}
+        self._watching_name = ""
         self.root.protocol("WM_DELETE_WINDOW", self.on_window_x)
         self._set_window_icon()
         self._apply_theme()
@@ -178,8 +184,20 @@ class GUI:
         self.channel_var = tk.StringVar(value="—")
         ttk.Label(box, textvariable=self.channel_var,
                   font=("Segoe UI", 12, "bold")).pack(anchor="w")
+        # заголовок трансляції — єдине місце, де названа гра, коли категорія
+        # каналу «Special Events»
+        self.title_var = tk.StringVar(value="")
+        ttk.Label(box, textvariable=self.title_var,
+                  foreground=p["accent"], wraplength=820,
+                  justify="left").pack(anchor="w")
+        # justify="left" і одна мітка на всі рядки: дропів на каналі буває
+        # кілька, і раніше тут лишався той, чий прогрес прийшов останнім —
+        # тобто випадковий. З турнірної трансляції це виглядало так, ніби
+        # фармиться подія, а гра невідома.
         self.drop_var = tk.StringVar(value="Дроп не визначено")
-        ttk.Label(box, textvariable=self.drop_var).pack(anchor="w", pady=(4, 2))
+        ttk.Label(box, textvariable=self.drop_var, justify="left").pack(
+            anchor="w", pady=(4, 2),
+        )
         self.progress = ttk.Progressbar(box, maximum=100)
         self.progress.pack(fill="x", pady=(4, 0))
 
@@ -537,6 +555,49 @@ class GUI:
                 # з'явились би аж за годину, разом із наступним оновленням
                 self._send(CommandType.RELOAD)
 
+    # Скільки тримаємо дроп у списку «зараз фармимо» без нового прогресу.
+    # Хвилина — крок підтвердження, тож три дає запас на повтори, але не
+    # настільки великий, щоб у списку висіли кампанії з минулого каналу.
+    GROWING_WINDOW = 3 * 60
+    GROWING_LINES = 4
+
+    def _render_growing(self, *, now: float | None = None) -> None:
+        """Рядок «зараз фармимо» — усі дропи, що справді просуваються.
+
+        Раніше тут лишався останній надісланий прогрес, і на трансляції EWC це
+        показувало «EWC Platinum — Special Events», хоч паралельно росла ще й
+        Rocket League. Питання «яка гра фармиться» не мало відповіді у вікні.
+
+        `now` параметром — щоб перевірка могла подати свій годинник, як це вже
+        робить `_check_stall` у ядрі.
+        """
+        now = monotonic() if now is None else now
+        fresh = [
+            (name, game, have, need)
+            for name, (at, game, have, need) in self._growing.items()
+            if now - at <= self.GROWING_WINDOW
+        ]
+        for name, (at, *_rest) in list(self._growing.items()):
+            if now - at > self.GROWING_WINDOW:
+                del self._growing[name]
+        if not fresh:
+            self.drop_var.set("Дроп не визначено")
+            self.progress["value"] = 0
+            return
+        # найближчий до завершення — першим: саме він заклеймиться раніше
+        fresh.sort(key=lambda row: (row[3] - row[2]) if row[3] else 1 << 30)
+        lines = [
+            f"{name} — {game} ({have}/{need} хв)"
+            for name, game, have, need in fresh[:self.GROWING_LINES]
+        ]
+        if len(fresh) > self.GROWING_LINES:
+            lines.append(f"…і ще {len(fresh) - self.GROWING_LINES}")
+        self.drop_var.set("\n".join(lines))
+        head = fresh[0]
+        self.progress["value"] = (
+            min(100, head[2] / head[3] * 100) if head[3] > 0 else 0
+        )
+
     def _reload_now(self) -> None:
         """Ручне «спитати Twitch просто зараз».
 
@@ -608,21 +669,31 @@ class GUI:
         elif isinstance(event, WatchingChanged):
             if event.channel is None:
                 self.channel_var.set("—")
+                self.title_var.set("")
+                self._growing.clear()
                 self.drop_var.set("Дроп не визначено")
                 self.progress["value"] = 0
             else:
+                if event.channel.name != self._watching_name:
+                    # інший канал — інші дропи; старі рядки більше не про це
+                    self._growing.clear()
+                    self._watching_name = event.channel.name
                 self.channel_var.set(
                     f"{event.channel.name}  ·  {event.channel.game or 'без гри'}"
                 )
-        elif isinstance(event, DropProgress):
-            self.drop_var.set(
-                f"{event.drop_name} — {event.game} "
-                f"({event.current_minutes}/{event.required_minutes} хв)"
-            )
-            if event.required_minutes > 0:
-                self.progress["value"] = min(
-                    100, event.current_minutes / event.required_minutes * 100
+                # Категорія «Special Events» не каже, у що грають, — гра названа
+                # в заголовку трансляції. Ріжемо довгий: у турнірних заголовках
+                # після назви йде перелік команд і хештеги.
+                title = " ".join(event.channel.stream_title.split())
+                self.title_var.set(
+                    title if len(title) <= 90 else title[:87] + "…"
                 )
+        elif isinstance(event, DropProgress):
+            self._growing[event.drop_name] = (
+                monotonic(), event.game,
+                event.current_minutes, event.required_minutes,
+            )
+            self._render_growing()
         elif isinstance(event, DropClaimed):
             self._append_log(f"Отримано: {event.rewards} ({event.game})", "ok")
         elif isinstance(event, UpdateAvailable):

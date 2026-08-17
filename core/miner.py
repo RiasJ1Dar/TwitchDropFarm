@@ -311,6 +311,7 @@ class Miner:
             online=channel.live,
             drops_enabled=channel.drops_on,
             acl_based=channel.from_allowlist_flag,
+            stream_title=channel.stream.title if channel.stream else "",
         )
 
     def _publish_channels(self) -> None:
