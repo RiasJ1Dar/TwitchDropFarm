@@ -360,13 +360,17 @@ def growing_checks() -> None:
     )
     now = 1000.0
     box._growing = {
-        "EWC Platinum": (now, "Special Events", 298, 360),
-        "Inferno Collection #2": (now, "Rocket League", 272, 360),
+        "EWC Platinum": (now, "EWC 2026 · Special Events", 298, 360),
+        "Inferno Collection #2": (now, "RL x EWC 2026 · Rocket League", 272, 360),
     }
     GUI._render_growing(box, now=now)
     text = box.drop_var.value
     check("видно обидві кампанії",
           "Special Events" in text and "Rocket League" in text, text)
+    # «Special Events» — категорія, а не відповідь на «за що дроп». Назва
+    # кампанії мусить бути в рядку.
+    check("названо кампанію, а не лише категорію",
+          "EWC 2026" in text and "RL x EWC 2026" in text, text)
     check("найближчий до завершення — першим",
           text.splitlines()[0].startswith("EWC Platinum"), text)
     check("бар — по головному дропу", box.progress["value"] > 82, str(box.progress))

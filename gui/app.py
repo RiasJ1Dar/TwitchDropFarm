@@ -689,8 +689,13 @@ class GUI:
                     title if len(title) <= 90 else title[:87] + "…"
                 )
         elif isinstance(event, DropProgress):
+            # Кампанія попереду гри: «EWC 2026» каже, за що дроп, а «Special
+            # Events» — лише те, що це подієва категорія Twitch.
+            where = event.campaign or event.game
+            if event.campaign and event.campaign != event.game:
+                where = f"{event.campaign} · {event.game}"
             self._growing[event.drop_name] = (
-                monotonic(), event.game,
+                monotonic(), where,
                 event.current_minutes, event.required_minutes,
             )
             self._render_growing()
