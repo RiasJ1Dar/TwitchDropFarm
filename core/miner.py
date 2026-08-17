@@ -235,6 +235,7 @@ class Miner:
             game=drop.campaign.game.name,
             current_minutes=minutes,
             required_minutes=drop.required_minutes,
+            campaign=drop.campaign.name.strip(),
         ))
 
     def drop_claimed(self, drop: Drop) -> None:
