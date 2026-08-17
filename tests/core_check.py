@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from core import autostart, protocol
+from core import autostart, export, protocol
 from core.api import TwitchApi
 from core.channels import WatchReporter
 from core.config import (
@@ -628,6 +628,33 @@ def history_checks() -> None:
         check("і не ламає пам'ять про попередження",
               History(history.path).campaigns_warned() == {"c-1"})
 
+        written = export.write_history(Path(folder), history.entries())
+        csv_text = (Path(folder) / "history.csv").read_text(encoding="utf-8-sig")
+        html_text = (Path(folder) / "history.html").read_text(encoding="utf-8")
+        check("історія лягає в CSV і HTML",
+              len(written) == 2 and "Cyber Knight" in csv_text
+              and "Cyber Knight" in html_text)
+
+        ends = datetime.now(timezone.utc) + timedelta(hours=5)
+        campaign = types.SimpleNamespace(
+            name="Foundation Day",
+            game=types.SimpleNamespace(name="EVE Online"),
+            over=False, not_started=False, available_to_me=True,
+            everything_taken=False, closes_at=ends,
+            all_drops=[types.SimpleNamespace(
+                name="Скін", minutes=12, required_minutes=60, taken=False,
+            )],
+        )
+        export.write_inventory(Path(folder), [campaign])
+        inv = (Path(folder) / "inventory.csv").read_text(encoding="utf-8-sig")
+        check("інвентар містить гру і дроп",
+              "EVE Online" in inv and "Скін" in inv and "12" in inv, inv)
+        check("порожній експорт не падає",
+              export.write_all(Path(folder) / "empty",
+                               entries=[], campaigns=[])
+              and "кампаній немає" in (Path(folder) / "empty" / "inventory.html"
+                                       ).read_text(encoding="utf-8").lower())
+
 
 # ------------------------------------------------------------------ картинки
 
@@ -645,6 +672,8 @@ def image_cache_checks() -> None:
         check("порожня адреса не дає шляху", cache.path_for("") is None)
         check("невідоме розширення не ламає імені",
               cache.path_for("https://a/b").suffix == ".img")
+        check("webp зберігає розширення",
+              cache.path_for("https://a/b.webp").suffix == ".webp")
 
         check("порожнього кешу немає", cache.ready(url) is None)
         first.parent.mkdir(parents=True, exist_ok=True)
