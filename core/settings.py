@@ -32,6 +32,9 @@ class ConfigShape(TypedDict):
     farm_mode: FarmMode
     priority: list[str]
     exclude: list[str]
+    # Ігри, про нові кампанії яких хочемо знати, навіть коли фармиться інше.
+    # Порожньо — не сповіщати: програма мовчазна, поки її не попросили говорити.
+    watch_games: list[str]
     dark_theme: bool
     start_in_tray: bool
     tray_notifications: bool
@@ -65,6 +68,7 @@ DEFAULTS: ConfigShape = {
     "farm_mode": FarmMode.SOONEST_END,
     "priority": [],
     "exclude": [],
+    "watch_games": [],
     "dark_theme": True,
     "start_in_tray": False,
     "tray_notifications": True,

@@ -32,6 +32,7 @@ from core.config import (
     clamp_image_size,
 )
 from core.events import (
+    CampaignAppeared,
     CampaignFinished,
     Command,
     CommandType,
@@ -55,6 +56,7 @@ from core.exceptions import RequestInvalid
 from core.history import History
 from core.images import ImageCache
 from core.miner import Miner
+from core.seen import SeenCampaigns
 from core.settings import Settings
 from core.toolbox import force_utf8_console, rotating_log_handler
 from gui.app import GUI
@@ -333,6 +335,93 @@ def window_checks() -> None:
     race.get_nowait = get_then_send
     race.drain_pending()
     check("команда посеред вигрібання будить цикл", race._signal.is_set())
+
+
+# ------------------------------------------------- список спостереження
+
+def watchlist_checks() -> None:
+    """Нова кампанія для гри зі списку — новина, а не перемикання.
+
+    Найважливіше тут — перший запуск мовчить. Інакше свіжопоставлена програма
+    вистрілила б вісьмома десятками повідомлень про кампанії, що існували й до
+    неї, і людина вимкнула б сповіщення назавжди.
+    """
+    print("\n[3г] Список спостереження")
+
+    folder = Path(tempfile.mkdtemp())
+
+    def campaign(cid, game, name, over=False):
+        return types.SimpleNamespace(
+            id=cid, name=name, game=types.SimpleNamespace(name=game), over=over,
+            running=True, not_started=False, closes_at=datetime.now(timezone.utc),
+            taken_count=0, total=2, image="", all_drops=(),
+        )
+
+    def box(seen_path, games, campaigns):
+        return types.SimpleNamespace(
+            settings=types.SimpleNamespace(watch_games=games),
+            campaigns=campaigns,
+            seen=SeenCampaigns(seen_path),
+            events=Bus(),
+            _campaign_snapshot=lambda c: types.SimpleNamespace(
+                id=c.id, name=c.name, game=c.game.name, total_drops=c.total,
+            ),
+        )
+
+    # перший запуск: набору немає, тож нічого нового
+    path = folder / "seen.json"
+    first = box(path, ["Rocket League"], [campaign("a", "Rocket League", "RL x EWC")])
+    Miner._check_watchlist(first)
+    appeared = [e for e in first.events.sent if isinstance(e, CampaignAppeared)]
+    check("перший запуск мовчить", not appeared, str(appeared))
+    check("але побачене запам'ятав", path.is_file())
+
+    # друга кампанія тієї ж гри — уже новина
+    second = box(path, ["Rocket League"], [
+        campaign("a", "Rocket League", "RL x EWC"),
+        campaign("b", "Rocket League", "RLCS 2026"),
+    ])
+    Miner._check_watchlist(second)
+    appeared = [e for e in second.events.sent if isinstance(e, CampaignAppeared)]
+    check("нова кампанія — подія",
+          len(appeared) == 1 and appeared[0].campaigns[0].name == "RLCS 2026",
+          str(appeared))
+
+    # ще один прохід без змін — тиша, інакше новина повторювалась би щогодини
+    third = box(path, ["Rocket League"], [
+        campaign("a", "Rocket League", "RL x EWC"),
+        campaign("b", "Rocket League", "RLCS 2026"),
+    ])
+    Miner._check_watchlist(third)
+    check("повторно не сповіщає",
+          not [e for e in third.events.sent if isinstance(e, CampaignAppeared)])
+
+    # чужа гра лишається поза увагою
+    fourth = box(path, ["Rocket League"], [
+        campaign("c", "EVE Online", "Foundation Day"),
+    ])
+    Miner._check_watchlist(fourth)
+    check("гра не зі списку — тиша",
+          not [e for e in fourth.events.sent if isinstance(e, CampaignAppeared)])
+
+    # порожній список: сповіщень немає, але побачене все одно запам'ятовуємо —
+    # інакше в день, коли людина додасть гру, усе старе стане «новим»
+    quiet_path = folder / "quiet.json"
+    quiet = box(quiet_path, [], [campaign("d", "EVE Online", "Foundation Day")])
+    Miner._check_watchlist(quiet)
+    check("порожній список — тиша",
+          not [e for e in quiet.events.sent if isinstance(e, CampaignAppeared)])
+    check("і все одно запам'ятовує", SeenCampaigns(quiet_path).fresh({"d"}) == set())
+
+    # завершена кампанія — не новина
+    over_path = folder / "over.json"
+    SeenCampaigns(over_path).remember({"старе"})
+    done = box(over_path, ["Rocket League"], [
+        campaign("e", "Rocket League", "Вчорашня", over=True),
+    ])
+    Miner._check_watchlist(done)
+    check("завершена кампанія не рахується новиною",
+          not [e for e in done.events.sent if isinstance(e, CampaignAppeared)])
 
 
 # ------------------------------------------------- «зараз фармимо» у вікні
@@ -1050,6 +1139,7 @@ def main() -> int:
     stall_checks()
     claim_checks()
     deadline_checks()
+    watchlist_checks()
     growing_checks()
     parallel_watch_checks()
     window_checks()
