@@ -34,6 +34,8 @@ from core.events import (
     MinerStopped,
     ProgressStalled,
     StreamOffline,
+    UpdateAvailable,
+    UpdateFailed,
     WatchingChanged,
     WatchUncounted,
 )
@@ -57,6 +59,7 @@ COMMANDS: tuple[tuple[str, str, str], ...] = (
     ("priority", "керувати пріоритетом ігор", " add|remove &lt;гра&gt;"),
     ("report", "звіт за тиждень", " [днів]"),
     ("export", "зберегти історію та інвентар", ""),
+    ("update", "поставити оновлення (лише змінені файли)", ""),
     ("reload", "перечитати інвентар", ""),
     ("hide", "згорнути вікно в трей", ""),
     ("show", "розгорнути вікно", ""),
@@ -419,6 +422,15 @@ class TelegramNotifier:
                     "живий — перевірте, чи не блокується <code>spade.twitch.tv</code> "
                     "(часто так роблять блокувальники реклами на роутері)."
                 )
+            if isinstance(event, UpdateAvailable) and event.files:
+                return (
+                    f"⬆️ <b>Оновлення {esc(event.version)}</b>\n"
+                    f"Скачати {event.files} змінених файлів "
+                    f"({event.bytes_to_fetch // 1024} КБ), потім перевірка SHA-256.\n"
+                    "Поставити: /update"
+                )
+            if isinstance(event, UpdateFailed):
+                return f"❌ Оновлення не встало: {esc(event.reason)}"
             if isinstance(event, DeadlineRisk):
                 lines = [f"⏳ <b>Не встигаємо закрити</b> ({len(event.campaigns)})"]
                 for item in event.campaigns[:5]:
@@ -690,6 +702,12 @@ class TelegramNotifier:
                             chat_id=chat_id, keyboard=True)
         elif command == "export":
             await self._handle_export(chat_id)
+        elif command == "update":
+            control.send(Command(CommandType.APPLY_UPDATE))
+            await self.send(
+                "⬆️ Ставлю оновлення: лише файли з іншим хешем, потім перевірка.",
+                chat_id=chat_id, keyboard=True,
+            )
         elif command == "hide":
             control.send(Command(CommandType.HIDE_WINDOW))
             await self.send("🙈 Вікно згорнуто в трей.", chat_id=chat_id, keyboard=True)
