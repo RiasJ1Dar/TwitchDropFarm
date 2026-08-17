@@ -33,10 +33,16 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install ruff
+          pip install ruff mypy
 
       - name: Лінтер
         run: ruff check .
+
+      # Ловить інше, ніж ruff: розбіжність між тим, що написано в анотації, і тим,
+      # що насправді приходить. Саме так знайшлось звернення до полів, яких у класі
+      # немає, — код працював випадково, через шим.
+      - name: Типи
+        run: mypy
 
       - name: Логіка ядра (без мережі)
         run: python tests/core_check.py

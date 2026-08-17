@@ -55,8 +55,11 @@ def _pick(size: int, blade: float, thick: float, grip: float,
     half = big * 0.052
     draw.rectangle((centre_x - half, centre_y - radius + big * thick * 0.5,
                     centre_x + half, centre_y + big * grip), fill=INK)
-    return layer.rotate(tilt, resample=Image.BICUBIC, expand=False).resize(
-        (size, size), Image.LANCZOS)
+    # Image.Resampling, а не Image.BICUBIC: старі імена в Pillow — застарілі
+    # псевдоніми, яких уже немає в типах, і колись не стане в самій бібліотеці
+    return layer.rotate(
+        tilt, resample=Image.Resampling.BICUBIC, expand=False,
+    ).resize((size, size), Image.Resampling.LANCZOS)
 
 
 def make_icon(size: int = 64, state: str = "active") -> Image.Image:
