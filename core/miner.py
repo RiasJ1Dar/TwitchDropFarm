@@ -143,6 +143,8 @@ class Miner:
         self._delivery_failures = 0
         self._shown_progress: dict[str, tuple[int, int]] = {}
         self._update_plan: tuple | None = None
+        # людина натиснула «Відкласти» — до наступного запуску не нагадуємо
+        self.update_postponed = False
 
         # Ядро історію лише читає. Підписку на запис робить `main`, і не з
         # педантизму: `Miner` створюють і тести, а вони не сміють дописувати
@@ -1138,6 +1140,11 @@ class Miner:
             return
         manifest, items = found
         self._update_plan = (manifest, items)
+        if self.update_postponed:
+            # людина вже сказала «не зараз» — план тримаємо, щоб /update спрацював
+            # без повторної перевірки, але з нагадуванням не лізем
+            log.log(TRACE, f"Оновлення {manifest.version} відкладено людиною")
+            return
         total = sum(item.spec.size for item in items)
         self.events.emit(UpdateAvailable(
             version=manifest.version,
@@ -1149,7 +1156,7 @@ class Miner:
             return
         self.say(
             f"Є оновлення {manifest.version}: скачати {len(items)} файл(и), "
-            f"{total // 1024} КБ. Підтвердіть у вікні або /update."
+            f"{total // 1024} КБ. Підтвердіть кнопкою в Telegram або /update."
         )
 
     async def _apply_update(self) -> None:
