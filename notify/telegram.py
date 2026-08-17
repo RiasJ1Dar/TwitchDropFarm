@@ -20,6 +20,7 @@ import aiohttp
 
 from core.config import TRACE as CALL
 from core.events import (
+    CampaignAppeared,
     CampaignFinished,
     Command,
     CommandType,
@@ -57,6 +58,7 @@ COMMANDS: tuple[tuple[str, str, str], ...] = (
     ("resume", "продовжити фарм", ""),
     ("switch", "перемкнутись на канал", " &lt;канал&gt;"),
     ("priority", "керувати пріоритетом ігор", " add|remove &lt;гра&gt;"),
+    ("watch", "слідкувати за новими кампаніями гри", " add|remove &lt;гра&gt;"),
     ("report", "звіт за тиждень", " [днів]"),
     ("export", "зберегти історію та інвентар", ""),
     ("update", "поставити оновлення (лише змінені файли)", ""),
@@ -460,6 +462,20 @@ class TelegramNotifier:
                 )
             if isinstance(event, UpdateFailed):
                 return f"❌ Оновлення не встало: {esc(event.reason)}"
+            if isinstance(event, CampaignAppeared):
+                # свої імена: нижче той самий блок для DeadlineRisk працює з
+                # іншим типом знімка, і спільна змінна плутала і читача, і mypy
+                news = [f"🆕 <b>Нова кампанія</b> ({len(event.campaigns)})"]
+                for fresh in event.campaigns[:5]:
+                    ends = fresh.ends_at.astimezone().strftime("%d.%m %H:%M")
+                    news.append(
+                        f"• {esc(fresh.name.strip())} ({esc(fresh.game)}) — "
+                        f"{fresh.total_drops} дроп(ів), до {ends}"
+                    )
+                if len(event.campaigns) > 5:
+                    news.append(f"…і ще {len(event.campaigns) - 5}")
+                news.append("Фарм не переривався. Перемкнутись: /switch &lt;канал&gt;")
+                return "\n".join(news)
             if isinstance(event, DeadlineRisk):
                 lines = [f"⏳ <b>Не встигаємо закрити</b> ({len(event.campaigns)})"]
                 for item in event.campaigns[:5]:
@@ -761,6 +777,8 @@ class TelegramNotifier:
             await self.send(f"Перемикаюсь на {html.escape(argument)}…", chat_id=chat_id)
         elif command == "priority":
             await self._handle_priority(chat_id, argument)
+        elif command == "watch":
+            await self._handle_watch(chat_id, argument)
         else:
             await self.send("Невідома команда.", chat_id=chat_id, keyboard=True)
 
@@ -839,3 +857,41 @@ class TelegramNotifier:
         self._twitch.control.send(Command(kind, game))
         verb = "додано до" if action == "add" else "прибрано з"
         await self.send(f"«{html.escape(game)}» {verb} пріоритету.", chat_id=chat_id)
+
+    async def _handle_watch(self, chat_id: int, argument: str) -> None:
+        """Список спостереження — про нові кампанії яких ігор повідомляти.
+
+        Окремо від пріоритету навмисно: пріоритет міняє, що фармити зараз, а це
+        лише новини. Людина може хотіти знати про нову кампанію Rocket League,
+        не перериваючи фарм WoT.
+        """
+        bits = argument.split(maxsplit=1)
+        if len(bits) < 2 or bits[0].lower() not in ("add", "remove"):
+            current = self._settings.watch_games
+            listing = "\n".join(f"{i + 1}. {html.escape(g)}"
+                                for i, g in enumerate(current)) or "<i>порожньо</i>"
+            await self.send(
+                f"👀 <b>Спостереження за іграми</b>\n{listing}\n\n"
+                "Повідомляю, коли з'явиться нова кампанія цієї гри. Фарм при "
+                "цьому не переривається.\n"
+                "Зміна: <code>/watch add Rocket League</code>",
+                chat_id=chat_id, keyboard=True,
+            )
+            return
+        action, game = bits[0].lower(), bits[1].strip()
+        current = list(self._settings.watch_games)
+        lowered = [item.lower() for item in current]
+        if action == "add":
+            if game.lower() in lowered:
+                await self.send(f"«{html.escape(game)}» уже у списку.",
+                                chat_id=chat_id, keyboard=True)
+                return
+            current.append(game)
+        else:
+            current = [item for item in current if item.lower() != game.lower()]
+        self._settings.watch_games = current
+        self._settings.alter()
+        self._settings.save()
+        verb = "додано до спостереження" if action == "add" else "прибрано зі спостереження"
+        await self.send(f"«{html.escape(game)}» {verb}.",
+                        chat_id=chat_id, keyboard=True)
