@@ -59,10 +59,12 @@ async def main() -> int:
     tg = TelegramNotifier(twitch)
 
     sent: list[tuple[int, str]] = []
+    raw: list[dict] = []
 
     async def fake_api(method: str, **payload):
         if method == "sendMessage":
             sent.append((payload["chat_id"], payload["text"]))
+            raw.append(payload)
             return {"ok": True}
         if method == "getMe":
             return {"username": "DropFarm_bot"}
@@ -87,7 +89,7 @@ async def main() -> int:
         ("перегляд не йде", WatchUncounted(channel_name="ibeast", consecutive=2),
          "spade.twitch.tv"),
         ("оновлення", UpdateAvailable(version="1.0.4", files=2, bytes_to_fetch=4096),
-         "/update"),
+         "перезапуститься"),
         ("звʼязок втрачено", ConnectionLost(reason="TimeoutError", attempt=2), "Втрачено"),
         ("звʼязок відновлено", ConnectionRestored(downtime_seconds=42.0, attempts=3), "42"),
         ("помилка", MinerError(message="щось пішло не так"), "щось пішло не так"),
@@ -215,6 +217,38 @@ async def main() -> int:
     await twitch.events.drain()
     check("5 однакових подій → 1 повідомлення", len(sent) == before + 1,
           f"надіслано {len(sent) - before}")
+
+    # ---------------------------------------------------------------- оновлення
+    # Оновлення саме себе не ставить: воно перезапускає програму, тож рішення
+    # людини потрібне до, а не після.
+    print("\n[8] Оновлення: підтвердити або відкласти")
+    raw.clear()
+    twitch.events.emit(UpdateAvailable(version="1.0.4", files=3, bytes_to_fetch=8192))
+    await twitch.events.drain()
+    markup = raw[-1].get("reply_markup", {}) if raw else {}
+    buttons = [b for row in markup.get("inline_keyboard", []) for b in row]
+    actions = [b["callback_data"] for b in buttons]
+    check("під сповіщенням дві кнопки", actions == ["update", "later"], str(actions))
+    check("текст попереджає про перезапуск",
+          "перезапуститься" in sent[-1][1], sent[-1][1])
+
+    check("до рішення нічого не качається", twitch._update_plan is None)
+
+    await tg._handle_command(OWNER, "/later")
+    check("«Відкласти» запам'ятовується", twitch.update_postponed is True)
+    check("і каже, як поставити потім", "/update" in sent[-1][1], sent[-1][1])
+
+    twitch.update_postponed = False
+    before = len(sent)
+    await tg._handle_command(OWNER, "/update")
+    check("«Оновити» ставить команду ядру",
+          twitch.control.get_nowait() is not None and len(sent) == before + 1)
+
+    # Нема чого качати — кнопок не треба, це просто новина
+    raw.clear()
+    twitch.events.emit(UpdateAvailable(version="1.0.4", files=0, bytes_to_fetch=0))
+    await twitch.events.drain()
+    check("нуль файлів — без кнопок", not raw, str(raw))
 
     print(f"\n{'='*50}\nПройдено: {ok}   Провалено: {fail}")
     return 1 if fail else 0
