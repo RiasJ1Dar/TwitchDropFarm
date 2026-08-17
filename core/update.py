@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import os
+import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +26,9 @@ log = logging.getLogger("TwitchDrops")
 
 STAGE_DIR = STATE_DIR / "update-stage"
 APPLY_BAT = STATE_DIR / "apply-update.cmd"
+# Журнал самої підміни: скрипт працює після виходу програми, і без цього файлу
+# збій у ньому не лишав жодного слова ніде.
+APPLY_LOG = STATE_DIR / "update-apply.log"
 CHUNK = 256 * 1024
 # 2.0.0 вийшла раніше за 1.0.x — порівнюємо лише всередині тієї ж мажорної лінії
 USER_AGENT = f"TwitchDropFarm/{VERSION}"
@@ -168,32 +172,100 @@ def verify_staged(items: Iterable[FetchItem]) -> None:
             raise ValueError(f"розмір не зійшовся для {item.spec.path}")
 
 
-def write_apply_script(*, exe: Path, dest: Path, pid: int) -> Path:
-    """cmd, не PowerShell: ESET ріже мережу в powershell.exe, тут мережа не
-    потрібна, але тримати той самий канал безпечніше."""
+def _oem_encoding() -> str:
+    """Кодування, яким `cmd.exe` читає `.cmd`. Не UTF-8 і не ANSI."""
+    try:
+        import ctypes
+
+        return f"cp{ctypes.windll.kernel32.GetOEMCP()}"
+    except Exception:
+        return "cp866"
+
+
+def write_apply_script() -> Path:
+    """Скрипт підміни. Жодного шляху в тілі — усе приходить аргументами.
+
+    Кирилиця в тілі `.cmd` не виживає: файл пишеться в одному кодуванні, а
+    `cmd.exe` читає його в консольному, і `C:\\Users\\Гартунг\\…` стає мусором —
+    `xcopy` каже «File not found», оновлення не встає. Спіймано 17.08 живою
+    перевіркою: саме на цій машині воно й не встало б, бо ім'я користувача
+    кириличне.
+
+    Короткі 8.3 імена (`ГАРТУН~1`) цього не рятують: `GetShortPathName` віддає
+    коротке ім'я лише для наявного шляху, а 8.3 на томі можуть бути й вимкнені.
+    Тому шляхи передаються **аргументами процесу**: їх несе `CreateProcessW` у
+    Unicode, вони не проходять через кодування файлу взагалі, а тіло скрипта
+    лишається чистим ASCII назавжди.
+
+    Свій журнал скрипт веде тому, що працює вже після виходу програми: при
+    збої в самій підміні жодного слова не лишалось би ні у вікні, ні в
+    `log.txt` — оновлення просто «не сталося», і зрозуміти чому було нічим.
+
+    cmd, не PowerShell: ESET ріже мережу в powershell.exe. Мережа тут не
+    потрібна, але тримати той самий канал безпечніше.
+    """
     APPLY_BAT.parent.mkdir(parents=True, exist_ok=True)
-    stage = STAGE_DIR
     body = (
         "@echo off\r\n"
         "setlocal\r\n"
-        f"set STAGE={stage}\r\n"
-        f"set DEST={dest}\r\n"
-        f"set PID={pid}\r\n"
-        f"set EXE={exe}\r\n"
+        "set STAGE=%~1\r\n"
+        "set DEST=%~2\r\n"
+        "set PID=%~3\r\n"
+        "set EXE=%~4\r\n"
+        "set LOG=%~5\r\n"
+        # Тільки ASCII і тільки дозапис: шапку зі шляхами вже написав Python у
+        # UTF-8, а `echo` кирилицю псує — cp866 не має ні «і», ні «ї», ні «є».
+        # Так файл лишається читабельним цілком.
+        "echo waiting for pid %PID% >> \"%LOG%\"\r\n"
         ":wait\r\n"
-        "timeout /t 1 /nobreak >nul\r\n"
+        # `ping`, а не `timeout`: скрипт запускається відв'язаним, без консолі,
+        # а `timeout` без неї падає з «Input redirection is not supported» —
+        # цикл очікування зависав назавжди. Спіймано живою перевіркою 17.08.
+        "ping -n 2 127.0.0.1 >nul\r\n"
         "tasklist /FI \"PID eq %PID%\" | find \"%PID%\" >nul && goto wait\r\n"
-        "xcopy /E /Y /I \"%STAGE%\\*\" \"%DEST%\\\" >nul\r\n"
+        "echo process gone, copying >> \"%LOG%\"\r\n"
+        "xcopy /E /Y /I \"%STAGE%\\*\" \"%DEST%\\\" >> \"%LOG%\" 2>&1\r\n"
+        "if errorlevel 1 (\r\n"
+        "  echo XCOPY FAILED %errorlevel% - files not replaced >> \"%LOG%\"\r\n"
+        "  exit /b 1\r\n"
+        ")\r\n"
+        "echo copied, removing stage >> \"%LOG%\"\r\n"
         "rmdir /S /Q \"%STAGE%\"\r\n"
+        "echo starting app >> \"%LOG%\"\r\n"
         "start \"\" \"%EXE%\"\r\n"
-        "del \"%~f0\"\r\n"
+        "echo done >> \"%LOG%\"\r\n"
     )
-    APPLY_BAT.write_text(body, encoding="utf-8")
+    APPLY_BAT.write_text(body, encoding="ascii")
     return APPLY_BAT
 
 
-def launch_apply(script: Path) -> None:
-    os.startfile(script)  # noqa: S606 — наш файл, щойно записаний
+def launch_apply(script: Path, *, exe: Path, dest: Path, pid: int) -> None:
+    """Пускає скрипт так, щоб він пережив вихід програми й не блимнув вікном.
+
+    `CREATE_NO_WINDOW`, а не `DETACHED_PROCESS`: відв'язаний процес лишається
+    зовсім без консолі, і тоді в скрипті не працює ні `timeout`, ні конвеєр
+    `tasklist | find` — цикл очікування зависав назавжди, файли не
+    підмінювались, а в журналі лишався єдиний рядок «waiting for pid».
+    Спіймано живою перевіркою 17.08, двома заходами.
+    """
+    from time import strftime
+
+    APPLY_LOG.write_text(
+        f"=== {strftime('%Y-%m-%d %H:%M:%S')} застосування оновлення\n"
+        f"стейдж: {STAGE_DIR}\n"
+        f"тека:   {dest}\n"
+        f"запуск: {exe}\n",
+        encoding="utf-8",
+    )
+    detached = 0x08000000 | 0x00000200  # CREATE_NO_WINDOW | NEW_PROCESS_GROUP
+    subprocess.Popen(
+        [
+            os.environ.get("COMSPEC", "cmd.exe"), "/c", str(script),
+            str(STAGE_DIR), str(dest), str(pid), str(exe), str(APPLY_LOG),
+        ],
+        creationflags=detached,
+        close_fds=True,
+    )
 
 
 async def fetch_manifest(

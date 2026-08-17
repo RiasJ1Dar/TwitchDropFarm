@@ -1180,12 +1180,13 @@ class Miner:
                         await update.download_item(session, item)
                 update.verify_staged(items)
             from core.config import APP_DIR
-            script = update.write_apply_script(
+            script = update.write_apply_script()
+            update.launch_apply(
+                script,
                 exe=APP_DIR / "TwitchDropFarm.exe",
                 dest=APP_DIR,
                 pid=os.getpid(),
             )
-            update.launch_apply(script)
         except Exception as error:
             self.events.emit(UpdateFailed(reason=str(error)))
             self.say(f"Оновлення не встало: {error}")
