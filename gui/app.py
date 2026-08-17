@@ -37,6 +37,8 @@ from core.events import (
     LogLine,
     ProgressStalled,
     StatusChanged,
+    UpdateAvailable,
+    UpdateFailed,
     WatchingChanged,
     WatchUncounted,
     WebsocketStatus,
@@ -413,6 +415,11 @@ class GUI:
             misc, text="Завантажувати зображення дропів",
             variable=self.images_var, command=self._misc_changed,
         ).pack(anchor="w")
+        self.updates_var = tk.BooleanVar(value=settings.check_updates)
+        ttk.Checkbutton(
+            misc, text="Перевіряти оновлення (лише змінені файли, за хешем)",
+            variable=self.updates_var, command=self._misc_changed,
+        ).pack(anchor="w")
         size_row = ttk.Frame(misc)
         size_row.pack(fill="x", pady=(2, 0))
         ttk.Label(size_row, text="Розмір:").pack(side="left")
@@ -518,6 +525,7 @@ class GUI:
         settings.dark_theme = self.dark_var.get()
         images_were = settings.drop_images
         settings.drop_images = self.images_var.get()
+        settings.check_updates = self.updates_var.get()
         settings.save()
         if settings.drop_images != images_were:
             # висота рядка залежить від того, чи є картинки
@@ -615,6 +623,26 @@ class GUI:
                 )
         elif isinstance(event, DropClaimed):
             self._append_log(f"Отримано: {event.rewards} ({event.game})", "ok")
+        elif isinstance(event, UpdateAvailable):
+            if event.files == 0:
+                self._append_log(
+                    f"Оновлення {event.version}: локальні хеші вже збігаються", "ok",
+                )
+                return
+            self._append_log(
+                f"Є оновлення {event.version}: {event.files} файл(и), "
+                f"{event.bytes_to_fetch // 1024} КБ",
+                "ok",
+            )
+            if messagebox.askyesno(
+                WINDOW_TITLE,
+                f"Доступна версія {event.version}.\n"
+                f"Скачати {event.files} змінених файлів "
+                f"({event.bytes_to_fetch // 1024} КБ) і перезапустити?",
+            ):
+                self._send(CommandType.APPLY_UPDATE)
+        elif isinstance(event, UpdateFailed):
+            self._append_log(f"Оновлення не встало: {event.reason}", "err")
         elif isinstance(event, ProgressStalled):
             why = (
                 f"Twitch зараховує «{event.counted_elsewhere}» — інший дроп "

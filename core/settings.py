@@ -38,6 +38,7 @@ class ConfigShape(TypedDict):
     farm_cosmetics: bool
     verify_channel_drops: bool
     drop_images: bool
+    check_updates: bool
     image_size: int
     inventory_view: str
     browser_path: str
@@ -72,6 +73,8 @@ DEFAULTS: ConfigShape = {
     # Типово вимкнено: програма мовчазна за задумом, і ходити в мережу заради
     # картинок має лише тоді, коли про це попросили.
     "drop_images": False,
+    # Раз на запуск питати GitHub, чи є новіші файли (за SHA-256).
+    "check_updates": True,
     # Розмір картинки в списку. Кеш на диску завжди більший, тож це число
     # можна міняти будь-коли — качати наново нічого не доведеться.
     "image_size": DEFAULT_IMAGE_SIZE,

@@ -25,6 +25,7 @@ from core.events import (
     MinerStopped,
     ProgressStalled,
     StreamOffline,
+    UpdateAvailable,
     WatchingChanged,
     WatchUncounted,
 )
@@ -85,6 +86,8 @@ async def main() -> int:
                                             channel_name="ibeast"), "вручну"),
         ("перегляд не йде", WatchUncounted(channel_name="ibeast", consecutive=2),
          "spade.twitch.tv"),
+        ("оновлення", UpdateAvailable(version="1.0.4", files=2, bytes_to_fetch=4096),
+         "/update"),
         ("звʼязок втрачено", ConnectionLost(reason="TimeoutError", attempt=2), "Втрачено"),
         ("звʼязок відновлено", ConnectionRestored(downtime_seconds=42.0, attempts=3), "42"),
         ("помилка", MinerError(message="щось пішло не так"), "щось пішло не так"),
