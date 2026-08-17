@@ -43,6 +43,8 @@ if __name__ == "__main__":
         MinerStopped,
         ProgressStalled,
         StatusChanged,
+        UpdateAvailable,
+        UpdateFailed,
         WatchingChanged,
         WatchUncounted,
     )
@@ -154,6 +156,13 @@ if __name__ == "__main__":
                 f"Перегляд не зараховується на {event.channel_name}: "
                 f"{event.consecutive} хвилини поспіль не дійшли до Twitch"
             )
+        elif isinstance(event, UpdateAvailable):
+            logger.warning(
+                f"Оновлення {event.version}: {event.files} файлів, "
+                f"{event.bytes_to_fetch} байт"
+            )
+        elif isinstance(event, UpdateFailed):
+            logger.error(f"Оновлення не встало: {event.reason}")
         elif isinstance(event, MinerStopped):
             logger.warning(f"Майнер зупинено: {event.reason}")
 

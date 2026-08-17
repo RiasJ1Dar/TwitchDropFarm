@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections import OrderedDict, deque
 from datetime import datetime, timedelta, timezone
 from time import monotonic
@@ -51,6 +52,8 @@ from core.events import (
     ProgressStalled,
     RiskSnapshot,
     StreamOffline,
+    UpdateAvailable,
+    UpdateFailed,
     WatchingChanged,
     WatchUncounted,
     WindowVisibility,
@@ -139,6 +142,7 @@ class Miner:
         self._counted_elsewhere = ""
         self._delivery_failures = 0
         self._shown_progress: dict[str, tuple[int, int]] = {}
+        self._update_plan: tuple | None = None
 
         # Ядро історію лише читає. Підписку на запис робить `main`, і не з
         # педантизму: `Miner` створюють і тести, а вони не сміють дописувати
@@ -941,6 +945,8 @@ class Miner:
             self.reboot_requested = True
             self.say("Перезапускаю програму…")
             self.request_stop()
+        elif kind is CommandType.APPLY_UPDATE:
+            self._tasks.launch(self._apply_update())
         elif kind is CommandType.SWITCH:
             self._switch_by_name(command.argument)
         elif kind in (CommandType.SHOW_WINDOW, CommandType.HIDE_WINDOW):
@@ -1017,6 +1023,9 @@ class Miner:
         if self._watch_task is not None:
             self._watch_task.cancel()
         self._watch_task = self._tasks.launch(self._watch_loop())
+
+        if self.settings.check_updates:
+            self._tasks.launch(self._check_updates())
 
         user = self.identity.user_id
         self.topics.subscribe([
@@ -1109,6 +1118,74 @@ class Miner:
         self._full_sweep = True
         self._restart_watch.set()
         self.go(Stage.DROP_CHANNELS)
+
+    async def _check_updates(self) -> None:
+        from core import update
+
+        try:
+            async with __import__("aiohttp").ClientSession() as session:
+                found = await update.check_for_update(session)
+        except Exception as error:
+            # Поки жоден реліз не несе манифесту, GitHub віддає 404 — це не
+            # поломка, а «оновлень не викладали». Кричати про це щостарту
+            # означає привчити не читати червоні рядки взагалі.
+            if "404" in str(error):
+                log.log(TRACE, "Манифест оновлень ще не опубліковано")
+            else:
+                log.warning(f"Перевірка оновлення не вдалась: {error}")
+            return
+        if found is None:
+            return
+        manifest, items = found
+        self._update_plan = (manifest, items)
+        total = sum(item.spec.size for item in items)
+        self.events.emit(UpdateAvailable(
+            version=manifest.version,
+            files=len(items),
+            bytes_to_fetch=total,
+        ))
+        if not items:
+            self.say(f"Версія {manifest.version} уже на диску (хеші збіглись).")
+            return
+        self.say(
+            f"Є оновлення {manifest.version}: скачати {len(items)} файл(и), "
+            f"{total // 1024} КБ. Підтвердіть у вікні або /update."
+        )
+
+    async def _apply_update(self) -> None:
+        from core import update
+
+        if not update.can_apply():
+            self.events.emit(UpdateFailed(reason="оновлення лише для зібраного .exe"))
+            self.say("Оновлення ставить лише зібраний .exe, не запуск із Python.")
+            return
+        plan = self._update_plan
+        if plan is None:
+            self.say("Немає підготовленого оновлення — спершу перевірка.")
+            return
+        manifest, items = plan
+        try:
+            if items:
+                import aiohttp
+                async with aiohttp.ClientSession() as session:
+                    for item in items:
+                        self.events.status(f"Качаю {item.spec.path}…")
+                        await update.download_item(session, item)
+                update.verify_staged(items)
+            from core.config import APP_DIR
+            script = update.write_apply_script(
+                exe=APP_DIR / "TwitchDropFarm.exe",
+                dest=APP_DIR,
+                pid=os.getpid(),
+            )
+            update.launch_apply(script)
+        except Exception as error:
+            self.events.emit(UpdateFailed(reason=str(error)))
+            self.say(f"Оновлення не встало: {error}")
+            return
+        self.say(f"Оновлення {manifest.version} перевірено хешами, перезапускаюсь.")
+        self.reboot_requested = True
+        self.request_stop()
 
     def _drop_stale_channels(self) -> None:
         self.events.status("Прибирання каналів")

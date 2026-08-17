@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import logging
 import sys
 import tempfile
@@ -19,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from core import autostart, export, protocol
+from core import autostart, export, protocol, update
 from core.api import TwitchApi
 from core.channels import WatchReporter
 from core.config import (
@@ -741,6 +742,105 @@ def autostart_checks() -> None:
         autostart.KEY_PATH = real
 
 
+# ------------------------------------------------------------------ оновлення
+
+def update_checks() -> None:
+    print("\n[13] Оновлення за хешем")
+    check("2.0.0 не новіша за 1.0.3.1",
+          not update.is_newer("2.0.0", "1.0.3.1"))
+    check("1.0.4 новіша за 1.0.3.1",
+          update.is_newer("1.0.4", "1.0.3.1"))
+    check("та сама версія — не оновлення",
+          not update.is_newer("1.0.3.1", "1.0.3.1"))
+    check("v-префікс не заважає",
+          update.is_newer("v1.0.4", "1.0.3.1"))
+
+    folder = tempfile.mkdtemp()
+    root = Path(folder)
+    keep = root / "keep.bin"
+    change = root / "change.bin"
+    keep.write_bytes(b"same")
+    change.write_bytes(b"old")
+    keep_hash = update.file_sha256(keep)
+    new_hash = hashlib.sha256(b"new").hexdigest()
+    payload = {
+        "version": "1.0.4",
+        "files": [
+            {"path": "keep.bin", "sha256": keep_hash, "size": 4},
+            {"path": "change.bin", "sha256": new_hash, "size": 3,
+             "url": "https://example/blob"},
+        ],
+    }
+    manifest = update.read_manifest(payload, source="https://example/manifest.json")
+    items = update.plan_fetch(manifest, root)
+    check("незмінений файл не качається",
+          len(items) == 1 and items[0].spec.path == "change.bin",
+          str([i.spec.path for i in items]))
+    try:
+        update.safe_rel("../evil")
+        bad = False
+    except ValueError:
+        bad = True
+    check("шлях з .. відхиляється", bad)
+
+    staged = Path(folder) / "stage"
+    staged.mkdir()
+    target = staged / "change.bin"
+    target.write_bytes(b"new")
+    item = update.FetchItem(
+        spec=manifest.files[1], dest=target, url="https://example/blob",
+    )
+    update.verify_staged([item])
+    target.write_bytes(b"nope")
+    try:
+        update.verify_staged([item])
+        ok = False
+    except ValueError:
+        ok = True
+    check("підміна після завантаження ловиться хешем", ok)
+
+    # Пакетність — головна вимога людини: качаємо тільки те, що розійшлось.
+    # Файл, якого локально немає, теж треба взяти — інакше нове ніколи не
+    # приїде; а зайвий байт трафіку на незмінених робить механізм безглуздим.
+    missing_hash = hashlib.sha256(b"brand new").hexdigest()
+    payload_mixed = {
+        "version": "1.0.4",
+        "files": [
+            {"path": "keep.bin", "sha256": keep_hash, "size": 4},
+            {"path": "change.bin", "sha256": new_hash, "size": 3,
+             "url": "https://example/blob"},
+            {"path": "sub/added.bin", "sha256": missing_hash, "size": 9,
+             "url": "https://example/added"},
+        ],
+    }
+    mixed = update.read_manifest(payload_mixed, source="https://example/manifest.json")
+    plan = update.plan_fetch(mixed, root)
+    names = sorted(i.spec.path for i in plan)
+    check("з трьох файлів беремо лише два змінені",
+          names == ["change.bin", "sub/added.bin"], str(names))
+    check("рахунок трафіку — тільки по тому, що качаємо",
+          sum(i.spec.size for i in plan) == 12,
+          str(sum(i.spec.size for i in plan)))
+
+    # Повторний прохід після вдалого оновлення: усе зійшлось — качати нічого.
+    change.write_bytes(b"new")
+    check("після оновлення план порожній", update.plan_fetch(manifest, root) == [])
+
+    # Розмір — друга сітка після хешу: зіпсований блоб того ж розміру ловить
+    # хеш, а обрізаний до нуля міг би пройти, якби перевіряли лише наявність.
+    target.write_bytes(b"new")
+    short = update.FetchItem(
+        spec=update.FileSpec(path="change.bin", sha256=new_hash, size=999),
+        dest=target, url="https://example/blob",
+    )
+    try:
+        update.verify_staged([short])
+        caught = False
+    except ValueError:
+        caught = True
+    check("розмір не зійшовся — теж відмова", caught)
+
+
 # ------------------------------------------------------------------ доставка
 
 def delivery_checks() -> None:
@@ -894,6 +994,7 @@ def main() -> int:
     history_checks()
     image_cache_checks()
     autostart_checks()
+    update_checks()
     delivery_checks()
     request_limit_checks()
     print("\n" + "=" * 50)
