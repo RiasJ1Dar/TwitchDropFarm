@@ -30,7 +30,7 @@ log = logging.getLogger("TwitchDrops")
 PARALLEL = 6
 # Більше за це — уже не картинка нагороди, а щось стороннє
 MAX_BYTES = 2 * 1024 * 1024
-ALLOWED_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif")
+ALLOWED_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".webp")
 # Сторона мініатюри на диску — з запасом на найбільший дозволений показ
 THUMBNAIL = THUMBNAIL_SIZE
 
@@ -88,6 +88,15 @@ class ImageCache:
         results = await asyncio.gather(*(one(url) for url in wanted),
                                        return_exceptions=True)
         done = sum(1 for r in results if r is True)
+        if done != len(wanted):
+            for url, result in zip(wanted, results, strict=True):
+                if result is True:
+                    continue
+                if isinstance(result, Exception):
+                    why = f"{type(result).__name__}: {result}"
+                else:
+                    why = "відмова"
+                log.warning(f"Картинка не взялась ({why}): {url}")
         log.log(logging.DEBUG, f"Картинок завантажено: {done} з {len(wanted)}")
         return done
 

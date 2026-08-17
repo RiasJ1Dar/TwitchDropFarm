@@ -66,6 +66,8 @@ if __name__ == "__main__":
                         help="лише авторизуватись і вийти")
     parser.add_argument("--dump-inventory", action="store_true",
                         help="показати кампанії та дропи і вийти")
+    parser.add_argument("--export", action="store_true",
+                        help="зберегти історію та інвентар у CSV/HTML і вийти")
     parser.add_argument("--test-telegram", action="store_true",
                         help="надіслати тестове повідомлення в Telegram і вийти")
     # Прихований: сам себе перезапускає через N секунд. Потрібен, щоб перевіряти
@@ -205,7 +207,7 @@ if __name__ == "__main__":
             print(f"[стоп] {event.reason}")
 
     # разові режими завжди консольні — вікно там ні до чого
-    one_shot = args.auth_only or args.dump_inventory or args.test_telegram
+    one_shot = args.auth_only or args.dump_inventory or args.test_telegram or args.export
     use_gui = not (args.console or one_shot)
 
     async def main() -> int:
@@ -263,6 +265,27 @@ if __name__ == "__main__":
                 await client.identity.ensure()
                 auth_state = client.identity
                 print(f"Авторизовано. user_id={auth_state.user_id}")
+                return 0
+
+            if args.export:
+                from core import export
+                from core.config import STATE_DIR
+                campaigns = []
+                try:
+                    await client.identity.ensure()
+                    await client.load_inventory()
+                    campaigns = client.campaigns
+                except Exception as error:
+                    logger.warning(
+                        f"Інвентар не прочитано, експортую лише історію: {error}"
+                    )
+                paths = export.write_all(
+                    STATE_DIR,
+                    entries=client.history.entries(),
+                    campaigns=campaigns,
+                )
+                for path in paths:
+                    print(path)
                 return 0
 
             if args.dump_inventory:
