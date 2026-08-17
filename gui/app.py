@@ -108,7 +108,9 @@ class GUI:
 
             from gui.icon import make_icon
             self._icon_image = ImageTk.PhotoImage(make_icon(64))
-            self.root.iconphoto(True, self._icon_image)
+            # стаби tkinter не знають про `ImageTk.PhotoImage` від Pillow, хоч
+            # саме його `iconphoto` і приймає
+            self.root.iconphoto(True, self._icon_image)  # type: ignore[arg-type]
         except Exception as error:
             # без значка програма працює так само — падати тут нема за що
             logger.debug(f"Значок вікна не встановлено: {error}")

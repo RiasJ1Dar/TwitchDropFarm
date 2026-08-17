@@ -16,13 +16,13 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from core import protocol
 from core.toolbox import Game, parse_timestamp
 
 if TYPE_CHECKING:
-    from core.channels import Channel
+    from core.channels import Backend, Channel
 
 log = logging.getLogger("TwitchDrops")
 
@@ -30,11 +30,25 @@ log = logging.getLogger("TwitchDrops")
 CLAIM_GRACE = timedelta(hours=24)
 
 _IMAGE_SIZE_SUFFIX = re.compile(r"-\d+x\d+(?=\.(?:jpg|png|gif)$)", re.IGNORECASE)
+# Стандартний портретний boxart Twitch. З запасом на мініатюру 96 px і на
+# плитковий вигляд, але в десятки разів менший за оригінал.
+BOXART_SIZE = "-285x380"
 
 
-def _strip_image_size(url: str) -> str:
-    """Прибирає суфікс розміру з адреси картинки (".../id-285x380.jpg")."""
-    return _IMAGE_SIZE_SUFFIX.sub("", url)
+def _boxart_url(url: str) -> str:
+    """Обкладинка гри потрібного розміру, а не оригінал.
+
+    Раніше суфікс розміру просто зрізався, і качався повний файл — хоч на диску
+    однаково лишається мініатюра 96 px. Здебільшого оригінал дрібний, але 17.08
+    трапився boxart на 2,2 МБ: він переступив `MAX_BYTES`, і в журналі щогодини
+    з'являлось «Картинок завантажено: 0 з 1» без жодного пояснення. CDN
+    масштабує сам, тож просимо розмір із запасом — ті самі пікселі за десятки
+    разів менший трафік.
+
+    Адресу без суфікса лишаємо як є: підставляти розмір туди, де його не було,
+    означало б вигадувати за Twitch.
+    """
+    return _IMAGE_SIZE_SUFFIX.sub(BOXART_SIZE, url)
 
 
 class Owner(Protocol):
@@ -339,7 +353,7 @@ class Campaign:
         self.game = Game(payload["game"])
         self.linked: bool = payload["self"]["isAccountConnected"]
         self.link_url: str = payload.get("accountLinkURL", "")
-        self.image = _strip_image_size(payload["game"].get("boxArtURL", ""))
+        self.image = _boxart_url(payload["game"].get("boxArtURL", ""))
         self.opens_at = parse_timestamp(payload["startAt"])
         self.closes_at = parse_timestamp(payload["endAt"])
         self._alive = payload["status"] != "EXPIRED"
@@ -347,8 +361,12 @@ class Campaign:
 
         allow = payload.get("allow") or {}
         listed = allow.get("channels") or []
+        # Той самий `Miner` реалізує і `Owner` (для моделі), і `Backend` (для
+        # каналів) — це два погляди на один об'єкт, а не два різні об'єкти.
+        # Протоколи описані окремо навмисно: кожен модуль просить лише своє.
+        backend = cast("Backend", owner)
         self.channels: tuple[Channel, ...] = (
-            tuple(Channel.from_allowlist(owner, item) for item in listed)
+            tuple(Channel.from_allowlist(backend, item) for item in listed)
             if listed and allow.get("isEnabled", True) else ()
         )
         self.drops: dict[str, Drop] = {
