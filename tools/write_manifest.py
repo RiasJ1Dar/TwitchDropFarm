@@ -24,10 +24,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from core.toolbox import force_utf8_console  # noqa: E402
 from core.update import build_manifest, file_sha256  # noqa: E402
 
 
 def main() -> int:
+    # Консоль CI не в UTF-8, і кириличний рядок падає з UnicodeEncodeError на
+    # першому ж друку — збірка релізу зривалась саме тут, уже маючи готовий .exe.
+    force_utf8_console()
     if len(sys.argv) < 3:
         print("usage: write_manifest.py <тека-збірки> <версія>", file=sys.stderr)
         return 2
