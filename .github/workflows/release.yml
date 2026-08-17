@@ -1,0 +1,111 @@
+# Збірка релізу на тег. Мета — прибрати з процесу людську пам'ять.
+#
+# 17.08 у першій публікації 1.0.4 лежав .exe, зібраний ДО трьох виправлень
+# скрипта підміни: тобто в релізі був файл, який не вмів оновлюватися. Помітили
+# й перезалили руками, але механізм, де таке неможливе, кращий за уважність.
+#
+# Два входи:
+#   тег v*            — збирає й прикріплює .exe та manifest.json до релізу;
+#   запуск руками     — лише збирає й кладе артефакт в Actions, нічого не
+#                       публікуючи. Так механізм можна перевірити, не займаючи
+#                       версію.
+name: Реліз
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # прикріпити файли до релізу
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          # Та сама лінія, на якій збирається локально. Перевірки ганяються на
+          # 3.10 (мінімум із README) навмисно — там важлива сумісність
+          # синтаксису, а тут важливо, щоб .exe вийшов таким самим.
+          python-version: "3.14"
+          cache: pip
+
+      - name: Залежності
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      # Найдешевший захист від «забув підняти версію»: тег і VERSION у коді
+      # мусять збігатися, інакше програма звітуватиме не тим числом, під яким
+      # лежить, і механізм оновлення порівнюватиме не те з не тим.
+      - name: Тег і версія в коді збігаються
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}" -replace '^v', ''
+          $code = python -c "from core.config import VERSION; print(VERSION)"
+          "тег: $tag; у коді: $code"
+          if ($tag -ne $code) {
+            throw "Тег $tag не збігається з VERSION $code у core/config.py"
+          }
+
+      # Через модуль, а не через pyinstaller.exe: обгортки консольних скриптів
+      # містять вшитий абсолютний шлях до інтерпретатора. На CI це не болить, але
+      # команда мусить бути тією самою, що в інструкції для людини.
+      - name: Збірка
+        run: python -m PyInstaller build.spec --noconfirm
+
+      - name: Манифест оновлення
+        shell: pwsh
+        run: |
+          $version = python -c "from core.config import VERSION; print(VERSION)"
+          $base = if ("${{ github.ref_type }}" -eq "tag") {
+            "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/"
+          } else { "" }
+          if ($base) {
+            python tools/write_manifest.py dist $version $base
+          } else {
+            python tools/write_manifest.py dist $version
+          }
+          Get-Content dist/manifest.json
+
+      - name: Перевірити, що .exe узагалі запускається
+        shell: pwsh
+        run: |
+          # --probe-protocol без токена не пройде авторизацію, тож беремо --help:
+          # він доводить, що бінарник цілий і бутлоадер піднявся. Обрізаний .exe
+          # (перерваний PyInstaller) падає тут із «DLL load failed».
+          $p = Start-Process -FilePath dist/TwitchDropFarm.exe -ArgumentList "--help" `
+               -PassThru -Wait -NoNewWindow
+          if ($p.ExitCode -ne 0) { throw "exe не запустився, код $($p.ExitCode)" }
+          "exe відповів на --help"
+
+      - name: Артефакт (запуск руками)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: TwitchDropFarm-${{ github.sha }}
+          path: |
+            dist/TwitchDropFarm.exe
+            dist/manifest.json
+
+      - name: Прикріпити до релізу (тег)
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Реліз може ще не існувати — тоді створюємо чернетку, щоб опис
+          # дописала людина. Публікація одним рухом тут навмисно не робиться:
+          # опис у нас багатомовний і пишеться руками.
+          $tag = "${{ github.ref_name }}"
+          if (-not (gh release view $tag 2>$null)) {
+            gh release create $tag --draft --title $tag --notes "Опис допишеться."
+          }
+          gh release upload $tag dist/TwitchDropFarm.exe dist/manifest.json --clobber
