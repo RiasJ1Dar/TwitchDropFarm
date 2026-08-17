@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -153,6 +155,18 @@ async def main() -> int:
     await tg._handle_command(OWNER, "/switch someone")
     cmds = twitch.control.drain_pending()
     check("аргумент каналу", cmds and cmds[0].argument == "someone", str(cmds))
+
+    export_dir = Path(tempfile.mkdtemp())
+    tg._export_dir = lambda: export_dir  # type: ignore[method-assign]
+    before = len(sent)
+    await tg._handle_command(OWNER, "/export")
+    got = sent[before:]
+    check("/export відповідає",
+          got and "Експорт" in got[0][1], f"надіслано={got}")
+    names = set(os.listdir(export_dir))
+    check("/export пише файли не в теку користувача",
+          "history.csv" in names and "inventory.html" in names,
+          str(sorted(names)))
 
     # команда в груповому вигляді /cmd@bot
     before = len(sent)

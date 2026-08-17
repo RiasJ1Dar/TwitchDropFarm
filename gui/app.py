@@ -234,6 +234,9 @@ class GUI:
                             command=self._view_changed).pack(side="left", padx=(8, 0))
         self.tiles_note = ttk.Label(bar, text="")
         self.tiles_note.pack(side="right")
+        ttk.Button(bar, text="Експорт…", command=self._export_tables).pack(
+            side="right", padx=(0, 8),
+        )
 
         self.inv_body = ttk.Frame(tab)
         self.inv_body.pack(fill="both", expand=True)
@@ -309,6 +312,24 @@ class GUI:
     def _inventory_view(self) -> str:
         view = self._twitch.settings.inventory_view
         return view if view in ("list", "tiles") else "list"
+
+    def _export_tables(self) -> None:
+        """Пише CSV і HTML в теку стану — туди ж, де історія і журнал."""
+        from core import export
+        from core.config import STATE_DIR
+
+        try:
+            paths = export.write_all(
+                STATE_DIR,
+                entries=self._twitch.history.entries(),
+                campaigns=self._twitch.campaigns,
+            )
+        except OSError as error:
+            messagebox.showerror(WINDOW_TITLE, f"Не вдалося зберегти:\n{error}")
+            return
+        listing = "\n".join(str(path) for path in paths)
+        messagebox.showinfo(WINDOW_TITLE, f"Збережено:\n{listing}")
+        self._append_log(f"Експорт: {listing}", "ok")
 
     def _view_changed(self) -> None:
         self._twitch.settings.inventory_view = self.view_var.get()

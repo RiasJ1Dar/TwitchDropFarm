@@ -12,6 +12,7 @@ import asyncio
 import html
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from time import time
 from typing import TYPE_CHECKING, Any
 
@@ -55,6 +56,7 @@ COMMANDS: tuple[tuple[str, str, str], ...] = (
     ("switch", "перемкнутись на канал", " &lt;канал&gt;"),
     ("priority", "керувати пріоритетом ігор", " add|remove &lt;гра&gt;"),
     ("report", "звіт за тиждень", " [днів]"),
+    ("export", "зберегти історію та інвентар", ""),
     ("reload", "перечитати інвентар", ""),
     ("hide", "згорнути вікно в трей", ""),
     ("show", "розгорнути вікно", ""),
@@ -76,7 +78,7 @@ CONTROL_BUTTONS: tuple[tuple[tuple[str, str], ...], ...] = (
     (("⏸ Пауза", "pause"), ("▶️ Продовжити", "resume")),
     (("🙈 Сховати вікно", "hide"), ("🖥 Показати вікно", "show")),
     (("🔄 Оновити", "reload"), ("♻️ Перезапуск", "reboot")),
-    (("❓ Довідка", "help"),),
+    (("💾 Експорт", "export"), ("❓ Довідка", "help")),
 )
 
 # Напис кнопки -> команда. Клавіатура під полем вводу шле саме текст напису,
@@ -196,6 +198,14 @@ def control_keyboard() -> dict:
         "is_persistent": True,     # не ховати після натискання
         "input_field_placeholder": "Або команда: /switch канал",
     }
+
+
+def _file_bytes(path: Path) -> bytes:
+    """Читання файлу винесено з async, щоб не блокувати цикл і не дратувати лінтер."""
+    try:
+        return path.read_bytes()
+    except OSError:
+        return b""
 
 
 class TelegramNotifier:
@@ -678,6 +688,8 @@ class TelegramNotifier:
             body = html.escape(self._twitch.history.summary(days))
             await self.send(f"📈 <b>Звіт</b>\n<pre>{body}</pre>",
                             chat_id=chat_id, keyboard=True)
+        elif command == "export":
+            await self._handle_export(chat_id)
         elif command == "hide":
             control.send(Command(CommandType.HIDE_WINDOW))
             await self.send("🙈 Вікно згорнуто в трей.", chat_id=chat_id, keyboard=True)
@@ -694,6 +706,62 @@ class TelegramNotifier:
             await self._handle_priority(chat_id, argument)
         else:
             await self.send("Невідома команда.", chat_id=chat_id, keyboard=True)
+
+    def _export_dir(self) -> Path:
+        from core.config import STATE_DIR
+        return STATE_DIR
+
+    async def _handle_export(self, chat_id: int) -> None:
+        from core import export
+
+        try:
+            paths = export.write_all(
+                self._export_dir(),
+                entries=self._twitch.history.entries(),
+                campaigns=self._twitch.campaigns,
+            )
+        except OSError as error:
+            await self.send(
+                f"Не вдалося зберегти експорт: {html.escape(str(error))}",
+                chat_id=chat_id, keyboard=True,
+            )
+            return
+        listing = "\n".join(str(path) for path in paths)
+        await self.send(
+            f"💾 <b>Експорт</b>\n<code>{html.escape(listing)}</code>",
+            chat_id=chat_id, keyboard=True,
+        )
+        for path in paths:
+            if path.suffix.lower() != ".csv":
+                continue
+            payload = _file_bytes(path)
+            if payload:
+                await self._send_document(
+                    payload, filename=path.name, chat_id=chat_id,
+                )
+
+    async def _send_document(self, data: bytes, *, filename: str, chat_id: int) -> None:
+        """Кладе файл у чат. Немає сесії (тести) — мовчки пропускаємо."""
+        if self._session is None or not data:
+            return
+        url = TELEGRAM_API.format(
+            token=self._config["bot_token"], method="sendDocument",
+        )
+        form = aiohttp.FormData()
+        form.add_field("chat_id", str(chat_id))
+        form.add_field(
+            "document", data,
+            filename=filename,
+            content_type="text/csv",
+        )
+        try:
+            async with self._session.post(url, data=form) as response:
+                data = await response.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
+            logger.warning(f"Telegram sendDocument не вдався: {type(exc).__name__}: {exc}")
+            return
+        if not data.get("ok"):
+            logger.warning(f"Telegram sendDocument: {data.get('description')}")
 
     async def _handle_priority(self, chat_id: int, argument: str) -> None:
         bits = argument.split(maxsplit=1)
