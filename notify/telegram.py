@@ -95,6 +95,16 @@ BUTTON_COMMANDS: dict[str, str] = {
 # Довгий інвентар через це просто не доходив би, і мовчки.
 MESSAGE_LIMIT = 3900
 
+# Кнопки під повідомленням про оновлення. Саме інлайн, а не панель: питання
+# разове й прив'язане до конкретної версії, а рішення про перезапуск програми
+# людина має ухвалити свідомо — і мати право сказати «не зараз».
+UPDATE_BUTTONS: dict = {
+    "inline_keyboard": [[
+        {"text": "⬆️ Оновити й перезапустити", "callback_data": "update"},
+        {"text": "⏳ Відкласти", "callback_data": "later"},
+    ]],
+}
+
 
 # ================================================================ майстер налаштування
 #
@@ -298,7 +308,8 @@ class TelegramNotifier:
         return data.get("result")
 
     async def send(
-        self, text: str, *, chat_id: int | None = None, keyboard: bool = False
+        self, text: str, *, chat_id: int | None = None, keyboard: bool = False,
+        markup: dict | None = None,
     ) -> None:
         targets = [chat_id] if chat_id is not None else self._chat_ids
         payload: dict[str, Any] = {
@@ -306,7 +317,11 @@ class TelegramNotifier:
             "parse_mode": "HTML",
             "disable_web_page_preview": True,
         }
-        if keyboard:
+        # `markup` — разова інлайн-клавіатура під конкретним повідомленням
+        # (питання «оновити чи відкласти»), `keyboard` — постійна панель.
+        if markup is not None:
+            payload["reply_markup"] = markup
+        elif keyboard:
             payload["reply_markup"] = control_keyboard()
         for target in targets:
             # Telegram обриває повідомлення понад 4096 символів помилкою, а не
@@ -377,6 +392,10 @@ class TelegramNotifier:
         text = self._format(event)
         if text is None:
             return None
+        # Оновлення ставиться не саме собою: під повідомленням дві кнопки, і
+        # поки людина не натисне, нічого не качається й не перезапускається.
+        if isinstance(event, UpdateAvailable) and event.files:
+            return self.send(text, markup=UPDATE_BUTTONS)
         # Разом із повідомленням про старт віддаємо панель: інакше вона зʼявилась би
         # лише після /start, і користувач бачив би бота без кнопок.
         return self.send(text, keyboard=isinstance(event, MinerStarted))
@@ -426,8 +445,10 @@ class TelegramNotifier:
                 return (
                     f"⬆️ <b>Оновлення {esc(event.version)}</b>\n"
                     f"Скачати {event.files} змінених файлів "
-                    f"({event.bytes_to_fetch // 1024} КБ), потім перевірка SHA-256.\n"
-                    "Поставити: /update"
+                    f"({event.bytes_to_fetch // 1024} КБ), решта лишиться як є.\n"
+                    "Кожен файл звіряється SHA-256, після встановлення програма "
+                    "перезапуститься сама.\n"
+                    "Фарм на цей час зупиниться на хвилину-дві."
                 )
             if isinstance(event, UpdateFailed):
                 return f"❌ Оновлення не встало: {esc(event.reason)}"
@@ -705,7 +726,17 @@ class TelegramNotifier:
         elif command == "update":
             control.send(Command(CommandType.APPLY_UPDATE))
             await self.send(
-                "⬆️ Ставлю оновлення: лише файли з іншим хешем, потім перевірка.",
+                "⬆️ Качаю змінені файли, звіряю хеші й перезапускаюсь. "
+                "Про готовність повідомлю окремо.",
+                chat_id=chat_id, keyboard=True,
+            )
+        elif command == "later":
+            # Відкладаємо до наступного запуску: перевірка робиться раз на
+            # старті, тож окремий таймер тут був би зайвою механікою.
+            self._twitch.update_postponed = True
+            await self.send(
+                "⏳ Гаразд, не чіпаю. Нагадаю після наступного запуску — "
+                "або постав будь-коли: /update",
                 chat_id=chat_id, keyboard=True,
             )
         elif command == "hide":
