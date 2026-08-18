@@ -216,30 +216,55 @@ def write_apply_script() -> Path:
         # Тільки ASCII і тільки дозапис: шапку зі шляхами вже написав Python у
         # UTF-8, а `echo` кирилицю псує — cp866 не має ні «і», ні «ї», ні «є».
         # Так файл лишається читабельним цілком.
-        "echo waiting for pid %PID% >> \"%LOG%\"\r\n"
+        "set NAME=%~6\r\n"
+        "set ARGS=%~7\r\n"
+        "echo waiting for pid %PID% and image %NAME% >> \"%LOG%\"\r\n"
         ":wait\r\n"
         # `ping`, а не `timeout`: скрипт запускається відв'язаним, без консолі,
         # а `timeout` без неї падає з «Input redirection is not supported» —
         # цикл очікування зависав назавжди. Спіймано живою перевіркою 17.08.
         "ping -n 2 127.0.0.1 >nul\r\n"
         "tasklist /FI \"PID eq %PID%\" | find \"%PID%\" >nul && goto wait\r\n"
-        "echo process gone, copying >> \"%LOG%\"\r\n"
+        # Чекати на один PID замало. PyInstaller onefile тримає ДВА процеси:
+        # батьківський розпаковує себе у %TEMP% і запускає дочірній, а той і
+        # тримає файл. 18.08 підміна через це впала зі «Sharing violation», і
+        # оновлення мовчки не встало. Тому чекаємо, поки зникне саме ім'я.
+        ":wait_image\r\n"
+        "ping -n 2 127.0.0.1 >nul\r\n"
+        "tasklist /FI \"IMAGENAME eq %NAME%\" | find /I \"%NAME%\" >nul "
+        "&& goto wait_image\r\n"
+        "echo all processes gone, copying >> \"%LOG%\"\r\n"
+        # Кілька спроб: Windows звільняє файл не миттєво після виходу процесу —
+        # антивірус чи індексатор можуть потримати його ще секунду-дві.
+        "set TRY=0\r\n"
+        ":copy\r\n"
+        "set /a TRY+=1\r\n"
         "xcopy /E /Y /I \"%STAGE%\\*\" \"%DEST%\\\" >> \"%LOG%\" 2>&1\r\n"
-        "if errorlevel 1 (\r\n"
-        "  echo XCOPY FAILED %errorlevel% - files not replaced >> \"%LOG%\"\r\n"
+        "if not errorlevel 1 goto copied\r\n"
+        "echo copy attempt %TRY% failed >> \"%LOG%\"\r\n"
+        "if %TRY% GEQ 5 (\r\n"
+        "  echo XCOPY FAILED after %TRY% tries - files not replaced >> \"%LOG%\"\r\n"
+        "  echo starting old build back >> \"%LOG%\"\r\n"
+        "  start \"\" \"%EXE%\" %ARGS%\r\n"
         "  exit /b 1\r\n"
         ")\r\n"
+        "ping -n 3 127.0.0.1 >nul\r\n"
+        "goto copy\r\n"
+        ":copied\r\n"
         "echo copied, removing stage >> \"%LOG%\"\r\n"
         "rmdir /S /Q \"%STAGE%\"\r\n"
         "echo starting app >> \"%LOG%\"\r\n"
-        "start \"\" \"%EXE%\"\r\n"
+        # З тими самими аргументами: інакше після оновлення програма підіймалась
+        # без `--log`, і журнал мовчки переставав вестися.
+        "start \"\" \"%EXE%\" %ARGS%\r\n"
         "echo done >> \"%LOG%\"\r\n"
     )
     APPLY_BAT.write_text(body, encoding="ascii")
     return APPLY_BAT
 
 
-def launch_apply(script: Path, *, exe: Path, dest: Path, pid: int) -> None:
+def launch_apply(script: Path, *, exe: Path, dest: Path, pid: int,
+                 args: str = "") -> None:
     """Пускає скрипт так, щоб він пережив вихід програми й не блимнув вікном.
 
     `CREATE_NO_WINDOW`, а не `DETACHED_PROCESS`: відв'язаний процес лишається
@@ -254,7 +279,7 @@ def launch_apply(script: Path, *, exe: Path, dest: Path, pid: int) -> None:
         f"=== {strftime('%Y-%m-%d %H:%M:%S')} застосування оновлення\n"
         f"стейдж: {STAGE_DIR}\n"
         f"тека:   {dest}\n"
-        f"запуск: {exe}\n",
+        f"запуск: {exe} {args}\n",
         encoding="utf-8",
     )
     detached = 0x08000000 | 0x00000200  # CREATE_NO_WINDOW | NEW_PROCESS_GROUP
@@ -262,10 +287,40 @@ def launch_apply(script: Path, *, exe: Path, dest: Path, pid: int) -> None:
         [
             os.environ.get("COMSPEC", "cmd.exe"), "/c", str(script),
             str(STAGE_DIR), str(dest), str(pid), str(exe), str(APPLY_LOG),
+            exe.name, args,
         ],
         creationflags=detached,
         close_fds=True,
     )
+
+
+def apply_outcome() -> tuple[str, str]:
+    """Чим скінчилась минула підміна: ("ok"|"failed"|"none", подробиці).
+
+    Скрипт працює вже після виходу програми, тож про його провал ніхто не
+    дізнавався: 18.08 підміна впала зі «Sharing violation», оновлення мовчки не
+    встало, і людина побачила лише те, що версія не змінилась. Тепер новий
+    запуск читає журнал і каже вголос.
+    """
+    try:
+        body = APPLY_LOG.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return "none", ""
+    if "XCOPY FAILED" in body:
+        reason = "не вдалося замінити файли"
+        if "Sharing violation" in body:
+            reason = "файл був зайнятий іншим процесом"
+        elif "Access is denied" in body:
+            reason = "немає прав на теку програми"
+        return "failed", reason
+    if "done" in body:
+        return "ok", ""
+    return "none", ""
+
+
+def forget_outcome() -> None:
+    """Прибирає журнал підміни, щоб та сама новина не повторювалась щостарту."""
+    APPLY_LOG.unlink(missing_ok=True)
 
 
 async def fetch_manifest(

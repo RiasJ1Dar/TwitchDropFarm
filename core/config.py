@@ -11,12 +11,13 @@ from datetime import timedelta
 from enum import Enum, auto
 from pathlib import Path
 
-VERSION = "1.0.4.1"
+VERSION = "1.0.4.2"
 
 # Публічне дзеркало оновлень: манифест + блоби, названі SHA-256.
-# `1.0.4` — перший реліз із цим механізмом, `1.0.4.1` — перший, який ним
-# доїде: саме на ньому оновлення перевіряється на справжній збірці, а не на
-# копії в тимчасовій теці.
+# `1.0.4` — перший реліз із цим механізмом, але доїхати ним не виходило:
+# скрипт підміни чекав один PID, а PyInstaller onefile тримає два процеси, і
+# заміна падала зі «Sharing violation» — мовчки. `1.0.4.2` — перший, який
+# справді ставиться сам.
 GITHUB_REPO = "RiasJ1Dar/TwitchDropFarm"
 UPDATE_MANIFEST_URL = (
     f"https://github.com/{GITHUB_REPO}/releases/latest/download/manifest.json"
