@@ -11,11 +11,12 @@ from datetime import timedelta
 from enum import Enum, auto
 from pathlib import Path
 
-VERSION = "1.0.4"
+VERSION = "1.0.4.1"
 
 # Публічне дзеркало оновлень: манифест + блоби, названі SHA-256.
-# `1.0.4` і є той перший реліз із цим механізмом — саме його ставлять старі
-# збірки, перевіряючи себе на оновлення.
+# `1.0.4` — перший реліз із цим механізмом, `1.0.4.1` — перший, який ним
+# доїде: саме на ньому оновлення перевіряється на справжній збірці, а не на
+# копії в тимчасовій теці.
 GITHUB_REPO = "RiasJ1Dar/TwitchDropFarm"
 UPDATE_MANIFEST_URL = (
     f"https://github.com/{GITHUB_REPO}/releases/latest/download/manifest.json"
