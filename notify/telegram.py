@@ -42,6 +42,7 @@ from core.events import (
     WatchUncounted,
 )
 from core.protocol import TELEGRAM_ENDPOINT as TELEGRAM_API
+from core.toolbox import plural
 
 if TYPE_CHECKING:
     from core.miner import Miner as Twitch
@@ -484,7 +485,8 @@ class TelegramNotifier:
                     ends = fresh.ends_at.astimezone().strftime("%d.%m %H:%M")
                     news.append(
                         f"• {esc(fresh.name.strip())} ({esc(fresh.game)}) — "
-                        f"{fresh.total_drops} дроп(ів), до {ends}"
+                        f"{fresh.total_drops} "
+                        f"{plural(fresh.total_drops, 'дроп', 'дропи', 'дропів')}, до {ends}"
                     )
                 if len(event.campaigns) > 5:
                     news.append(f"…і ще {len(event.campaigns) - 5}")
@@ -764,8 +766,8 @@ class TelegramNotifier:
         elif command == "update":
             control.send(Command(CommandType.APPLY_UPDATE))
             await self.send(
-                "⬆️ Качаю змінені файли, звіряю хеші й перезапускаюсь. "
-                "Про готовність повідомлю окремо.",
+                "⬆️ Качаю змінені файли, звіряю хеші й перезапускаюсь.\n"
+                "Про результат скажу після перезапуску.",
                 chat_id=chat_id, keyboard=True,
             )
         elif command == "later":
@@ -774,7 +776,7 @@ class TelegramNotifier:
             self._twitch.update_postponed = True
             await self.send(
                 "⏳ Гаразд, не чіпаю. Нагадаю після наступного запуску — "
-                "або постав будь-коли: /update",
+                "або постав будь-коли командою /update.",
                 chat_id=chat_id, keyboard=True,
             )
         elif command == "hide":

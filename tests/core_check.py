@@ -59,7 +59,13 @@ from core.images import ImageCache
 from core.miner import Miner
 from core.seen import SeenCampaigns
 from core.settings import Settings
-from core.toolbox import force_utf8_console, rotating_log_handler
+from core.toolbox import (
+    claim_single_instance,
+    force_utf8_console,
+    human_size,
+    plural,
+    rotating_log_handler,
+)
 from gui.app import GUI
 from gui.tray import Tray
 
@@ -795,6 +801,50 @@ def stale_request_checks() -> None:
 
 # ------------------------------------------------------------------ журнал
 
+def lock_and_wording_checks() -> None:
+    """Замок і людські формулювання.
+
+    18.08 друга копія програми впала вікном з `PermissionError`: файл замка
+    відкривався на запис і в нього писали ДО спроби блокування, а перший
+    процес тримає саме перший байт. Замість «Програма вже запущена» людина
+    бачила трасування.
+    """
+    print("\n[14] Замок і формулювання")
+
+    folder = Path(tempfile.mkdtemp())
+    path = folder / "lock.file"
+    ok, first = claim_single_instance(path)
+    check("перший захоплює замок", ok and first is not None)
+
+    # Недосяжний шлях — це «не змогли», а не привід падати
+    ok2, handle2 = claim_single_instance(folder / "немає-теки" / "lock.file")
+    check("недосяжний шлях не кидає виняток", ok2 is False and handle2 is None)
+
+    # Читати можна лише після звільнення: поки замок тримається, Windows не
+    # дає навіть прочитати заблокований байт — на цьому тест і спіймав себе.
+    if first is not None:
+        first.close()
+    check("вміст записано", path.read_text(encoding="utf8").strip() == "lock")
+
+    check("1 файл", plural(1, "файл", "файли", "файлів") == "файл")
+    check("2 файли", plural(2, "файл", "файли", "файлів") == "файли")
+    check("5 файлів", plural(5, "файл", "файли", "файлів") == "файлів")
+    check("11 файлів", plural(11, "файл", "файли", "файлів") == "файлів")
+    check("21 файл", plural(21, "файл", "файли", "файлів") == "файл")
+    check("22,7 МБ замість 23213 КБ", human_size(23771050) == "22,7 МБ",
+          human_size(23771050))
+    check("дрібне в КБ", human_size(23771) == "23 КБ", human_size(23771))
+
+    # Скрипт підміни мусить чекати ВСІ процеси: PyInstaller onefile тримає два,
+    # і 18.08 заміна впала зі «Sharing violation», бо чекали лише один PID.
+    body = update.write_apply_script().read_bytes()
+    check("чекає не лише PID, а й ім'я процесу", b"IMAGENAME eq %NAME%" in body)
+    check("повторює копіювання, а не здається одразу", b"TRY% GEQ 5" in body)
+    check("повертає стару збірку, якщо не вийшло",
+          b"starting old build back" in body)
+    check("піднімає з тими самими аргументами", b'"%EXE%" %ARGS%' in body)
+
+
 def log_rotation_checks() -> None:
     print("\n[7] Ротація журналу")
     with tempfile.TemporaryDirectory() as folder:
@@ -1243,6 +1293,7 @@ def main() -> int:
     telegram_setup_checks()
     tray_checks()
     stale_request_checks()
+    lock_and_wording_checks()
     log_rotation_checks()
     history_checks()
     image_cache_checks()

@@ -111,6 +111,32 @@ def describe_exception(error: BaseException) -> str:
     return "".join(traceback.format_exception(error))
 
 
+def plural(count: int, one: str, few: str, many: str) -> str:
+    """Українська форма множини: «1 файл», «2 файли», «5 файлів».
+
+    Дужкові милиці на кшталт «файл(и)» і «дроп(ів)» читаються як недоробка —
+    людина 18.08 саме на це й показала, побачивши «1 змінених файлів».
+    """
+    tail_two = count % 100
+    if 11 <= tail_two <= 14:
+        return many
+    tail = count % 10
+    if tail == 1:
+        return one
+    if 2 <= tail <= 4:
+        return few
+    return many
+
+
+def human_size(size: int) -> str:
+    """Розмір так, як його називає людина: «22,7 МБ», а не «23213 КБ»."""
+    if size < 1024:
+        return f"{size} Б"
+    if size < 1024 * 1024:
+        return f"{size / 1024:.0f} КБ"
+    return f"{size / (1024 * 1024):.1f} МБ".replace(".", ",")
+
+
 def forget_cached(instance: object, *names: str) -> None:
     """Скидає значення `cached_property`."""
     for name in names:
@@ -119,18 +145,36 @@ def forget_cached(instance: object, *names: str) -> None:
 
 # ---------------------------------------------------------------- одна копія
 
-def claim_single_instance(path: Path) -> tuple[bool, io.TextIOWrapper]:
-    """Захоплює файл-замок. False означає, що програма вже запущена."""
-    handle = path.open("w", encoding="utf8")
-    handle.write("lock")
-    handle.flush()
+def claim_single_instance(path: Path) -> tuple[bool, io.TextIOWrapper | None]:
+    """Захоплює файл-замок. False означає, що програма вже запущена.
+
+    Порядок тут важливіший, ніж здається. Раніше файл відкривався на `"w"` і в
+    нього одразу писали — **до** спроби блокування. Але перший процес тримає
+    замок саме на першому байті, тож `flush()` другого падав із
+    `PermissionError`, і замість чемного «Програма вже запущена» людина бачила
+    вікно з трасуванням. Спіймано 18.08 при спробі запустити другу копію.
+
+    Заразом `"w"` обрізав чужий файл замка. Тепер `"a+"`: не чіпаємо вміст,
+    поки не переконались, що замок наш.
+    """
+    try:
+        handle = path.open("a+", encoding="utf8")
+    except OSError:
+        # немає теки, немає прав, файл зайнятий монопольно — усе це «не змогли
+        # захопити», а не привід падати з трасуванням
+        return False, None
     try:
         if sys.platform == "win32":
             import msvcrt
+            handle.seek(0)
             msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
         else:
             import fcntl
             fcntl.lockf(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        handle.seek(0)
+        handle.truncate()
+        handle.write("lock")
+        handle.flush()
     except OSError:
         return False, handle
     return True, handle

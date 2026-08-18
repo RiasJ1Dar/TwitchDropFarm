@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sys
 from collections import OrderedDict, deque
 from datetime import datetime, timedelta, timezone
 from time import monotonic
@@ -76,7 +77,9 @@ from core.toolbox import (
     batched,
     describe_exception,
     guard_task,
+    human_size,
     parse_timestamp,
+    plural,
     race,
     sleep_unless,
 )
@@ -151,6 +154,9 @@ class Miner:
         self._update_plan: tuple | None = None
         # людина натиснула «Відкласти» — до наступного запуску не нагадуємо
         self.update_postponed = False
+        # оновлення ставиться просто зараз: вікно й Telegram — два входи
+        # до однієї дії, і натиснути можна двічі
+        self._updating = False
         # коли востаннє питали Twitch, чи живі наші persisted-запити
         self._protocol_checked = 0.0
 
@@ -1332,8 +1338,9 @@ class Miner:
             self.say(f"Версія {manifest.version} уже на диску (хеші збіглись).")
             return
         self.say(
-            f"Є оновлення {manifest.version}: скачати {len(items)} файл(и), "
-            f"{total // 1024} КБ. Підтвердіть кнопкою в Telegram або /update."
+            f"Є оновлення {manifest.version}: {len(items)} "
+            f"{plural(len(items), 'файл', 'файли', 'файлів')}, {human_size(total)}. "
+            f"Поставити: кнопка у вікні або /update у Telegram."
         )
 
     async def _apply_update(self) -> None:
@@ -1343,14 +1350,26 @@ class Miner:
             self.events.emit(UpdateFailed(reason="оновлення лише для зібраного .exe"))
             self.say("Оновлення ставить лише зібраний .exe, не запуск із Python.")
             return
+        # Вікно й Telegram — два рівноправні входи до однієї дії, тож натиснути
+        # можна двічі. 18.08 два завантаження зійшлись на одному стейджі й дали
+        # «WinError 32: .part -> .exe»: перше ще тримало файл, друге вже його
+        # перейменовувало.
+        if self._updating:
+            self.say("Оновлення вже ставиться — чекаю на нього.")
+            return
         plan = self._update_plan
         if plan is None:
             self.say("Немає підготовленого оновлення — спершу перевірка.")
             return
+        self._updating = True
         manifest, items = plan
         try:
             if items:
                 import aiohttp
+                # Недокачані хвости від перерваної спроби: інакше `.part`
+                # лишається зайнятим і наступний захід падає на перейменуванні.
+                for leftover in update.STAGE_DIR.glob("*.part"):
+                    leftover.unlink(missing_ok=True)
                 async with aiohttp.ClientSession() as session:
                     for item in items:
                         self.events.status(f"Качаю {item.spec.path}…")
@@ -1363,8 +1382,10 @@ class Miner:
                 exe=APP_DIR / "TwitchDropFarm.exe",
                 dest=APP_DIR,
                 pid=os.getpid(),
+                args=" ".join(sys.argv[1:]),
             )
         except Exception as error:
+            self._updating = False
             self.events.emit(UpdateFailed(reason=str(error)))
             self.say(f"Оновлення не встало: {error}")
             return
