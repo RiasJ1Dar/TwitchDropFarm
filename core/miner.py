@@ -1389,8 +1389,14 @@ class Miner:
             self.events.emit(UpdateFailed(reason=str(error)))
             self.say(f"Оновлення не встало: {error}")
             return
-        self.say(f"Оновлення {manifest.version} перевірено хешами, перезапускаюсь.")
-        self.reboot_requested = True
+        # ⚠️ Саме `request_stop()` без `reboot_requested`. Новий екземпляр
+        # підніме скрипт підміни — після того, як замінить файли. Якщо
+        # перезапуститись самим, перезапускають ДВОЄ: програма піднімає стару
+        # збірку, скрипт бачить, що ім'я процесу знову зайняте, і чекає його
+        # зникнення вічно. 18.08 оновлення двічі не встало саме через це:
+        # спершу «Sharing violation» (новий процес тримав файл), потім тиха
+        # вічна пауза на «waiting for pid … and image …».
+        self.say(f"Оновлення {manifest.version} перевірено хешами, виходжу.")
         self.request_stop()
 
     def _drop_stale_channels(self) -> None:

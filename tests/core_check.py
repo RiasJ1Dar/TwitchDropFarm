@@ -843,6 +843,9 @@ def lock_and_wording_checks() -> None:
     check("повертає стару збірку, якщо не вийшло",
           b"starting old build back" in body)
     check("піднімає з тими самими аргументами", b'"%EXE%" %ARGS%' in body)
+    # 18.08 скрипт завис назавжди: програма перезапускала себе сама, ім'я
+    # процесу з'являлось знову, і цикл очікування не мав виходу.
+    check("очікування процесу обмежене", b"WAIT% GTR 30" in body)
 
 
 def log_rotation_checks() -> None:
