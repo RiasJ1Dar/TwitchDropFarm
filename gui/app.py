@@ -47,6 +47,7 @@ from core.events import (
     WebsocketStatus,
     WindowVisibility,
 )
+from core.toolbox import human_size, plural
 
 if TYPE_CHECKING:
     from core.miner import Miner as Twitch
@@ -767,7 +768,8 @@ class GUI:
             for item in event.campaigns:
                 self._append_log(
                     f"Нова кампанія: {item.name.strip()} ({item.game}) — "
-                    f"{item.total_drops} дроп(ів)", "ok",
+                    f"{item.total_drops} {plural(item.total_drops, 'дроп', 'дропи', 'дропів')}",
+                    "ok",
                 )
         elif isinstance(event, UpdateAvailable):
             if event.files == 0:
@@ -775,16 +777,17 @@ class GUI:
                     f"Оновлення {event.version}: локальні хеші вже збігаються", "ok",
                 )
                 return
+            what = plural(event.files, "файл", "файли", "файлів")
+            size = human_size(event.bytes_to_fetch)
             self._append_log(
-                f"Є оновлення {event.version}: {event.files} файл(и), "
-                f"{event.bytes_to_fetch // 1024} КБ",
-                "ok",
+                f"Є оновлення {event.version}: {event.files} {what}, {size}", "ok",
             )
             if messagebox.askyesno(
                 WINDOW_TITLE,
-                f"Доступна версія {event.version}.\n"
-                f"Скачати {event.files} змінених файлів "
-                f"({event.bytes_to_fetch // 1024} КБ) і перезапустити?",
+                f"Доступна версія {event.version}.\n\n"
+                f"Завантажити {event.files} {what} ({size}) і перезапуститися?\n"
+                f"Решта файлів лишиться як є.\n\n"
+                f"Те саме можна зробити з Telegram — командою /update.",
             ):
                 self._send(CommandType.APPLY_UPDATE)
         elif isinstance(event, UpdateFailed):

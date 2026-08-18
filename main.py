@@ -256,6 +256,20 @@ if __name__ == "__main__":
                 MinerStarted(version=__version__, tray=started_in_tray)
             )
 
+            # Чим скінчилась підміна файлів. Вона працює вже після виходу
+            # програми, тож про її провал не знав ніхто: 18.08 заміна впала зі
+            # «Sharing violation», оновлення мовчки не встало, і людина бачила
+            # лише те, що версія не змінилась.
+            from core import update as _update
+
+            outcome, detail = _update.apply_outcome()
+            if outcome == "failed":
+                client.events.emit(UpdateFailed(reason=detail))
+            elif outcome == "ok":
+                client.events.log(f"Оновлення встановлено, версія {__version__}.")
+            if outcome != "none":
+                _update.forget_outcome()
+
         debug_reboot_task = None
         if args.debug_reboot:
             async def _debug_reboot() -> None:
@@ -389,12 +403,40 @@ if __name__ == "__main__":
     reboot = {"wanted": False}
     success, lock = lock_file(LOCK_PATH)
     if not success:
-        print("Програма вже запущена.")
+        # Друга копія — річ звичайна: подвійний клік по ярлику, коли програма
+        # вже сидить у треї й вікна не видно. У зібраному .exe консолі немає,
+        # тож самого print людина не побачить — раніше вона бачила лише вікно
+        # з трасуванням PermissionError.
+        message = (
+            "Twitch Drop Farm уже запущено.\n\n"
+            "Друга копія не потрібна: шукайте значок біля годинника, "
+            "у треї — подвійний клік розгорне вікно."
+            if lock is not None else
+            "Не вдалося зайняти файл-замок:\n"
+            f"{LOCK_PATH}\n\n"
+            "Схоже, немає прав на цю теку або її видалили під час роботи."
+        )
+        print(message)
+        try:
+            import tkinter as tk
+            from tkinter import messagebox
+
+            root = tk.Tk()
+            root.withdraw()
+            # Без цього діалог відкривається за чужими вікнами, і людина його
+            # просто не бачить: програма мовчки «не запустилась». Спіймано
+            # 18.08 — процес чекав натискання, якого ніхто не міг зробити.
+            root.attributes("-topmost", True)
+            messagebox.showinfo("Twitch Drop Farm", message, parent=root)
+            root.destroy()
+        except Exception:
+            pass  # без графіки лишається print — це не привід падати
         sys.exit(3)
     try:
         status = asyncio.run(main())
     finally:
-        lock.close()
+        if lock is not None:
+            lock.close()
     if reboot["wanted"]:
         relaunch()
 
