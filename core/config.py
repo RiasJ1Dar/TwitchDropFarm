@@ -11,7 +11,7 @@ from datetime import timedelta
 from enum import Enum, auto
 from pathlib import Path
 
-VERSION = "1.0.5"
+VERSION = "1.0.6"
 
 # Публічне дзеркало оновлень: манифест + блоби, названі SHA-256.
 # `1.0.4` — перший реліз із цим механізмом, але доїхати ним не виходило:

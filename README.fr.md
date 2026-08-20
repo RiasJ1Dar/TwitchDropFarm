@@ -12,10 +12,6 @@ Un seul `.exe`, sans environnement d'exécution à côté : ni Node.js, ni
 Playwright, ni navigateur embarqué. La connexion utilise le navigateur déjà
 installé sur le système (Edge ou Chrome).
 
-> **À propos de la langue.** L'interface, les journaux et les commentaires du
-> code sont en ukrainien. Tout ce qui figure dans ce document — noms de fichiers,
-> clés de configuration, commandes — correspond exactement au programme.
-
 ## Ce qu'il fait
 
 - **Prévient quand c'est perdu d'avance** : s'il reste moins de temps que de
@@ -35,6 +31,8 @@ installé sur le système (Edge ou Chrome).
 - **Repère l'immobilisme** : si les minutes cessent de s'accumuler (par exemple
   parce que ce même compte regarde Twitch manuellement ailleurs), il le dit au
   lieu de se taire.
+- **Langues de l'interface** (Réglages) : ukrainien par défaut, plus English,
+  Español, Português, Deutsch, Français, Polski, Türkçe, 简体中文. Pas de russe.
 
 ## Prérequis
 

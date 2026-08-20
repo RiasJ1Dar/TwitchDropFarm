@@ -15,6 +15,7 @@ portable.txt
 # Робочі нотатки — не для публікації
 HANDOFF.md
 IDEAS.md
+MANIFEST_PUBLIC_KEY.txt
 
 # Obsidian: тека проєкту підключена до сховища через junction
 .obsidian/

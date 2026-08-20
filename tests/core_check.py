@@ -542,9 +542,7 @@ def i18n_checks() -> None:
     set_language("zh")
     check("китайська лише коли обрали", t("pause") == "暂停")
     check("невідомий код → українська", resolve("ru") == "uk")
-    check("авто не падає в порожнє", resolve("") in (
-        "uk", "en", "es", "pt", "de", "fr", "pl", "tr", "zh",
-    ))
+    check("порожнє → українська, не авто", resolve("") == "uk")
     set_language("uk")
 
 
