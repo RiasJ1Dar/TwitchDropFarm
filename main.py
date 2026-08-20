@@ -15,9 +15,10 @@ if __name__ == "__main__":
 
     # Консоль Windows за замовчуванням не в UTF-8, і весь український текст
     # перетворюється на кашу. Лагодимо до першого рядка логів.
-    from core.toolbox import force_utf8_console
+    from core.toolbox import enable_windows_dpi, force_utf8_console
 
     force_utf8_console()
+    enable_windows_dpi()
 
     from core.config import CONSOLE_LOG_FORMAT as OUTPUT_FORMATTER
     from core.config import FILE_LOG_FORMAT as FILE_FORMATTER

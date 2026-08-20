@@ -26,6 +26,25 @@ from yarl import URL
 log = logging.getLogger("TwitchDrops")
 
 
+def enable_windows_dpi() -> None:
+    """Каже Windows, що малюємо самі під DPI монітора.
+
+    Без цього Tk малює вікно під 96 DPI, а система розтягує його як картинку
+    на 125/150% — літери стають «мильними». Викликати до першого `tk.Tk()`.
+    """
+    if sys.platform != "win32":
+        return
+    import ctypes
+    try:
+        # 2 = PROCESS_PER_MONITOR_DPI_AWARE
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    except (OSError, AttributeError):
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except (OSError, AttributeError):
+            pass
+
+
 def force_utf8_console() -> None:
     """Перемикає stdout і stderr на UTF-8.
 
