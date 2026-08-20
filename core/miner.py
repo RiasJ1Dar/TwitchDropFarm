@@ -30,6 +30,7 @@ from core.config import (
     SEEN_CAMPAIGNS_FILE,
     STALL_LIMIT,
     TRACE,
+    UPDATE_CHECK_EVERY,
     WATCH_PERIOD,
     FarmMode,
     Stage,
@@ -263,10 +264,9 @@ class Miner:
             game=campaign.game.name,
             rewards=drop.rewards_text(),
         ))
-        self.say(
-            f"Отримано: {drop.rewards_text()} — {campaign.game.name} "
-            f"({campaign.taken_count}/{campaign.total})"
-        )
+        self.say(t("say_claimed", rewards=drop.rewards_text(),
+                   game=campaign.game.name, taken=campaign.taken_count,
+                   total=campaign.total))
         if campaign.everything_taken and campaign.mark_reported_done():
             self.events.emit(
                 CampaignFinished(campaign_name=campaign.name, game=campaign.game.name)
@@ -301,14 +301,14 @@ class Miner:
 
         if not was_live and now_live:
             if self.should_switch_to(channel):
-                self.say(f"{channel.name} вийшов у етер")
+                self.say(t("say_live", name=channel.name))
                 self.watch(channel)
             else:
                 log.info(f"{channel.name} в етері")
         elif current is not None and current == channel:
             if not self.can_farm(channel):
                 if not now_live:
-                    self.say(f"{channel.name} пішов офлайн")
+                    self.say(t("say_offline", name=channel.name))
                     self.events.emit(StreamOffline(channel_name=channel.name))
                 else:
                     log.info(f"{channel.name} більше не підходить — перемикаюсь")
@@ -1131,7 +1131,7 @@ class Miner:
             self.request_stop()
         elif kind is CommandType.REBOOT:
             self.reboot_requested = True
-            self.say("Перезапускаю програму…")
+            self.say(t("say_reboot"))
             self.request_stop()
         elif kind is CommandType.APPLY_UPDATE:
             self._tasks.launch(self._apply_update())
@@ -1154,9 +1154,9 @@ class Miner:
                 if self.can_farm(channel):
                     self.watch(channel)
                 else:
-                    self.say(f"{channel.name} зараз не підходить для фарму")
+                    self.say(t("say_switch_bad", name=channel.name))
                 return
-        self.say(f"Канал «{wanted}» не в списку відстеження")
+        self.say(t("say_switch_missing", wanted=wanted))
 
     def _edit_list(self, field: str, command: Command) -> None:
         current = list(getattr(self.settings, field))
@@ -1198,7 +1198,7 @@ class Miner:
                     message=f"{type(error).__name__}: {error}",
                     traceback=describe_exception(error),
                 ))
-                self.say(f"Помилка «{type(error).__name__}». Перезапуск через {pause:.0f}с.")
+                self.say(t("say_crash", error=type(error).__name__, pause=pause))
                 await self.shutdown()
                 if await sleep_unless(self._quitting, pause):
                     return
@@ -1212,8 +1212,7 @@ class Miner:
             self._watch_task.cancel()
         self._watch_task = self._tasks.launch(self._watch_loop())
 
-        if self.settings.check_updates:
-            self._tasks.launch(self._check_updates())
+        self._tasks.launch(self._check_updates())
 
         user = self.identity.user_id
         self.topics.subscribe([
@@ -1308,6 +1307,17 @@ class Miner:
         self.go(Stage.DROP_CHANNELS)
 
     async def _check_updates(self) -> None:
+        """На старті і далі двічі на добу, поки галочка не знята."""
+        first = True
+        while not self.stopping:
+            if not first:
+                if await sleep_unless(self._quitting, UPDATE_CHECK_EVERY):
+                    return
+            first = False
+            if self.settings.check_updates:
+                await self._check_updates_once()
+
+    async def _check_updates_once(self) -> None:
         from core import update
 
         try:
@@ -1324,12 +1334,20 @@ class Miner:
             return
         if found is None:
             return
-        manifest, items = found
+        self._offer_update(*found)
+
+    def _offer_update(self, manifest: Any, items: list) -> None:
+        already = (
+            self._update_plan is not None
+            and self._update_plan[0].version == manifest.version
+        )
         self._update_plan = (manifest, items)
         if self.update_postponed:
             # людина вже сказала «не зараз» — план тримаємо, щоб /update спрацював
             # без повторної перевірки, але з нагадуванням не лізем
             log.log(TRACE, f"Оновлення {manifest.version} відкладено людиною")
+            return
+        if already:
             return
         total = sum(item.spec.size for item in items)
         self.events.emit(UpdateAvailable(
@@ -1338,31 +1356,33 @@ class Miner:
             bytes_to_fetch=total,
         ))
         if not items:
-            self.say(f"Версія {manifest.version} уже на диску (хеші збіглись).")
+            self.say(t("say_update_same", version=manifest.version))
             return
-        self.say(
-            f"Є оновлення {manifest.version}: {len(items)} "
-            f"{plural(len(items), 'файл', 'файли', 'файлів')}, {human_size(total)}. "
-            f"Поставити: кнопка у вікні або /update у Telegram."
-        )
+        self.say(t(
+            "say_update_ready",
+            version=manifest.version,
+            files=len(items),
+            unit=plural(len(items), t("file_one"), t("file_few"), t("file_many")),
+            size=human_size(total),
+        ))
 
     async def _apply_update(self) -> None:
         from core import update
 
         if not update.can_apply():
             self.events.emit(UpdateFailed(reason="оновлення лише для зібраного .exe"))
-            self.say("Оновлення ставить лише зібраний .exe, не запуск із Python.")
+            self.say(t("say_update_source"))
             return
         # Вікно й Telegram — два рівноправні входи до однієї дії, тож натиснути
         # можна двічі. 18.08 два завантаження зійшлись на одному стейджі й дали
         # «WinError 32: .part -> .exe»: перше ще тримало файл, друге вже його
         # перейменовувало.
         if self._updating:
-            self.say("Оновлення вже ставиться — чекаю на нього.")
+            self.say(t("say_update_busy"))
             return
         plan = self._update_plan
         if plan is None:
-            self.say("Немає підготовленого оновлення — спершу перевірка.")
+            self.say(t("say_update_none"))
             return
         self._updating = True
         manifest, items = plan
@@ -1390,7 +1410,7 @@ class Miner:
         except Exception as error:
             self._updating = False
             self.events.emit(UpdateFailed(reason=str(error)))
-            self.say(f"Оновлення не встало: {error}")
+            self.say(t("say_update_fail", error=error))
             return
         # ⚠️ Саме `request_stop()` без `reboot_requested`. Новий екземпляр
         # підніме скрипт підміни — після того, як замінить файли. Якщо
@@ -1399,7 +1419,7 @@ class Miner:
         # зникнення вічно. 18.08 оновлення двічі не встало саме через це:
         # спершу «Sharing violation» (новий процес тримав файл), потім тиха
         # вічна пауза на «waiting for pid … and image …».
-        self.say(f"Оновлення {manifest.version} перевірено хешами, виходжу.")
+        self.say(t("say_update_exit", version=manifest.version))
         self.request_stop()
 
     def _drop_stale_channels(self) -> None:
@@ -1422,7 +1442,7 @@ class Miner:
         if self.wanted:
             self.go(Stage.FIND_CHANNELS)
         else:
-            self.say("Немає кампаній, які можна фармити зараз")
+            self.say(t("say_no_campaigns"))
             self.go(Stage.IDLE)
 
     async def _find_channels(self) -> None:
@@ -1498,7 +1518,7 @@ class Miner:
             self.events.status(t("status_watching", name=current.name))
             self._stage_changed.clear()
             return
-        self.say("Немає підходящого каналу для фарму")
+        self.say(t("say_no_channel"))
         self.go(Stage.IDLE)
 
     # ================================================================ зупинка

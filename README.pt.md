@@ -32,6 +32,8 @@ Chrome).
   em vez de ficar calado.
 - **Idiomas da interface** (Definições): ucraniano por omissão, mais English,
   Español, Português, Deutsch, Français, Polski, Türkçe, 简体中文. Sem russo.
+  O registo fica em ucraniano. O bot do Telegram usa a mesma língua que a
+  janela.
 
 ## Requisitos
 
@@ -80,6 +82,7 @@ primeira execução. Modelo:
 | Chave | Significado |
 |---|---|
 | `farm_mode` | `0` — lista de prioridade, `1` — prazo mais próximo, `2` — melhor encaixe, `3` — apenas campanhas vinculadas |
+| `language` | `uk` por omissão; também `en`, `es`, `pt`, `de`, `fr`, `pl`, `tr`, `zh`; `auto` — idioma do Windows. O bot segue a janela |
 | `priority` | jogos em ordem de preferência |
 | `exclude` | jogos a não tocar |
 | `farm_cosmetics` | aceitar campanhas que só dão emblemas e emotes |

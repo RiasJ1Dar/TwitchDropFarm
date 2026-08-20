@@ -23,25 +23,13 @@ from collections.abc import Awaitable, Callable
 from tkinter import ttk
 from typing import TYPE_CHECKING, Any
 
+from core.i18n import t
 from notify.telegram import check_token, find_chats, send_greeting
 
 if TYPE_CHECKING:
     from core.settings import Settings
 
 BOTFATHER_URL = "https://t.me/BotFather"
-
-HINT_TOKEN = (
-    "1. Відкрий @BotFather у Telegram і надішли йому /newbot.\n"
-    "2. Він спитає назву бота, потім ім'я — воно має закінчуватись на «bot».\n"
-    "3. У відповідь прийде токен виду 1234567890:AAE... Скопіюй його сюди."
-)
-
-HINT_CHAT = (
-    "Відкрий свого бота і натисни «Почати» (або надішли /start).\n"
-    "Так бот дізнається, кому можна довіряти: команди він прийматиме\n"
-    "лише від цього чату, і більше ні від кого."
-)
-
 
 class TelegramSetup(tk.Toplevel):
     """Вікно майстра. Живе поверх головного, налаштування чіпає лише наприкінці."""
@@ -54,7 +42,7 @@ class TelegramSetup(tk.Toplevel):
         self._chats: list[tuple[int, str]] = []
         self._busy = False
 
-        self.title("Підключення Telegram-бота")
+        self.title(t("wiz_title"))
         self.resizable(False, False)
         self.transient(master)
 
@@ -62,39 +50,39 @@ class TelegramSetup(tk.Toplevel):
         frame.pack(fill="both", expand=True)
 
         # ---- крок 1: токен
-        step1 = ttk.LabelFrame(frame, text="Крок 1. Створити бота", padding=8)
+        step1 = ttk.LabelFrame(frame, text=t("wiz_step1"), padding=8)
         step1.pack(fill="x")
-        ttk.Label(step1, text=HINT_TOKEN, justify="left").pack(anchor="w")
+        ttk.Label(step1, text=t("wiz_hint_token"), justify="left").pack(anchor="w")
         ttk.Button(
-            step1, text="Відкрити @BotFather",
+            step1, text=t("wiz_open_father"),
             command=lambda: webbrowser.open(BOTFATHER_URL),
         ).pack(anchor="w", pady=(6, 0))
 
         row = ttk.Frame(step1)
         row.pack(fill="x", pady=(8, 0))
-        ttk.Label(row, text="Токен:").pack(side="left")
+        ttk.Label(row, text=t("wiz_token")).pack(side="left")
         self.token_var = tk.StringVar(value=settings.telegram["bot_token"])
         ttk.Entry(row, textvariable=self.token_var, width=38).pack(
             side="left", fill="x", expand=True, padx=(6, 6)
         )
-        self.check_button = ttk.Button(row, text="Перевірити", command=self._check)
+        self.check_button = ttk.Button(row, text=t("wiz_check"), command=self._check)
         self.check_button.pack(side="left")
 
         self.token_status = ttk.Label(step1, text="", wraplength=430, justify="left")
         self.token_status.pack(anchor="w", pady=(6, 0))
 
         # ---- крок 2: чат
-        self.step2 = ttk.LabelFrame(frame, text="Крок 2. Написати боту", padding=8)
+        self.step2 = ttk.LabelFrame(frame, text=t("wiz_step2"), padding=8)
         self.step2.pack(fill="x", pady=(10, 0))
-        ttk.Label(self.step2, text=HINT_CHAT, justify="left").pack(anchor="w")
+        ttk.Label(self.step2, text=t("wiz_hint_chat"), justify="left").pack(anchor="w")
 
         row2 = ttk.Frame(self.step2)
         row2.pack(fill="x", pady=(6, 0))
         self.open_bot_button = ttk.Button(
-            row2, text="Відкрити мого бота", command=self._open_bot
+            row2, text=t("wiz_open_bot"), command=self._open_bot
         )
         self.open_bot_button.pack(side="left")
-        self.find_button = ttk.Button(row2, text="Я написав — знайти", command=self._find)
+        self.find_button = ttk.Button(row2, text=t("wiz_find"), command=self._find)
         self.find_button.pack(side="left", padx=(6, 0))
 
         self.chat_box = ttk.Combobox(self.step2, state="readonly", width=44)
@@ -103,10 +91,10 @@ class TelegramSetup(tk.Toplevel):
         self.chat_status.pack(anchor="w", pady=(6, 0))
 
         # ---- крок 3: перевірка
-        self.step3 = ttk.LabelFrame(frame, text="Крок 3. Перевірити зв'язок", padding=8)
+        self.step3 = ttk.LabelFrame(frame, text=t("wiz_step3"), padding=8)
         self.step3.pack(fill="x", pady=(10, 0))
         self.test_button = ttk.Button(
-            self.step3, text="Надіслати тестове повідомлення", command=self._test
+            self.step3, text=t("wiz_send_test"), command=self._test
         )
         self.test_button.pack(anchor="w")
         self.test_status = ttk.Label(self.step3, text="", wraplength=430, justify="left")
@@ -116,10 +104,10 @@ class TelegramSetup(tk.Toplevel):
         bottom = ttk.Frame(frame)
         bottom.pack(fill="x", pady=(12, 0))
         self.save_button = ttk.Button(
-            bottom, text="Зберегти й увімкнути", command=self._save
+            bottom, text=t("wiz_save"), command=self._save
         )
         self.save_button.pack(side="right")
-        ttk.Button(bottom, text="Скасувати", command=self.destroy).pack(
+        ttk.Button(bottom, text=t("wiz_cancel"), command=self.destroy).pack(
             side="right", padx=(0, 6)
         )
         self.final_status = ttk.Label(frame, text="", wraplength=430, justify="left")
@@ -155,7 +143,8 @@ class TelegramSetup(tk.Toplevel):
                 result = task.result()
             except Exception as exc:  # мережа може впасти будь-де
                 self._refresh_buttons()
-                self.final_status["text"] = f"Не вийшло: {type(exc).__name__}: {exc}"
+                self.final_status["text"] = t(
+                    "wiz_fail", error=f"{type(exc).__name__}: {exc}")
                 return
             done(result)
             self._refresh_buttons()
@@ -177,7 +166,7 @@ class TelegramSetup(tk.Toplevel):
 
     def _check(self) -> None:
         token = self.token_var.get().strip()
-        self.token_status["text"] = "Питаю Telegram…"
+        self.token_status["text"] = t("wiz_asking")
 
         def done(result: tuple[str, str]) -> None:
             username, error = result
@@ -186,7 +175,7 @@ class TelegramSetup(tk.Toplevel):
             if error:
                 self.token_status["text"] = f"✖ {error}"
             else:
-                self.token_status["text"] = f"✓ Бот @{username} на зв'язку."
+                self.token_status["text"] = t("wiz_bot_ok", username=username)
 
         self._run(check_token(token), done)
 
@@ -195,7 +184,7 @@ class TelegramSetup(tk.Toplevel):
             webbrowser.open(f"https://t.me/{self._username}")
 
     def _find(self) -> None:
-        self.chat_status["text"] = "Шукаю, хто писав боту…"
+        self.chat_status["text"] = t("wiz_searching")
 
         def done(result: tuple[list[tuple[int, str]], str]) -> None:
             chats, error = result
@@ -206,10 +195,7 @@ class TelegramSetup(tk.Toplevel):
             if not chats:
                 # Найчастіший глухий кут: людина натискає «знайти» до того, як
                 # написала боту. Кажемо прямо, що робити, а не «нічого немає».
-                self.chat_status["text"] = (
-                    "✖ Боту ще ніхто не писав. Відкрий його, натисни «Почати» "
-                    "і спробуй ще раз."
-                )
+                self.chat_status["text"] = t("wiz_nobody")
                 self.chat_box["values"] = []
                 self.chat_box.set("")
                 return
@@ -217,9 +203,8 @@ class TelegramSetup(tk.Toplevel):
             self.chat_box["values"] = labels
             self.chat_box.set(labels[0])
             self.chat_status["text"] = (
-                f"✓ Знайдено чатів: {len(chats)}. Команди прийматимуться лише "
-                "від вибраного."
-                if len(chats) > 1 else f"✓ Знайдено: {labels[0]}"
+                t("wiz_found_many", n=len(chats))
+                if len(chats) > 1 else t("wiz_found_one", label=labels[0])
             )
 
         self._run(find_chats(self._token or self.token_var.get().strip()), done)
@@ -228,13 +213,11 @@ class TelegramSetup(tk.Toplevel):
         chat_id = self._chosen_chat_id()
         if chat_id is None:
             return
-        self.test_status["text"] = "Надсилаю…"
+        self.test_status["text"] = t("wiz_sending")
 
         def done(error: str) -> None:
             self.test_status["text"] = (
-                f"✖ {error}" if error
-                else "✓ Надіслано. Подивись у Telegram — там має бути повідомлення "
-                     "і панель кнопок."
+                f"✖ {error}" if error else t("wiz_sent")
             )
 
         self._run(send_greeting(self._token, chat_id), done)
@@ -249,8 +232,5 @@ class TelegramSetup(tk.Toplevel):
         telegram["enabled"] = True
         self._settings.touch()
         self._settings.save()
-        self.final_status["text"] = (
-            "✓ Збережено й увімкнено. Сповіщення почнуть ходити після "
-            "перезапуску програми."
-        )
+        self.final_status["text"] = t("wiz_saved")
         self.save_button["state"] = "disabled"

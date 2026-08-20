@@ -183,12 +183,12 @@ class GUI:
         top.pack(fill="x")
         pal = self.palette
         self.farm_label = tk.Label(
-            top, text="● Чекає", font=("Segoe UI", 11, "bold"),
+            top, text=t("farm_idle"), font=("Segoe UI", 11, "bold"),
             bg=pal["bg"], fg=pal["fg"],
         )
         self.farm_label.pack(side="left")
         self._set_farm_state("idle")
-        self.status_var = tk.StringVar(value="Запуск…")
+        self.status_var = tk.StringVar(value=t("starting"))
         ttk.Label(top, textvariable=self.status_var,
                   font=("Segoe UI", 11, "bold")).pack(side="left", padx=(12, 0))
         self.conn_var = tk.StringVar(value="")
@@ -232,7 +232,7 @@ class GUI:
         controls.pack(fill="x", pady=8)
         self.pause_btn = ttk.Button(controls, text=t("pause"), command=self._toggle_pause)
         self.pause_btn.pack(side="left")
-        ttk.Button(controls, text="Перечитати інвентар",
+        ttk.Button(controls, text=t("reload_inventory"),
                    command=self._reload_now).pack(side="left", padx=6)
         ttk.Button(controls, text=t("hide_tray"),
                    command=self.hide_to_tray).pack(side="right")
@@ -276,14 +276,14 @@ class GUI:
 
         bar = ttk.Frame(tab)
         bar.pack(fill="x", pady=(0, 6))
-        ttk.Label(bar, text="Вигляд:").pack(side="left")
+        ttk.Label(bar, text=t("view")).pack(side="left")
         self.view_var = tk.StringVar(value=self._inventory_view)
-        for value, label in (("list", "Список"), ("tiles", "Плитки")):
+        for value, label in (("list", t("view_list")), ("tiles", t("view_tiles"))):
             ttk.Radiobutton(bar, text=label, value=value, variable=self.view_var,
                             command=self._view_changed).pack(side="left", padx=(8, 0))
         self.tiles_note = ttk.Label(bar, text="")
         self.tiles_note.pack(side="right")
-        ttk.Button(bar, text="Експорт…", command=self._export_tables).pack(
+        ttk.Button(bar, text=t("export") + "…", command=self._export_tables).pack(
             side="right", padx=(0, 8),
         )
 
@@ -297,9 +297,9 @@ class GUI:
         tab = ttk.Frame(parent)
         self.inv_list = tab
         self.inv_tree = ttk.Treeview(tab, columns=("progress", "state"), show="tree headings")
-        self.inv_tree.heading("#0", text="Кампанія / дроп")
-        self.inv_tree.heading("progress", text="Прогрес")
-        self.inv_tree.heading("state", text="Стан")
+        self.inv_tree.heading("#0", text=t("col_campaign"))
+        self.inv_tree.heading("progress", text=t("col_progress"))
+        self.inv_tree.heading("state", text=t("col_status"))
         self.inv_tree.column("#0", width=420)
         self.inv_tree.column("progress", width=120, anchor="center")
         self.inv_tree.column("state", width=160, anchor="w")
@@ -374,11 +374,11 @@ class GUI:
                 campaigns=self._twitch.campaigns,
             )
         except OSError as error:
-            messagebox.showerror(WINDOW_TITLE, f"Не вдалося зберегти:\n{error}")
+            messagebox.showerror(WINDOW_TITLE, t("export_fail", error=error))
             return
         listing = "\n".join(str(path) for path in paths)
-        messagebox.showinfo(WINDOW_TITLE, f"Збережено:\n{listing}")
-        self._append_log(f"Експорт: {listing}", "ok")
+        messagebox.showinfo(WINDOW_TITLE, t("export_ok", listing=listing))
+        self._append_log(t("export_ok", listing=listing).replace("\n", " "), "ok")
 
     def _view_changed(self) -> None:
         self._twitch.settings.inventory_view = self.view_var.get()
@@ -395,7 +395,7 @@ class GUI:
         self.inv_tiles.pack_forget()
         (self.inv_tiles if tiles else self.inv_list).pack(fill="both", expand=True)
         self.tiles_note.configure(
-            text="Картинки вимкнені — увімкніть у налаштуваннях"
+            text=t("tiles_off")
             if tiles and not self._twitch.settings.drop_images else ""
         )
 
@@ -447,14 +447,14 @@ class GUI:
         right = ttk.Frame(tab)
         right.pack(fill="both", expand=True, side="left")
 
-        mode_box = ttk.LabelFrame(right, text="Режим пріоритету", padding=8)
+        mode_box = ttk.LabelFrame(right, text=t("farm_mode"), padding=8)
         mode_box.pack(fill="x")
         self.mode_var = tk.StringVar(value=settings.farm_mode.name)
         for mode, label in (
-            (PriorityMode.LINKED_ONLY, "Усе, до чого привʼязаний акаунт"),
-            (PriorityMode.SOONEST_END, "Спершу ті, що скоро закінчаться"),
-            (PriorityMode.TIGHTEST_FIT, "Спершу ті, що ледве встигають"),
-            (PriorityMode.PRIORITY_LIST, "Тільки зі списку пріоритету"),
+            (PriorityMode.LINKED_ONLY, t("mode_linked")),
+            (PriorityMode.SOONEST_END, t("mode_soonest")),
+            (PriorityMode.TIGHTEST_FIT, t("mode_tightest")),
+            (PriorityMode.PRIORITY_LIST, t("mode_priority")),
         ):
             ttk.Radiobutton(
                 mode_box, text=label, value=mode.name, variable=self.mode_var,
@@ -476,16 +476,16 @@ class GUI:
         combo.pack(fill="x")
         combo.bind("<<ComboboxSelected>>", self._language_changed)
 
-        misc = ttk.LabelFrame(right, text="Інше", padding=8)
+        misc = ttk.LabelFrame(right, text=t("other"), padding=8)
         misc.pack(fill="x", pady=(8, 0))
         self.badges_var = tk.BooleanVar(value=settings.farm_cosmetics)
         ttk.Checkbutton(
-            misc, text="Фармити значки та емоції", variable=self.badges_var,
+            misc, text=t("farm_cosmetics"), variable=self.badges_var,
             command=self._misc_changed,
         ).pack(anchor="w")
         self.autostart_var = tk.BooleanVar(value=settings.start_in_tray)
         ttk.Checkbutton(
-            misc, text="Стартувати одразу згорнутим у трей",
+            misc, text=t("start_tray"),
             variable=self.autostart_var, command=self._misc_changed,
         ).pack(anchor="w")
         # Стан читаємо з реєстру, а не з налаштувань: запис могли зняти ззовні —
@@ -507,7 +507,7 @@ class GUI:
         ).pack(anchor="w")
         size_row = ttk.Frame(misc)
         size_row.pack(fill="x", pady=(2, 0))
-        ttk.Label(size_row, text="Розмір:").pack(side="left")
+        ttk.Label(size_row, text=t("image_size_label")).pack(side="left")
         self.size_var = tk.IntVar(value=self._image_size)
         self.size_label = ttk.Label(size_row, text=f"{self._image_size} px", width=7)
         self.size_label.pack(side="right")
@@ -516,8 +516,7 @@ class GUI:
             variable=self.size_var, command=self._image_size_changed,
         ).pack(side="left", fill="x", expand=True, padx=6)
         ttk.Label(
-            misc, text="Картинки беруться раз і лишаються на диску; "
-                       "розмір можна міняти будь-коли, качати наново не треба.",
+            misc, text=t("image_cache_hint"),
             wraplength=320, justify="left",
         ).pack(anchor="w", pady=(0, 4))
         self.dark_var = tk.BooleanVar(value=settings.dark_theme)
@@ -530,7 +529,7 @@ class GUI:
         tg.pack(fill="x", pady=(8, 0))
         self.tg_var = tk.BooleanVar(value=settings.telegram["enabled"])
         ttk.Checkbutton(
-            tg, text="Увімкнено", variable=self.tg_var,
+            tg, text=t("telegram_on"), variable=self.tg_var,
             command=self._telegram_changed,
         ).pack(anchor="w")
         ttk.Button(
@@ -622,8 +621,7 @@ class GUI:
         got = autostart.apply(self.boot_var.get())
         self.boot_var.set(got)
         self._append_log(
-            "Запуск разом із Windows увімкнено" if got
-            else "Запуск разом із Windows вимкнено",
+            t("boot_on") if got else t("boot_off"),
             "ok" if got == self.boot_var.get() else "warn",
         )
 
@@ -689,11 +687,11 @@ class GUI:
         # найближчий до завершення — першим: саме він заклеймиться раніше
         fresh.sort(key=lambda row: (row[3] - row[2]) if row[3] else 1 << 30)
         lines = [
-            f"{name} — {game} ({have}/{need} хв)"
+            t("growing_line", name=name, game=game, have=have, need=need)
             for name, game, have, need in fresh[:self.GROWING_LINES]
         ]
         if len(fresh) > self.GROWING_LINES:
-            lines.append(f"…і ще {len(fresh) - self.GROWING_LINES}")
+            lines.append(t("growing_more", n=len(fresh) - self.GROWING_LINES))
         self.drop_var.set("\n".join(lines))
         head = fresh[0]
         self.progress["value"] = (
@@ -708,7 +706,7 @@ class GUI:
         Тому пишемо в журнал одразу: натиснуто, чекаємо. Мовчазна кнопка
         змушує тиснути її ще раз, а другий RELOAD нічого не пришвидшує.
         """
-        self._append_log("Перечитую інвентар за вашим запитом…")
+        self._append_log(t("reload_log"))
         self._send(CommandType.RELOAD)
 
     def _telegram_changed(self) -> None:
@@ -724,10 +722,10 @@ class GUI:
         """
         telegram = self._twitch.settings.telegram
         if not telegram["bot_token"]:
-            return "Бот не підключений — натисни «Підключити бота…»."
+            return t("tg_hint_none")
         if not telegram["chat_ids"]:
-            return "Токен є, але невідомо, кому писати. Пройди майстер до кінця."
-        return "Бот підключений. Зміни діють після перезапуску."
+            return t("tg_hint_nochat")
+        return t("tg_hint_ok")
 
     def _open_telegram_setup(self) -> None:
         from gui.telegram_setup import TelegramSetup
@@ -766,9 +764,9 @@ class GUI:
         elif isinstance(event, LogLine):
             self._append_log(event.text)
         elif isinstance(event, LoginRequired):
-            self._append_log(f"Потрібна авторизація, код {event.user_code}", "warn")
+            self._append_log(t("login_needed", code=event.user_code), "warn")
         elif isinstance(event, LoggedIn):
-            self._append_log(f"Вхід виконано (user ID {event.user_id})", "ok")
+            self._append_log(t("logged_in", user_id=event.user_id), "ok")
         elif isinstance(event, WatchingChanged):
             if event.channel is None:
                 self.channel_var.set("—")
@@ -783,7 +781,7 @@ class GUI:
                     self._growing.clear()
                     self._watching_name = event.channel.name
                 self.channel_var.set(
-                    f"{event.channel.name}  ·  {event.channel.game or 'без гри'}"
+                    f"{event.channel.name}  ·  {event.channel.game or t('no_game')}"
                 )
                 # Категорія «Special Events» не каже, у що грають, — гра названа
                 # в заголовку трансляції. Ріжемо довгий: у турнірних заголовках
@@ -807,72 +805,66 @@ class GUI:
             self._render_growing()
             self._set_farm_state("going")
         elif isinstance(event, DropClaimed):
-            self._append_log(f"Отримано: {event.rewards} ({event.game})", "ok")
+            self._append_log(t("claimed_log", rewards=event.rewards, game=event.game), "ok")
         elif isinstance(event, ProtocolStale):
             if event.storm:
-                self._append_log(
-                    "Twitch не знає жодного нашого запиту — схоже на скид кешу "
-                    "на його боці", "warn",
-                )
+                self._append_log(t("protocol_storm_log"), "warn")
             else:
                 self._append_log(
-                    f"Twitch змінив запити: {', '.join(event.operations)}. "
-                    f"Потрібно оновити protocol.py — саме собою не пройде", "err",
+                    t("protocol_stale_log", names=", ".join(event.operations)), "err",
                 )
         elif isinstance(event, CampaignAppeared):
             for item in event.campaigns:
                 self._append_log(
-                    f"Нова кампанія: {item.name.strip()} ({item.game}) — "
-                    f"{item.total_drops} {plural(item.total_drops, 'дроп', 'дропи', 'дропів')}",
+                    t("new_campaign_log",
+                      name=item.name.strip(), game=item.game,
+                      drops=item.total_drops,
+                      unit=plural(item.total_drops,
+                                  t("tg_drop_one"), t("tg_drop_few"), t("tg_drop_many"))),
                     "ok",
                 )
         elif isinstance(event, UpdateAvailable):
             if event.files == 0:
-                self._append_log(
-                    f"Оновлення {event.version}: локальні хеші вже збігаються", "ok",
-                )
+                self._append_log(t("update_hashes", version=event.version), "ok")
                 return
-            what = plural(event.files, "файл", "файли", "файлів")
+            what = plural(event.files, t("file_one"), t("file_few"), t("file_many"))
             size = human_size(event.bytes_to_fetch)
             self._append_log(
-                f"Є оновлення {event.version}: {event.files} {what}, {size}", "ok",
+                t("update_ready_log", version=event.version, files=event.files,
+                  unit=what, size=size), "ok",
             )
             if messagebox.askyesno(
                 WINDOW_TITLE,
-                f"Доступна версія {event.version}.\n\n"
-                f"Завантажити {event.files} {what} ({size}) і перезапуститися?\n"
-                f"Решта файлів лишиться як є.\n\n"
-                f"Те саме можна зробити з Telegram — командою /update.",
+                t("update_ask", version=event.version, files=event.files,
+                  unit=what, size=size),
             ):
                 self._send(CommandType.APPLY_UPDATE)
         elif isinstance(event, UpdateFailed):
-            self._append_log(f"Оновлення не встало: {event.reason}", "err")
+            self._append_log(t("update_fail_log", reason=event.reason), "err")
         elif isinstance(event, ProgressStalled):
             why = (
-                f"Twitch зараховує «{event.counted_elsewhere}» — інший дроп "
-                f"цього ж каналу"
+                t("stall_else", name=event.counted_elsewhere)
                 if event.counted_elsewhere
-                else "можливо, Twitch відкритий вручну"
+                else t("stall_manual")
             )
             self._append_log(
-                f"Прогрес стоїть {event.minutes_without_progress} хв на "
-                f"{event.channel_name} — {why}", "err"
+                t("stall_log", minutes=event.minutes_without_progress,
+                  channel=event.channel_name, why=why), "err"
             )
             self._set_farm_state("stalled")
         elif isinstance(event, WatchUncounted):
             self._append_log(
-                f"Перегляд не зараховується на {event.channel_name} — "
-                f"хвилина не дійшла до Twitch",
+                t("uncounted_log", channel=event.channel_name),
                 "err",
             )
             self._set_farm_state("uncounted")
         elif isinstance(event, ConnectionLost):
-            self.conn_var.set("● немає зв'язку")
-            self._append_log(f"Втрачено зв'язок: {event.reason}", "err")
+            self.conn_var.set(t("conn_lost_badge"))
+            self._append_log(t("conn_lost_log", reason=event.reason), "err")
         elif isinstance(event, ConnectionRestored):
             self.conn_var.set("")
             self._append_log(
-                f"Зв'язок відновлено за {round(event.downtime_seconds)}с", "ok"
+                t("conn_ok_log", seconds=round(event.downtime_seconds)), "ok"
             )
         elif isinstance(event, WebsocketStatus):
             self._render_websockets(event)
@@ -924,10 +916,10 @@ class GUI:
         )
         total = len(self._ws_state)
         if connected == total:
-            state = f"{total} зʼєднань"
+            state = t("ws_all", n=total)
         else:
-            state = f"{connected}/{total} зʼєднань"
-        self.conn_var.set(f"{state} · {topics} топіків")
+            state = t("ws_some", ok=connected, total=total)
+        self.conn_var.set(t("ws_line", state=state, topics=topics))
 
     def _append_log(self, text: str, tag: str = "") -> None:
         stamp = datetime.now().strftime("%H:%M:%S")
@@ -945,9 +937,9 @@ class GUI:
         self.channel_tree.delete(*self.channel_tree.get_children())
         for channel in event.channels:
             if channel.online:
-                state = "онлайн" + (" · дропи" if channel.drops_enabled else "")
+                state = t("ch_online_drops") if channel.drops_enabled else t("ch_online")
             else:
-                state = "офлайн"
+                state = t("ch_offline")
             iid = self.channel_tree.insert(
                 "", "end",
                 values=(channel.name, channel.game or "—", channel.viewers, state),
@@ -971,14 +963,14 @@ class GUI:
         now = datetime.now(timezone.utc)
         for campaign in event.campaigns:
             if campaign.expired:
-                state = "минула"
+                state = t("inv_past")
             elif campaign.upcoming:
-                state = "скоро"
+                state = t("inv_soon")
             elif campaign.claimed_drops >= campaign.total_drops:
-                state = "завершено"
+                state = t("inv_done")
             else:
                 hours = max(0, int((campaign.ends_at - now).total_seconds() // 3600))
-                state = f"ще {hours} год"
+                state = t("inv_hours", hours=hours)
             parent = self.inv_tree.insert(
                 "", "end", text=f"{campaign.game} — {campaign.name}",
                 values=(f"{campaign.claimed_drops}/{campaign.total_drops}", state),
@@ -988,8 +980,9 @@ class GUI:
                 self.inv_tree.insert(
                     parent, "end", text=drop.name,
                     values=(
-                        f"{drop.current_minutes}/{drop.required_minutes} хв",
-                        "отримано" if drop.claimed else "",
+                        t("inv_min", have=drop.current_minutes,
+                          need=drop.required_minutes),
+                        t("inv_claimed") if drop.claimed else "",
                     ),
                     image=self._thumbnail(drop.image),
                 )
@@ -1023,14 +1016,15 @@ class GUI:
                     ttk.Label(card, image=picture).pack()
                 ttk.Label(card, text=_shorten(drop.name), wraplength=TILE_SIZE + 20,
                           justify="center").pack(pady=(4, 0))
-                ttk.Label(card, text=f"{drop.current_minutes}/{drop.required_minutes} хв",
+                ttk.Label(card, text=t("inv_min", have=drop.current_minutes,
+                                       need=drop.required_minutes),
                           foreground=p["accent"]).pack()
                 ttk.Label(card, text=_shorten(campaign.game, 22),
                           foreground=p["fg"]).pack()
                 shown += 1
         if not shown:
             ttk.Label(self.tiles_holder,
-                      text="Немає незабраних дропів в активних кампаніях").pack(pady=20)
+                      text=t("tiles_empty")).pack(pady=20)
         self.tiles_canvas.yview_moveto(0)
 
     def _thumbnail(self, url: str, size: int | None = None) -> Any:
@@ -1074,14 +1068,11 @@ class GUI:
         campaign = self._twitch.active_campaign()
         detail = ""
         if campaign is not None and (drop := campaign.next_drop) is not None:
-            detail = (
-                f"\n\nЗараз фармиться «{drop.name}»: "
-                f"{drop.minutes}/{drop.required_minutes} хв, "
-                f"лишилось {drop.minutes_left}."
-            )
+            detail = t("quit_detail", name=drop.name, have=drop.minutes,
+                       need=drop.required_minutes, left=drop.minutes_left)
         if messagebox.askyesno(
-            "Вимкнути майнер",
-            f"Зупинити фарм і закрити програму?{detail}",
+            t("quit_miner"),
+            t("quit_ask", detail=detail),
             icon="warning",
             default="no",
             parent=self.root,

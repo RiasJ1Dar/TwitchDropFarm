@@ -31,6 +31,7 @@ już zainstalowana w systemie (Edge albo Chrome).
   że tym samym kontem ktoś ogląda Twitcha ręcznie), powie o tym, zamiast milczeć.
 - **Języki interfejsu** (Ustawienia): domyślnie ukraiński, także English,
   Español, Português, Deutsch, Français, Polski, Türkçe, 简体中文. Bez rosyjskiego.
+  Dziennik zostaje po ukraińsku. Bot Telegrama używa tego samego języka co okno.
 
 ## Wymagania
 
@@ -80,6 +81,7 @@ pierwszym uruchomieniu. Wzór:
 | Klucz | Znaczenie |
 |---|---|
 | `farm_mode` | `0` — lista priorytetów, `1` — najbliższy termin, `2` — najlepsze dopasowanie, `3` — tylko powiązane kampanie |
+| `language` | `uk` domyślnie; także `en`, `es`, `pt`, `de`, `fr`, `pl`, `tr`, `zh`; `auto` — język Windows. Bot idzie za oknem |
 | `priority` | gry w kolejności preferencji |
 | `exclude` | gry, których nie ruszać |
 | `farm_cosmetics` | przyjmować kampanie dające wyłącznie odznaki i emotki |

@@ -30,7 +30,8 @@ kullanılır (Edge veya Chrome).
 - **Takılmayı fark eder**: dakikalar birikmeyi bırakırsa (örneğin aynı hesapla
   başka bir yerde elle Twitch izleniyorsa) susmak yerine bunu söyler.
 - **Arayüz dilleri** (Ayarlar): varsayılan Ukraynaca; ayrıca English, Español,
-  Português, Deutsch, Français, Polski, Türkçe, 简体中文. Rusça yok.
+  Português, Deutsch, Français, Polski, Türkçe, 简体中文. Rusça yok. Günlük
+  Ukraynaca kalır. Telegram botu penceredeki dilin aynısını kullanır.
 
 ## Gereksinimler
 
@@ -78,6 +79,7 @@ oluşur. Örnek: [`settings.example.json`](settings.example.json).
 | Anahtar | Anlamı |
 |---|---|
 | `farm_mode` | `0` — öncelik listesi, `1` — en yakın bitiş, `2` — en sıkı uyum, `3` — yalnızca bağlı kampanyalar |
+| `language` | varsayılan `uk`; ayrıca `en`, `es`, `pt`, `de`, `fr`, `pl`, `tr`, `zh`; `auto` — Windows dili. Bot pencereyi izler |
 | `priority` | oyunlar, tercih sırasına göre |
 | `exclude` | dokunulmayacak oyunlar |
 | `farm_cosmetics` | yalnızca rozet ve emote veren kampanyaları kabul et |
