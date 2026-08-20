@@ -342,8 +342,6 @@ def forget_outcome() -> None:
 async def fetch_manifest(
     session: aiohttp.ClientSession,
     url: str = UPDATE_MANIFEST_URL,
-    *,
-    require_signature: bool = False,
 ) -> Manifest:
     async with session.get(
         url,
@@ -352,7 +350,7 @@ async def fetch_manifest(
         if response.status != 200:
             raise ValueError(f"манифест {response.status} з {url}")
         payload = json.loads(await response.text())
-    verify_signature(payload, required=require_signature)
+    verify_signature(payload)
     return read_manifest(payload, source=str(response.url))
 
 
@@ -401,16 +399,14 @@ def sign_manifest(payload: dict[str, Any], private_hex: str) -> dict[str, Any]:
     return signed
 
 
-def verify_signature(payload: dict[str, Any], *, required: bool = False) -> None:
-    """Перевіряє Ed25519. Без підпису — помилка лише коли required (зібраний .exe)."""
+def verify_signature(payload: dict[str, Any]) -> None:
+    """Перевіряє Ed25519. Без валідного підпису манифест не приймається ніде."""
     from cryptography.exceptions import InvalidSignature
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
     raw = str(payload.get("signature") or "").strip()
     if not raw:
-        if required:
-            raise ValueError("у манифесті немає підпису")
-        return
+        raise ValueError("у манифесті немає підпису")
     try:
         signature = bytes.fromhex(raw)
         Ed25519PublicKey.from_public_bytes(MANIFEST_PUBLIC_KEY).verify(
@@ -440,7 +436,7 @@ async def check_for_update(
     root: Path | None = None,
     url: str = UPDATE_MANIFEST_URL,
 ) -> tuple[Manifest, list[FetchItem]] | None:
-    manifest = await fetch_manifest(session, url, require_signature=FROZEN)
+    manifest = await fetch_manifest(session, url)
     if not is_newer(manifest.version, current):
         log.info(f"Оновлення: {manifest.version} не новіша за {current}")
         return None
