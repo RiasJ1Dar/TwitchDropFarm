@@ -15,7 +15,7 @@ a = Analysis(
     ["main.py"],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[("core/locales", "core/locales")],
     hiddenimports=[
         # підтягуються динамічно, тому PyInstaller їх сам не бачить
         "gui.app",

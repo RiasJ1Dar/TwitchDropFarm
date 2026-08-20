@@ -24,7 +24,8 @@
 - **发现停滞**：如果分钟数不再增加（例如同一个账号正在别处手动看 Twitch），它会讲出来，
   而不是闷声不响。
 - **界面语言**（设置）：默认乌克兰语，另有 English、Español、Português、Deutsch、
-  Français、Polski、Türkçe、简体中文。没有俄语。
+  Français、Polski、Türkçe、简体中文。没有俄语。日志仍为乌克兰语。Telegram
+  机器人与窗口使用同一语言。
 
 ## 环境要求
 
@@ -71,6 +72,7 @@ dist\TwitchDropFarm.exe
 | 键 | 含义 |
 |---|---|
 | `farm_mode` | `0` —— 优先级列表，`1` —— 最近截止，`2` —— 最紧凑匹配，`3` —— 仅已绑定的活动 |
+| `language` | 默认 `uk`；另有 `en`、`es`、`pt`、`de`、`fr`、`pl`、`tr`、`zh`；`auto` —— Windows 语言。机器人跟随窗口 |
 | `priority` | 按偏好排序的游戏列表 |
 | `exclude` | 不去碰的游戏 |
 | `farm_cosmetics` | 接受只发徽章和表情的活动 |

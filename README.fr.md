@@ -33,6 +33,8 @@ installé sur le système (Edge ou Chrome).
   lieu de se taire.
 - **Langues de l'interface** (Réglages) : ukrainien par défaut, plus English,
   Español, Português, Deutsch, Français, Polski, Türkçe, 简体中文. Pas de russe.
+  Le journal reste en ukrainien. Le bot Telegram utilise la même langue que la
+  fenêtre.
 
 ## Prérequis
 
@@ -82,6 +84,7 @@ seul au premier démarrage. Modèle :
 | Clé | Signification |
 |---|---|
 | `farm_mode` | `0` — liste de priorité, `1` — échéance la plus proche, `2` — meilleur ajustement, `3` — campagnes liées uniquement |
+| `language` | `uk` par défaut ; aussi `en`, `es`, `pt`, `de`, `fr`, `pl`, `tr`, `zh` ; `auto` — langue de Windows. Le bot suit la fenêtre |
 | `priority` | jeux par ordre de préférence |
 | `exclude` | jeux à ne pas toucher |
 | `farm_cosmetics` | accepter les campagnes qui ne donnent que badges et émotes |

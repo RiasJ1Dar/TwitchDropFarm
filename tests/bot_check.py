@@ -29,6 +29,7 @@ from core.events import (
     WatchingChanged,
     WatchUncounted,
 )
+from core.i18n import set_language
 from core.miner import Miner as Twitch
 from core.settings import Settings
 from core.toolbox import force_utf8_console
@@ -53,6 +54,7 @@ def check(name: str, condition: bool, detail: str = "") -> None:
 
 async def main() -> int:
     force_utf8_console()
+    set_language("uk")
     args = argparse.Namespace(log=False, tray=False, logging_level=50,
                               debug_ws=0, debug_gql=0)
     twitch = Twitch(Settings(args))
@@ -151,6 +153,15 @@ async def main() -> int:
         await tg._handle_command(OWNER, cmd)
         got = sent[before:]
         check(cmd, len(got) == 1 and expect in got[0][1], f"надіслано={got}")
+
+    set_language("en")
+    before = len(sent)
+    await tg._handle_command(OWNER, "/help")
+    got = sent[before:]
+    check("бот слідує мові вікна",
+          len(got) == 1 and "Commands" in got[0][1] and "Команди" not in got[0][1],
+          f"надіслано={got}")
+    set_language("uk")
 
     # команди, що змінюють стан
     print("\n[4] Команди керування → шина команд")
