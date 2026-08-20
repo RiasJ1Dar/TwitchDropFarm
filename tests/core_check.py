@@ -68,6 +68,7 @@ from core.toolbox import (
     rotating_log_handler,
 )
 from gui.app import DARK, GUI
+from gui.icon import profile_photo_jpeg
 from gui.tray import Tray
 
 ok = 0
@@ -567,6 +568,9 @@ def farm_indicator_checks() -> None:
     check("пауза", box._farm_state == "paused")
     GUI._set_farm_state(box, "idle")
     check("чекає", "Чекає" in box.farm_label.text)
+    jpeg = profile_photo_jpeg()
+    check("аватар бота — JPEG", jpeg[:2] == b"\xff\xd8" and len(jpeg) > 2000,
+          f"байт={len(jpeg)}")
 
 
 # ------------------------------------------------- «зараз фармимо» у вікні
