@@ -55,6 +55,7 @@ from core.events import (
 )
 from core.exceptions import RequestInvalid
 from core.history import History
+from core.identity import Identity
 from core.images import ImageCache
 from core.miner import Miner
 from core.seen import SeenCampaigns
@@ -66,7 +67,7 @@ from core.toolbox import (
     plural,
     rotating_log_handler,
 )
-from gui.app import GUI
+from gui.app import DARK, GUI
 from gui.tray import Tray
 
 ok = 0
@@ -154,6 +155,10 @@ def stall_checks() -> None:
     check("дві довгі ітерації ловлять застій",
           len(fired) == 1 and fired[0].minutes_without_progress == 8,
           f"події={fired}")
+    statuses = [e.text for e in fake.events.sent if isinstance(e, StatusChanged)]
+    check("застій видно в рядку статусу",
+          any(text.startswith("Прогрес стоїть") for text in statuses),
+          str(statuses))
 
     # Позначка мусить брати лише підтверджені Twitch хвилини. Якщо туди
     # повернуться домальовані наосліп, застій знову маскуватиме сам себе —
@@ -526,6 +531,44 @@ def watchlist_checks() -> None:
           not [e for e in done.events.sent if isinstance(e, CampaignAppeared)])
 
 
+# ------------------------------------------------- індикатор іде / стоїть
+
+def farm_indicator_checks() -> None:
+    """Шапка мусить казати «Стоїть», а не лишати «Дивимось», коли хвилин немає."""
+    print("\n[3е] Індикатор іде / стоїть")
+
+    class FakeLabel:
+        def __init__(self) -> None:
+            self.text = ""
+            self.fg = ""
+
+        def configure(self, **kwargs: object) -> None:
+            if "text" in kwargs:
+                self.text = str(kwargs["text"])
+            if "fg" in kwargs:
+                self.fg = str(kwargs["fg"])
+
+    box = types.SimpleNamespace(
+        palette=DARK, farm_label=FakeLabel(), _farm_state="",
+    )
+    box._set_farm_state = lambda state: GUI._set_farm_state(box, state)
+    GUI._set_farm_state(box, "going")
+    check("іде", box.farm_label.text == "● Іде" and box.farm_label.fg == DARK["ok"],
+          box.farm_label.text)
+    GUI._set_farm_state(box, "stalled")
+    check("стоїть червоним",
+          "Стоїть" in box.farm_label.text and box.farm_label.fg == DARK["err"],
+          box.farm_label.text)
+    GUI._farm_from_status(box, "Шукаю канали")
+    check("пошук каналів не зтирає «стоїть»", box._farm_state == "stalled")
+    GUI._farm_from_status(box, "Дивимось ibeast")
+    check("хвилини пішли — знову іде", box._farm_state == "going")
+    GUI._farm_from_status(box, "Призупинено")
+    check("пауза", box._farm_state == "paused")
+    GUI._set_farm_state(box, "idle")
+    check("чекає", "Чекає" in box.farm_label.text)
+
+
 # ------------------------------------------------- «зараз фармимо» у вікні
 
 def growing_checks() -> None:
@@ -757,6 +800,8 @@ def tray_checks() -> None:
     check("колір слідує за станом",
           states[2] == "active" and states[8] == "error" and states[-1] == "idle",
           str(states))
+    check("застій фарбує трей як помилку",
+          states[6] == "error", str(states))
     check("та сама подія не перемальовує іконку", tray._icon.redraws == 5,
           f"перемальовувань={tray._icon.redraws}")
     check("сповіщення надіслані", len(tray._icon.notices) == 8,
@@ -1282,6 +1327,60 @@ def request_limit_checks() -> None:
           not lost, f"втрат={lost}")
 
 
+def settings_method_checks() -> None:
+    """alter() падав як «немає налаштування» — тести save() не кликали."""
+    print("\n[налаштування] touch замість неіснуючого alter")
+    settings = Settings()
+    settings.touch()
+    check("touch не падає", True)
+    missing = []
+    for rel in ("gui/app.py", "gui/telegram_setup.py", "notify/telegram.py"):
+        text = Path(rel).read_text(encoding="utf-8")
+        if ".alter()" in text:
+            missing.append(rel)
+    check("жоден виклик .alter()", not missing, ", ".join(missing))
+    source = Path("tools/check_drop.py").read_text(encoding="utf-8")
+    check("check_drop не імпортує core.constants",
+          "core.constants" not in source)
+    payload = protocol.INVENTORY()
+    check("INVENTORY збирає payload",
+          payload.get("operationName") == "Inventory", str(payload))
+
+
+def identity_storage_checks() -> None:
+    """DPAPI: старий відкритий файл читається, новий на диску без токена."""
+    print("\n[сховище токена] DPAPI")
+    import core.identity as ident
+    old = ident.TOKEN_FILE
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "auth.json"
+        ident.TOKEN_FILE = path
+        try:
+            path.write_text(
+                '{"access_token": "plain-token", "user_id": 414015364}',
+                encoding="utf-8",
+            )
+            token, user_id = Identity._load()
+            check("старий відкритий auth.json читається",
+                  token == "plain-token" and user_id == 414015364,
+                  f"{token!r} {user_id}")
+            holder = Identity.__new__(Identity)
+            holder.token = "plain-token"
+            holder.user_id = 414015364
+            holder._persist()
+            on_disk = path.read_text(encoding="utf-8")
+            check("після запису токена немає відкритим текстом",
+                  "plain-token" not in on_disk, on_disk[:120])
+            check("файл позначено protected",
+                  '"protected"' in on_disk, on_disk[:80])
+            again, user_again = Identity._load()
+            check("шифрований читається назад",
+                  again == "plain-token" and user_again == 414015364,
+                  f"{again!r} {user_again}")
+        finally:
+            ident.TOKEN_FILE = old
+
+
 def main() -> int:
     force_utf8_console()
     logging.getLogger("TwitchDrops").setLevel(logging.CRITICAL)
@@ -1290,6 +1389,7 @@ def main() -> int:
     deadline_checks()
     protocol_watch_checks()
     watchlist_checks()
+    farm_indicator_checks()
     growing_checks()
     parallel_watch_checks()
     window_checks()
@@ -1304,6 +1404,8 @@ def main() -> int:
     update_checks()
     delivery_checks()
     request_limit_checks()
+    settings_method_checks()
+    identity_storage_checks()
     print("\n" + "=" * 50)
     print(f"Пройдено: {ok}   Провалено: {fail}")
     return 1 if fail else 0

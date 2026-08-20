@@ -6,13 +6,16 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import logging
+import sys
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from core import protocol
 from core.config import TOKEN_FILE
-from core.toolbox import HEX_LOWER, load_json, random_token, save_json
+from core.toolbox import HEX_LOWER, random_token, save_json
 
 if TYPE_CHECKING:
     from core.api import TwitchApi
@@ -20,6 +23,61 @@ if TYPE_CHECKING:
 log = logging.getLogger("TwitchDrops")
 
 _EMPTY = {"access_token": "", "user_id": 0}
+_CRYPTPROTECT_UI_FORBIDDEN = 0x01
+
+
+def _dpapi_protect(plain: bytes) -> bytes:
+    """Шифрує байти ключем обліковки Windows. Без діалогу."""
+    if sys.platform != "win32":
+        raise OSError("DPAPI є лише на Windows")
+    import ctypes
+    from ctypes import wintypes
+
+    class DATA_BLOB(ctypes.Structure):
+        _fields_ = [("cbData", wintypes.DWORD),
+                    ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+    buffer = ctypes.create_string_buffer(plain, len(plain))
+    incoming = DATA_BLOB(len(plain), ctypes.cast(buffer, ctypes.POINTER(ctypes.c_char)))
+    outgoing = DATA_BLOB()
+    if not ctypes.windll.crypt32.CryptProtectData(
+        ctypes.byref(incoming),
+        "TwitchDropFarm",
+        None, None, None,
+        _CRYPTPROTECT_UI_FORBIDDEN,
+        ctypes.byref(outgoing),
+    ):
+        raise ctypes.WinError()
+    try:
+        return ctypes.string_at(outgoing.pbData, outgoing.cbData)
+    finally:
+        ctypes.windll.kernel32.LocalFree(outgoing.pbData)
+
+
+def _dpapi_unprotect(blob: bytes) -> bytes:
+    if sys.platform != "win32":
+        raise OSError("DPAPI є лише на Windows")
+    import ctypes
+    from ctypes import wintypes
+
+    class DATA_BLOB(ctypes.Structure):
+        _fields_ = [("cbData", wintypes.DWORD),
+                    ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+    buffer = ctypes.create_string_buffer(blob, len(blob))
+    incoming = DATA_BLOB(len(blob), ctypes.cast(buffer, ctypes.POINTER(ctypes.c_char)))
+    outgoing = DATA_BLOB()
+    if not ctypes.windll.crypt32.CryptUnprotectData(
+        ctypes.byref(incoming),
+        None, None, None, None,
+        _CRYPTPROTECT_UI_FORBIDDEN,
+        ctypes.byref(outgoing),
+    ):
+        raise ctypes.WinError()
+    try:
+        return ctypes.string_at(outgoing.pbData, outgoing.cbData)
+    finally:
+        ctypes.windll.kernel32.LocalFree(outgoing.pbData)
 
 
 class Identity:
@@ -39,12 +97,49 @@ class Identity:
     # ------------------------------------------------------------ сховище
 
     @staticmethod
+    def _read_store() -> dict[str, Any]:
+        """Сирий JSON, без шаблону: інакше `protected`/`blob` викине `_conform`."""
+        for candidate in (TOKEN_FILE.with_suffix(TOKEN_FILE.suffix + ".new"), TOKEN_FILE):
+            if not candidate.exists():
+                continue
+            try:
+                with candidate.open("r", encoding="utf-8") as handle:
+                    raw = json.load(handle)
+            except (json.JSONDecodeError, OSError):
+                continue
+            if isinstance(raw, dict):
+                return raw
+        return {}
+
+    @staticmethod
     def _load() -> tuple[str, int]:
-        stored = load_json(TOKEN_FILE, _EMPTY)
-        return stored["access_token"], int(stored["user_id"] or 0)
+        stored = Identity._read_store()
+        if stored.get("protected"):
+            try:
+                inner = json.loads(_dpapi_unprotect(
+                    base64.b64decode(stored.get("blob") or "")
+                ))
+            except (OSError, ValueError, json.JSONDecodeError) as error:
+                log.warning(f"Не вдалося розшифрувати auth.json: {error}")
+                return "", 0
+            if not isinstance(inner, dict):
+                return "", 0
+            return str(inner.get("access_token") or ""), int(inner.get("user_id") or 0)
+        return str(stored.get("access_token") or ""), int(stored.get("user_id") or 0)
 
     def _persist(self) -> None:
-        save_json(TOKEN_FILE, {"access_token": self.token, "user_id": self.user_id})
+        payload = {"access_token": self.token, "user_id": self.user_id}
+        if sys.platform == "win32" and self.token:
+            try:
+                blob = _dpapi_protect(json.dumps(payload).encode("utf-8"))
+                save_json(TOKEN_FILE, {
+                    "protected": True,
+                    "blob": base64.b64encode(blob).decode("ascii"),
+                })
+                return
+            except OSError as error:
+                log.warning(f"DPAPI не записав токен, лишаю відкритим: {error}")
+        save_json(TOKEN_FILE, payload)
 
     @staticmethod
     def forget_stored() -> None:
