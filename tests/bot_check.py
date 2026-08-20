@@ -60,6 +60,7 @@ async def main() -> int:
 
     sent: list[tuple[int, str]] = []
     raw: list[dict] = []
+    bios: list[str] = []
 
     async def fake_api(method: str, **payload):
         if method == "sendMessage":
@@ -68,6 +69,11 @@ async def main() -> int:
             return {"ok": True}
         if method == "getMe":
             return {"username": "DropFarm_bot"}
+        if method == "setMyShortDescription":
+            bios.append(payload.get("short_description", ""))
+            return True
+        if method == "setMyDescription":
+            return True
         return None
 
     tg._api = fake_api                      # type: ignore[assignment]
@@ -118,6 +124,11 @@ async def main() -> int:
     await twitch.events.drain()
     body = sent[-1][1]
     check("екранування HTML", "&lt;b&gt;" in body and "&amp;" in body, body)
+
+    check("біографія бота показує застій",
+          any("Стоїть" in line for line in bios), str(bios))
+    check("біографія бота показує канал",
+          any("Іде · ibeast" in line for line in bios), str(bios))
 
     # ---------------------------------------------------------------- тексти
     print("\n[2] Тексти станів")
@@ -190,6 +201,26 @@ async def main() -> int:
     check("чужого не пущено", not allowed)
     check("чужий не надіслав команду", len(twitch.control.drain_pending()) == 0)
     check("чужому не відповіли", len(sent) == before_sent)
+
+    print("\n[5б] Автопризначення власника")
+    original_api = tg._api
+    tg._config["chat_ids"] = []
+
+    async def fake_updates(method: str, **payload):
+        if method == "getUpdates":
+            return [
+                {"message": {"chat": {"id": STRANGER}, "text": "/start"}},
+                {"message": {"chat": {"id": OWNER}, "text": "/start"}},
+            ]
+        return None
+
+    tg._api = fake_updates  # type: ignore[assignment]
+    found = await tg.discover_chat_ids()
+    check("бачить, хто писав", found == [STRANGER, OWNER], str(found))
+    check("не записує їх власниками",
+          tg._config["chat_ids"] == [], str(tg._config["chat_ids"]))
+    tg._api = original_api  # type: ignore[assignment]
+    tg._config["chat_ids"] = [OWNER]
 
     # ---------------------------------------------------------------- вимкнені категорії
     print("\n[6] Категорії сповіщень вимикаються")

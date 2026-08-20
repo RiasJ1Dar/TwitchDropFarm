@@ -35,6 +35,7 @@ from core.events import (
     MinerStopped,
     ProgressStalled,
     ProtocolStale,
+    StatusChanged,
     StreamOffline,
     UpdateAvailable,
     UpdateFailed,
@@ -236,6 +237,7 @@ class TelegramNotifier:
         self._unsubscribe: Any = None
         # троттлінг рутини: не частіше ніж раз на стільки секунд для того самого типу
         self._last_routine: dict[str, float] = {}
+        self._bio = ""
 
     # ------------------------------------------------------------ життєвий цикл
 
@@ -257,20 +259,19 @@ class TelegramNotifier:
         self._unsubscribe = self._twitch.events.subscribe(self._on_event)
         if self._config["allow_control"]:
             await self.register_commands()
-            if not self._chat_ids:
-                # спробувати знайти власника автоматично перед тим, як здаватись
-                await self.discover_chat_ids()
             if self._chat_ids:
                 self._start_poll_task()
             else:
-                # без білого списку керування = відкритий доступ будь-кому
+                # без білого списку раніше брали першого, хто написав боту —
+                # то був чужий доступ до акаунта Twitch. Власника ставить лише майстер.
                 logger.warning(
                     "Керування з Telegram вимкнено: не задано жодного chat_id. "
-                    "Напиши боту /start — він запамʼятає тебе сам."
+                    "Підключи бота в Налаштуваннях — майстер сам запише chat_id."
                 )
         if self._config["report_every_hours"] > 0:
             self._report_task = asyncio.create_task(self._report_loop())
         logger.info("Telegram-сповіщення активні")
+        await self._set_bio("● Чекає")
 
     async def stop(self) -> None:
         if self._unsubscribe is not None:
@@ -363,11 +364,7 @@ class TelegramNotifier:
         return False
 
     async def discover_chat_ids(self) -> list[int]:
-        """Знаходить chat_id серед тих, хто вже писав боту, і зберігає їх.
-
-        Позбавляє від ручного копіювання id з getUpdates — типового місця,
-        де налаштування Telegram і буксує.
-        """
+        """Хто вже писав боту. Нічого не зберігає — власника ставить лише майстер."""
         updates = await self._api("getUpdates", timeout=0)
         if not updates:
             return []
@@ -376,24 +373,18 @@ class TelegramNotifier:
             message = update.get("message") or update.get("edited_message")
             if message and (chat_id := message["chat"]["id"]) not in found:
                 found.append(chat_id)
-        if found:
-            self._config["chat_ids"] = found
-            self._settings.alter()
-            self._settings.save()
         return found
 
     async def send_test(self) -> None:
         chat_ids = self._chat_ids
         if not chat_ids:
-            print("chat_id не задано — шукаю серед тих, хто писав боту…")
-            chat_ids = await self.discover_chat_ids()
-        if not chat_ids:
-            me = await self._api("getMe")
-            username = me.get("username", "?") if me else "?"
+            found = await self.discover_chat_ids()
             print(
-                f"Нікого не знайдено. Напиши /start боту @{username} у Telegram,\n"
-                "потім запусти --test-telegram ще раз — chat_id збережеться сам."
+                "chat_id не задано. Підключи бота через Налаштування → "
+                "Підключити бота… — майстер запише власника після перевірки."
             )
+            if found:
+                print(f"Хто вже писав боту (ще не власники): {found}")
             return
         await self.send("✅ Перевірка звʼязку. Майнер Twitch drops на звʼязку.", )
         print(f"Тестове повідомлення надіслано у чати: {chat_ids}")
@@ -401,21 +392,64 @@ class TelegramNotifier:
     # ------------------------------------------------------------ події → повідомлення
 
     def _on_event(self, event: Event) -> Any:
+        bio = self._bio_text(event)
         text = self._format(event)
-        if text is None:
+        if bio is None and text is None:
             return None
-        # Слід про сам факт відправки. 18.08 людина сказала, що повідомлення про
-        # нову версію не прийшло, а в журналі не було ні помилки, ні згадки —
-        # тобто перевірити було нічим. Помилки `_api` логує окремо; цей рядок
-        # відповідає на інше питання: чи ми взагалі намагались надіслати.
-        logger.log(CALL, f"Telegram: надсилаю {type(event).__name__}")
-        # Оновлення ставиться не саме собою: під повідомленням дві кнопки, і
-        # поки людина не натисне, нічого не качається й не перезапускається.
-        if isinstance(event, UpdateAvailable) and event.files:
-            return self.send(text, markup=UPDATE_BUTTONS)
-        # Разом із повідомленням про старт віддаємо панель: інакше вона зʼявилась би
-        # лише після /start, і користувач бачив би бота без кнопок.
-        return self.send(text, keyboard=isinstance(event, MinerStarted))
+
+        async def deliver() -> None:
+            if bio is not None:
+                await self._set_bio(bio)
+            if text is None:
+                return
+            logger.log(CALL, f"Telegram: надсилаю {type(event).__name__}")
+            if isinstance(event, UpdateAvailable) and event.files:
+                await self.send(text, markup=UPDATE_BUTTONS)
+                return
+            await self.send(text, keyboard=isinstance(event, MinerStarted))
+
+        return deliver()
+
+    def _bio_text(self, event: Event) -> str | None:
+        """Рядок у профіль бота (short description, до 120 символів)."""
+        if isinstance(event, WatchingChanged):
+            if event.channel is None:
+                return "● Чекає"
+            return f"● Іде · {event.channel.name}"
+        if isinstance(event, ProgressStalled):
+            return (
+                f"● Стоїть · {event.minutes_without_progress} хв · "
+                f"{event.channel_name}"
+            )
+        if isinstance(event, WatchUncounted):
+            return f"● Не зараховується · {event.channel_name}"
+        if isinstance(event, StatusChanged):
+            if event.text == "Призупинено":
+                return "● Пауза"
+            if event.text.startswith("Прогрес стоїть"):
+                return f"● {event.text}"
+            if event.text == "Перегляд не зараховується":
+                return "● Не зараховується"
+        if isinstance(event, ConnectionLost):
+            return "● Немає зв'язку"
+        if isinstance(event, MinerStopped):
+            return "● Зупинено"
+        if isinstance(event, MinerStarted):
+            return "● Чекає"
+        return None
+
+    async def _set_bio(self, text: str) -> None:
+        text = text[:120]
+        if text == self._bio:
+            return
+        # Той самий вид («Іде · канал») не частіше ніж раз на 15 с — інакше
+        # перемикання каналів молотить Bot API. Зміна виду (Іде → Стоїть) одразу.
+        same_kind = self._bio[: self._bio.find("·") + 1] == text[: text.find("·") + 1]
+        if same_kind and self._bio and not self._routine_allowed("bio", 15.0):
+            return
+        self._bio = text
+        await self._api("setMyShortDescription", short_description=text)
+        await self._api("setMyDescription", description=text)
 
     def _routine_allowed(self, key: str, min_interval: float = 60.0) -> bool:
         now = time()
@@ -911,7 +945,7 @@ class TelegramNotifier:
         else:
             current = [item for item in current if item.lower() != game.lower()]
         self._settings.watch_games = current
-        self._settings.alter()
+        self._settings.touch()
         self._settings.save()
         verb = "додано до спостереження" if action == "add" else "прибрано зі спостереження"
         await self.send(f"«{html.escape(game)}» {verb}.",

@@ -247,7 +247,7 @@ class TelegramSetup(tk.Toplevel):
         telegram["bot_token"] = self._token
         telegram["chat_ids"] = [chat_id]
         telegram["enabled"] = True
-        self._settings.alter()
+        self._settings.touch()
         self._settings.save()
         self.final_status["text"] = (
             "✓ Збережено й увімкнено. Сповіщення почнуть ходити після "

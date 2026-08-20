@@ -934,10 +934,12 @@ class Miner:
         elapsed = clock - started
         if elapsed >= STALL_LIMIT * 60 and not self._stall_alerted:
             self._stall_alerted = True
+            minutes = max(STALL_LIMIT, int(elapsed // 60))
+            self.events.status(f"Прогрес стоїть {minutes} хв")
             # у журнал це пише підписник подій у main; другий рядок звідси лише
             # дублював би той самий факт
             self.events.emit(ProgressStalled(
-                minutes_without_progress=max(STALL_LIMIT, int(elapsed // 60)),
+                minutes_without_progress=minutes,
                 channel_name=channel.name,
                 counted_elsewhere=self._counted_elsewhere,
             ))
