@@ -30,6 +30,7 @@ from core.events import (
     WatchingChanged,
     WatchUncounted,
 )
+from core.i18n import t
 from gui.icon import make_icon
 
 if TYPE_CHECKING:
@@ -65,13 +66,13 @@ class Tray:
             return
         self._loop = asyncio.get_running_loop()
         menu = pystray.Menu(
-            pystray.MenuItem("Показати вікно", self._show, default=True),
-            pystray.MenuItem("Сховати вікно", self._hide),
+            pystray.MenuItem(t("tray_show"), self._show, default=True),
+            pystray.MenuItem(t("tray_hide"), self._hide),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Призупинити", self._pause),
-            pystray.MenuItem("Продовжити", self._resume),
+            pystray.MenuItem(t("pause"), self._pause),
+            pystray.MenuItem(t("resume"), self._resume),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Вийти", self._quit),
+            pystray.MenuItem(t("tray_quit"), self._quit),
         )
         self._icon = pystray.Icon(
             "twitch_drop_farm", _make_icon("idle"), "Twitch Drop Farm", menu
