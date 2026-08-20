@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -271,6 +272,7 @@ class TelegramNotifier:
         if self._config["report_every_hours"] > 0:
             self._report_task = asyncio.create_task(self._report_loop())
         logger.info("Telegram-сповіщення активні")
+        await self._ensure_profile_photo()
         await self._set_bio("● Чекає")
 
     async def stop(self) -> None:
@@ -894,6 +896,47 @@ class TelegramNotifier:
             return
         if not answer.get("ok"):
             logger.warning(f"Telegram sendDocument: {answer.get('description')}")
+
+    async def _ensure_profile_photo(self) -> None:
+        """Ставить аватар бота з іконки програми, один раз на версію."""
+        from core.config import VERSION
+        from gui.icon import profile_photo_jpeg
+
+        if self._config.get("photo_version") == VERSION:
+            return
+        if await self._set_profile_photo(profile_photo_jpeg()):
+            self._config["photo_version"] = VERSION
+            self._settings.touch()
+            self._settings.save()
+            logger.info("Аватар Telegram-бота оновлено")
+
+    async def _set_profile_photo(self, jpeg: bytes) -> bool:
+        if self._session is None or not jpeg:
+            return False
+        url = TELEGRAM_API.format(
+            token=self._config["bot_token"], method="setMyProfilePhoto",
+        )
+        form = aiohttp.FormData()
+        form.add_field(
+            "photo",
+            json.dumps({"type": "static", "photo": "attach://icon"}),
+            content_type="application/json",
+        )
+        form.add_field(
+            "icon", jpeg, filename="icon.jpg", content_type="image/jpeg",
+        )
+        try:
+            async with self._session.post(url, data=form) as response:
+                answer = await response.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
+            logger.warning(
+                f"Telegram setMyProfilePhoto не вдався: {type(exc).__name__}: {exc}"
+            )
+            return False
+        if not answer.get("ok"):
+            logger.warning(f"Telegram setMyProfilePhoto: {answer.get('description')}")
+            return False
+        return True
 
     async def _handle_priority(self, chat_id: int, argument: str) -> None:
         bits = argument.split(maxsplit=1)
