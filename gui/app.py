@@ -47,6 +47,7 @@ from core.events import (
     WebsocketStatus,
     WindowVisibility,
 )
+from core.i18n import LANGS, NAMES, t
 from core.toolbox import human_size, plural
 
 if TYPE_CHECKING:
@@ -67,11 +68,11 @@ def _shorten(text: str, limit: int = 34) -> str:
 
 # Індикатор у шапці: чи фарм насправді крутиться, а не лише «Дивимось».
 FARM_BADGE = {
-    "going": ("● Іде", "ok"),
-    "stalled": ("● Стоїть", "err"),
-    "uncounted": ("● Не зараховується", "err"),
-    "paused": ("● Пауза", "warn"),
-    "idle": ("● Чекає", "fg"),
+    "going": ("farm_going", "ok"),
+    "stalled": ("farm_stalled", "err"),
+    "uncounted": ("farm_uncounted", "err"),
+    "paused": ("farm_paused", "warn"),
+    "idle": ("farm_idle", "fg"),
 }
 # як часто прокручуємо цикл Tk; 20 к/с — непомітно для ока й дешево для CPU
 TK_TICK = 0.05
@@ -203,9 +204,9 @@ class GUI:
     def _build_mining_tab(self, notebook: ttk.Notebook) -> None:
         p = self.palette
         tab = ttk.Frame(notebook, padding=10)
-        notebook.add(tab, text="Майнінг")
+        notebook.add(tab, text=t("tab_mining"))
 
-        box = ttk.LabelFrame(tab, text="Зараз фармимо", padding=10)
+        box = ttk.LabelFrame(tab, text=t("farming_now"), padding=10)
         box.pack(fill="x")
         self.channel_var = tk.StringVar(value="—")
         ttk.Label(box, textvariable=self.channel_var,
@@ -220,7 +221,7 @@ class GUI:
         # кілька, і раніше тут лишався той, чий прогрес прийшов останнім —
         # тобто випадковий. З турнірної трансляції це виглядало так, ніби
         # фармиться подія, а гра невідома.
-        self.drop_var = tk.StringVar(value="Дроп не визначено")
+        self.drop_var = tk.StringVar(value=t("drop_unknown"))
         ttk.Label(box, textvariable=self.drop_var, justify="left").pack(
             anchor="w", pady=(4, 2),
         )
@@ -229,16 +230,16 @@ class GUI:
 
         controls = ttk.Frame(tab)
         controls.pack(fill="x", pady=8)
-        self.pause_btn = ttk.Button(controls, text="Призупинити", command=self._toggle_pause)
+        self.pause_btn = ttk.Button(controls, text=t("pause"), command=self._toggle_pause)
         self.pause_btn.pack(side="left")
         ttk.Button(controls, text="Перечитати інвентар",
                    command=self._reload_now).pack(side="left", padx=6)
-        ttk.Button(controls, text="Згорнути в трей",
+        ttk.Button(controls, text=t("hide_tray"),
                    command=self.hide_to_tray).pack(side="right")
-        ttk.Button(controls, text="Вимкнути майнер",
+        ttk.Button(controls, text=t("quit_miner"),
                    command=self.confirm_quit).pack(side="right", padx=6)
 
-        log_box = ttk.LabelFrame(tab, text="Журнал", padding=6)
+        log_box = ttk.LabelFrame(tab, text=t("log"), padding=6)
         log_box.pack(fill="both", expand=True)
         self.log = tk.Text(log_box, height=12, wrap="word", bg=p["alt"], fg=p["fg"],
                            insertbackground=p["fg"], relief="flat")
@@ -251,15 +252,15 @@ class GUI:
 
     def _build_channels_tab(self, notebook: ttk.Notebook) -> None:
         tab = ttk.Frame(notebook, padding=10)
-        notebook.add(tab, text="Канали")
+        notebook.add(tab, text=t("tab_channels"))
         ttk.Label(
-            tab, text="Подвійний клік — перемкнутись на канал"
+            tab, text=t("channels_hint")
         ).pack(anchor="w", pady=(0, 6))
         columns = ("name", "game", "viewers", "status")
         self.channel_tree = ttk.Treeview(tab, columns=columns, show="headings")
         for column, title, width in (
-            ("name", "Канал", 200), ("game", "Гра", 260),
-            ("viewers", "Глядачі", 90), ("status", "Стан", 140),
+            ("name", t("col_channel"), 200), ("game", t("col_game"), 260),
+            ("viewers", t("col_viewers"), 90), ("status", t("col_status"), 140),
         ):
             self.channel_tree.heading(column, text=title)
             self.channel_tree.column(column, width=width, anchor="w")
@@ -271,7 +272,7 @@ class GUI:
 
     def _build_inventory_tab(self, notebook: ttk.Notebook) -> None:
         tab = ttk.Frame(notebook, padding=10)
-        notebook.add(tab, text="Інвентар")
+        notebook.add(tab, text=t("tab_inventory"))
 
         bar = ttk.Frame(tab)
         bar.pack(fill="x", pady=(0, 6))
@@ -401,9 +402,9 @@ class GUI:
     def _build_settings_tab(self, notebook: ttk.Notebook) -> None:
         settings = self._twitch.settings
         tab = ttk.Frame(notebook, padding=10)
-        notebook.add(tab, text="Налаштування")
+        notebook.add(tab, text=t("tab_settings"))
 
-        prio_box = ttk.LabelFrame(tab, text="Пріоритет ігор", padding=8)
+        prio_box = ttk.LabelFrame(tab, text=t("priority"), padding=8)
         prio_box.pack(fill="both", expand=True, side="left", padx=(0, 8))
         self.prio_list = tk.Listbox(prio_box, bg=self.palette["alt"],
                                     fg=self.palette["fg"], relief="flat",
@@ -423,12 +424,11 @@ class GUI:
         # Спостереження — окремо від пріоритету: пріоритет міняє, що фармити
         # зараз, а це лише новини про нові кампанії. Можна хотіти знати про
         # Rocket League, не перериваючи фарм WoT.
-        watch_box = ttk.LabelFrame(prio_box, text="Спостерігати за іграми",
+        watch_box = ttk.LabelFrame(prio_box, text=t("watch_games"),
                                    padding=8)
         watch_box.pack(fill="both", expand=True, pady=(10, 0))
         ttk.Label(watch_box, wraplength=240, foreground=self.palette["accent"],
-                  text="Скажу, коли зʼявиться нова кампанія цієї гри. "
-                       "Фарм не переривається.").pack(anchor="w")
+                  text=t("watch_hint")).pack(anchor="w")
         self.watch_list = tk.Listbox(watch_box, height=4, bg=self.palette["alt"],
                                      fg=self.palette["fg"], relief="flat",
                                      selectbackground=self.palette["accent"])
@@ -461,6 +461,21 @@ class GUI:
                 command=self._mode_changed,
             ).pack(anchor="w")
 
+        lang_box = ttk.LabelFrame(right, text=t("language"), padding=8)
+        lang_box.pack(fill="x")
+        self._lang_codes = ["auto", *LANGS]
+        labels = [t("language_auto"), *[NAMES[code] for code in LANGS]]
+        stored = settings.language or "auto"
+        self.lang_var = tk.StringVar(
+            value=t("language_auto") if stored == "auto" or not stored
+            else NAMES.get(stored, t("language_auto"))
+        )
+        combo = ttk.Combobox(
+            lang_box, textvariable=self.lang_var, values=labels, state="readonly",
+        )
+        combo.pack(fill="x")
+        combo.bind("<<ComboboxSelected>>", self._language_changed)
+
         misc = ttk.LabelFrame(right, text="Інше", padding=8)
         misc.pack(fill="x", pady=(8, 0))
         self.badges_var = tk.BooleanVar(value=settings.farm_cosmetics)
@@ -477,17 +492,17 @@ class GUI:
         # диспетчером завдань, чистилкою автозавантаження чи іншою збіркою.
         self.boot_var = tk.BooleanVar(value=autostart.is_enabled())
         ttk.Checkbutton(
-            misc, text="Запускати разом із Windows",
+            misc, text=t("autostart"),
             variable=self.boot_var, command=self._autostart_changed,
         ).pack(anchor="w")
         self.images_var = tk.BooleanVar(value=settings.drop_images)
         ttk.Checkbutton(
-            misc, text="Завантажувати зображення дропів",
+            misc, text=t("drop_images"),
             variable=self.images_var, command=self._misc_changed,
         ).pack(anchor="w")
         self.updates_var = tk.BooleanVar(value=settings.check_updates)
         ttk.Checkbutton(
-            misc, text="Перевіряти оновлення (лише змінені файли, за хешем)",
+            misc, text=t("check_updates"),
             variable=self.updates_var, command=self._misc_changed,
         ).pack(anchor="w")
         size_row = ttk.Frame(misc)
@@ -507,11 +522,11 @@ class GUI:
         ).pack(anchor="w", pady=(0, 4))
         self.dark_var = tk.BooleanVar(value=settings.dark_theme)
         ttk.Checkbutton(
-            misc, text="Темна тема (застосується після перезапуску)",
+            misc, text=t("dark_theme"),
             variable=self.dark_var, command=self._misc_changed,
         ).pack(anchor="w")
 
-        tg = ttk.LabelFrame(right, text="Telegram", padding=8)
+        tg = ttk.LabelFrame(right, text=t("telegram"), padding=8)
         tg.pack(fill="x", pady=(8, 0))
         self.tg_var = tk.BooleanVar(value=settings.telegram["enabled"])
         ttk.Checkbutton(
@@ -519,7 +534,7 @@ class GUI:
             command=self._telegram_changed,
         ).pack(anchor="w")
         ttk.Button(
-            tg, text="Підключити бота…", command=self._open_telegram_setup,
+            tg, text=t("connect_bot"), command=self._open_telegram_setup,
         ).pack(anchor="w", pady=(6, 0))
         self.tg_hint = ttk.Label(tg, text=self._telegram_hint(), wraplength=320)
         self.tg_hint.pack(anchor="w", pady=(4, 0))
@@ -532,11 +547,11 @@ class GUI:
     def _toggle_pause(self) -> None:
         if self._twitch._paused:
             self._send(CommandType.RESUME)
-            self.pause_btn.configure(text="Призупинити")
+            self.pause_btn.configure(text=t("pause"))
             self._set_farm_state("going" if self._watching_name else "idle")
         else:
             self._send(CommandType.PAUSE)
-            self.pause_btn.configure(text="Продовжити")
+            self.pause_btn.configure(text=t("resume"))
             self._set_farm_state("paused")
 
     def _on_channel_activate(self, _event: tk.Event) -> None:
@@ -582,6 +597,16 @@ class GUI:
         settings.watch_games = list(self.watch_list.get(0, "end"))
         settings.touch()
         settings.save()
+
+    def _language_changed(self, _event: object = None) -> None:
+        label = self.lang_var.get()
+        if label == t("language_auto"):
+            code = ""
+        else:
+            code = next((item for item, name in NAMES.items() if name == label), "")
+        self._twitch.settings.language = code
+        self._twitch.settings.save()
+        messagebox.showinfo(WINDOW_TITLE, t("language_restart"))
 
     def _mode_changed(self) -> None:
         self._twitch.settings.farm_mode = PriorityMode[self.mode_var.get()]
@@ -658,7 +683,7 @@ class GUI:
             if now - at > self.GROWING_WINDOW:
                 del self._growing[name]
         if not fresh:
-            self.drop_var.set("Дроп не визначено")
+            self.drop_var.set(t("drop_unknown"))
             self.progress["value"] = 0
             return
         # найближчий до завершення — першим: саме він заклеймиться раніше
@@ -749,7 +774,7 @@ class GUI:
                 self.channel_var.set("—")
                 self.title_var.set("")
                 self._growing.clear()
-                self.drop_var.set("Дроп не визначено")
+                self.drop_var.set(t("drop_unknown"))
                 self.progress["value"] = 0
                 self._set_farm_state("idle")
             else:
@@ -865,8 +890,8 @@ class GUI:
         if state not in FARM_BADGE or state == self._farm_state:
             return
         self._farm_state = state
-        text, colour = FARM_BADGE[state]
-        self.farm_label.configure(text=text, fg=self.palette[colour])
+        key, colour = FARM_BADGE[state]
+        self.farm_label.configure(text=t(key), fg=self.palette[colour])
 
     def _farm_from_status(self, text: str) -> None:
         if text == "Призупинено":

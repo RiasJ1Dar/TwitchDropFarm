@@ -48,6 +48,8 @@ class ConfigShape(TypedDict):
     inventory_view: str
     browser_path: str
     proxy: str
+    # "" — авто (мова Windows, інакше українська). Не падати в китайську.
+    language: str
     telegram: TelegramConfig
 
 
@@ -90,6 +92,7 @@ DEFAULTS: ConfigShape = {
     "inventory_view": "list",
     "browser_path": "",
     "proxy": "",
+    "language": "",
     "telegram": DEFAULT_TELEGRAM,
 }
 
