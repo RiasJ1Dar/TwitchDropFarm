@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import math
+from io import BytesIO
 
 from PIL import Image, ImageDraw
 
@@ -82,6 +83,20 @@ def make_icon(size: int = 64, state: str = "active") -> Image.Image:
         (0, -int(at(0.07))),
     )
     return image
+
+
+def profile_photo_jpeg(size: int = 640) -> bytes:
+    """JPG для аватара Telegram-бота — той самий значок, що у вікна.
+
+    Telegram приймає лише JPG. Значок малюється з прозорістю, тож підкладаємо
+    фіолетове тло, інакше JPEG зробить його чорним.
+    """
+    image = make_icon(size, "active")
+    rgb = Image.new("RGB", image.size, STATE_COLOURS["active"])
+    rgb.paste(image, mask=image.split()[-1])
+    buffer = BytesIO()
+    rgb.save(buffer, format="JPEG", quality=90)
+    return buffer.getvalue()
 
 
 def ico_sizes() -> list[int]:
