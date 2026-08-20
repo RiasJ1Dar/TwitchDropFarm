@@ -43,6 +43,7 @@ from core.events import (
     WatchingChanged,
     WatchUncounted,
 )
+from core.i18n import t
 from core.protocol import TELEGRAM_ENDPOINT as TELEGRAM_API
 from core.toolbox import plural
 
@@ -51,65 +52,64 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("TwitchDrops")
 
-# Єдине джерело правди для команд: з нього збирається і меню Telegram (setMyCommands),
-# і текст довідки. Інакше вони неминуче розходяться з тим, що насправді робить код.
-COMMANDS: tuple[tuple[str, str, str], ...] = (
-    # (команда, опис для меню Telegram, підказка про аргументи для /help)
-    ("status", "що зараз фармиться", ""),
-    ("inventory", "прогрес по дропах", ""),
-    ("campaigns", "список кампаній", ""),
-    ("pause", "призупинити фарм", ""),
-    ("resume", "продовжити фарм", ""),
-    ("switch", "перемкнутись на канал", " &lt;канал&gt;"),
-    ("priority", "керувати пріоритетом ігор", " add|remove &lt;гра&gt;"),
-    ("watch", "слідкувати за новими кампаніями гри", " add|remove &lt;гра&gt;"),
-    ("report", "звіт за тиждень", " [днів]"),
-    ("export", "зберегти історію та інвентар", ""),
-    ("update", "поставити оновлення (лише змінені файли)", ""),
-    ("reload", "перечитати інвентар", ""),
-    ("hide", "згорнути вікно в трей", ""),
-    ("show", "розгорнути вікно", ""),
-    ("reboot", "повністю перезапустити програму", ""),
-    ("menu", "показати панель кнопок", ""),
-    ("help", "довідка по командах", ""),
-)
+# Єдине джерело правди для команд: меню Telegram і /help збираються звідси.
+# Тексти через t(), бо мова бота та сама, що у вікні.
+def command_catalog() -> tuple[tuple[str, str, str], ...]:
+    return (
+        ("status", t("tg_cmd_status"), ""),
+        ("inventory", t("tg_cmd_inventory"), ""),
+        ("campaigns", t("tg_cmd_campaigns"), ""),
+        ("pause", t("tg_cmd_pause"), ""),
+        ("resume", t("tg_cmd_resume"), ""),
+        ("switch", t("tg_cmd_switch"), t("tg_arg_channel")),
+        ("priority", t("tg_cmd_priority"), t("tg_arg_game")),
+        ("watch", t("tg_cmd_watch"), t("tg_arg_game")),
+        ("report", t("tg_cmd_report"), t("tg_arg_days")),
+        ("export", t("tg_cmd_export"), ""),
+        ("update", t("tg_cmd_update"), ""),
+        ("reload", t("tg_cmd_reload"), ""),
+        ("hide", t("tg_cmd_hide"), ""),
+        ("show", t("tg_cmd_show"), ""),
+        ("reboot", t("tg_cmd_reboot"), ""),
+        ("menu", t("tg_cmd_menu"), ""),
+        ("help", t("tg_cmd_help"), ""),
+    )
 
-HELP_TEXT = "<b>Команди</b>\n" + "\n".join(
-    f"/{name}{args} — {description}" for name, description, args in COMMANDS
-)
 
-# Панель керування. Рядки — як лягають кнопки в Telegram.
-# Команди з аргументами (/switch, /priority) сюди не потрапляють: кнопка не має
-# куди прийняти назву каналу чи гри, тож вони лишаються текстовими.
-CONTROL_BUTTONS: tuple[tuple[tuple[str, str], ...], ...] = (
-    (("📊 Стан", "status"), ("🎒 Дропи", "inventory")),
-    (("📋 Кампанії", "campaigns"), ("📈 Звіт", "report")),
-    (("⏸ Пауза", "pause"), ("▶️ Продовжити", "resume")),
-    (("🙈 Сховати вікно", "hide"), ("🖥 Показати вікно", "show")),
-    (("🔄 Оновити", "reload"), ("♻️ Перезапуск", "reboot")),
-    (("💾 Експорт", "export"), ("❓ Довідка", "help")),
-)
+def help_text() -> str:
+    return "<b>" + t("tg_help_title") + "</b>\n" + "\n".join(
+        f"/{name}{args} — {description}"
+        for name, description, args in command_catalog()
+    )
 
-# Напис кнопки -> команда. Клавіатура під полем вводу шле саме текст напису,
-# а не службові дані, тож переклад потрібен на вході.
-BUTTON_COMMANDS: dict[str, str] = {
-    label: command for row in CONTROL_BUTTONS for label, command in row
-}
+
+def control_buttons() -> tuple[tuple[tuple[str, str], ...], ...]:
+    return (
+        ((t("tg_btn_status"), "status"), (t("tg_btn_inventory"), "inventory")),
+        ((t("tg_btn_campaigns"), "campaigns"), (t("tg_btn_report"), "report")),
+        ((t("tg_btn_pause"), "pause"), (t("tg_btn_resume"), "resume")),
+        ((t("tg_btn_hide"), "hide"), (t("tg_btn_show"), "show")),
+        ((t("tg_btn_reload"), "reload"), (t("tg_btn_reboot"), "reboot")),
+        ((t("tg_btn_export"), "export"), (t("tg_btn_help"), "help")),
+    )
+
+
+def button_commands() -> dict[str, str]:
+    return {label: command for row in control_buttons() for label, command in row}
+
+
+def update_buttons() -> dict:
+    return {
+        "inline_keyboard": [[
+            {"text": t("tg_btn_update"), "callback_data": "update"},
+            {"text": t("tg_btn_later"), "callback_data": "later"},
+        ]],
+    }
 
 
 # Telegram відхиляє повідомлення понад 4096 символів помилкою, а не обрізає його.
 # Довгий інвентар через це просто не доходив би, і мовчки.
 MESSAGE_LIMIT = 3900
-
-# Кнопки під повідомленням про оновлення. Саме інлайн, а не панель: питання
-# разове й прив'язане до конкретної версії, а рішення про перезапуск програми
-# людина має ухвалити свідомо — і мати право сказати «не зараз».
-UPDATE_BUTTONS: dict = {
-    "inline_keyboard": [[
-        {"text": "⬆️ Оновити й перезапустити", "callback_data": "update"},
-        {"text": "⏳ Відкласти", "callback_data": "later"},
-    ]],
-}
 
 
 # ================================================================ майстер налаштування
@@ -211,11 +211,11 @@ def control_keyboard() -> dict:
     return {
         "keyboard": [
             [{"text": label} for label, _command in row]
-            for row in CONTROL_BUTTONS
+            for row in control_buttons()
         ],
         "resize_keyboard": True,   # кнопки по висоті тексту, а не на пів екрана
         "is_persistent": True,     # не ховати після натискання
-        "input_field_placeholder": "Або команда: /switch канал",
+        "input_field_placeholder": t("tg_placeholder"),
     }
 
 
@@ -273,7 +273,7 @@ class TelegramNotifier:
             self._report_task = asyncio.create_task(self._report_loop())
         logger.info("Telegram-сповіщення активні")
         await self._ensure_profile_photo()
-        await self._set_bio("● Чекає")
+        await self._set_bio(t("farm_idle"))
 
     async def stop(self) -> None:
         if self._unsubscribe is not None:
@@ -357,11 +357,11 @@ class TelegramNotifier:
             "setMyCommands",
             commands=[
                 {"command": name, "description": description}
-                for name, description, _args in COMMANDS
+                for name, description, _args in command_catalog()
             ],
         )
         if result:
-            logger.info(f"Меню Telegram оновлено: {len(COMMANDS)} команд")
+            logger.info(f"Меню Telegram оновлено: {len(command_catalog())} команд")
             return True
         return False
 
@@ -406,7 +406,7 @@ class TelegramNotifier:
                 return
             logger.log(CALL, f"Telegram: надсилаю {type(event).__name__}")
             if isinstance(event, UpdateAvailable) and event.files:
-                await self.send(text, markup=UPDATE_BUTTONS)
+                await self.send(text, markup=update_buttons())
                 return
             await self.send(text, keyboard=isinstance(event, MinerStarted))
 
@@ -416,28 +416,26 @@ class TelegramNotifier:
         """Рядок у профіль бота (short description, до 120 символів)."""
         if isinstance(event, WatchingChanged):
             if event.channel is None:
-                return "● Чекає"
-            return f"● Іде · {event.channel.name}"
+                return t("farm_idle")
+            return f"{t('farm_going')} · {event.channel.name}"
         if isinstance(event, ProgressStalled):
-            return (
-                f"● Стоїть · {event.minutes_without_progress} хв · "
-                f"{event.channel_name}"
-            )
+            return t("tg_bio_stalled", minutes=event.minutes_without_progress,
+                     channel=event.channel_name)
         if isinstance(event, WatchUncounted):
-            return f"● Не зараховується · {event.channel_name}"
+            return t("tg_bio_uncounted", channel=event.channel_name)
         if isinstance(event, StatusChanged):
-            if event.text == "Призупинено":
-                return "● Пауза"
-            if event.text.startswith("Прогрес стоїть"):
+            if event.text == t("status_paused"):
+                return t("farm_paused")
+            if event.text.startswith(t("status_stalled", minutes="").rstrip()):
                 return f"● {event.text}"
-            if event.text == "Перегляд не зараховується":
-                return "● Не зараховується"
+            if event.text == t("status_uncounted"):
+                return t("farm_uncounted")
         if isinstance(event, ConnectionLost):
-            return "● Немає зв'язку"
+            return t("tg_bio_offline")
         if isinstance(event, MinerStopped):
-            return "● Зупинено"
+            return t("tg_bio_stopped")
         if isinstance(event, MinerStarted):
-            return "● Чекає"
+            return t("farm_idle")
         return None
 
     async def _set_bio(self, text: str) -> None:
@@ -466,45 +464,26 @@ class TelegramNotifier:
 
         if cfg["notify_critical"]:
             if isinstance(event, MinerStarted):
-                where = "у треї" if event.tray else "у вікні"
-                return f"🟢 <b>Майнер запущено</b> ({where}), версія {esc(event.version)}"
+                where = t("tg_in_tray") if event.tray else t("tg_in_window")
+                return t("tg_started", where=where, version=esc(event.version))
             if isinstance(event, LoginRequired):
-                return (
-                    "🔑 <b>Потрібна авторизація</b>\n"
-                    f"Код: <code>{esc(event.user_code)}</code>\n"
-                    f"{esc(str(event.verification_uri))}"
-                )
+                return t("tg_login", code=esc(event.user_code),
+                         uri=esc(str(event.verification_uri)))
             if isinstance(event, ProgressStalled):
                 why = (
-                    f"Twitch зараховує «{esc(event.counted_elsewhere)}» — інший "
-                    f"дроп цього ж каналу."
+                    t("tg_stalled_else", name=esc(event.counted_elsewhere))
                     if event.counted_elsewhere
-                    else "Найімовірніша причина — цим же акаунтом хтось дивиться "
-                         "Twitch вручну."
+                    else t("tg_stalled_manual")
                 )
-                return (
-                    f"⚠️ <b>Прогрес стоїть</b> {event.minutes_without_progress} хв\n"
-                    f"Канал: {esc(event.channel_name)}\n{why}"
-                )
+                return t("tg_stalled", minutes=event.minutes_without_progress,
+                         channel=esc(event.channel_name), why=why)
             if isinstance(event, WatchUncounted):
-                return (
-                    f"⚠️ <b>Перегляд не зараховується</b>\n"
-                    f"Канал: {esc(event.channel_name)}\n"
-                    "Хвилина не доходить до Twitch. Якщо інтернет при цьому "
-                    "живий — перевірте, чи не блокується <code>spade.twitch.tv</code> "
-                    "(часто так роблять блокувальники реклами на роутері)."
-                )
+                return t("tg_uncounted", channel=esc(event.channel_name))
             if isinstance(event, UpdateAvailable) and event.files:
-                return (
-                    f"⬆️ <b>Оновлення {esc(event.version)}</b>\n"
-                    f"Скачати {event.files} змінених файлів "
-                    f"({event.bytes_to_fetch // 1024} КБ), решта лишиться як є.\n"
-                    "Кожен файл звіряється SHA-256, після встановлення програма "
-                    "перезапуститься сама.\n"
-                    "Фарм на цей час зупиниться на хвилину-дві."
-                )
+                return t("tg_update", version=esc(event.version),
+                         files=event.files, kb=event.bytes_to_fetch // 1024)
             if isinstance(event, UpdateFailed):
-                return f"❌ Оновлення не встало: {esc(event.reason)}"
+                return t("tg_update_fail", reason=esc(event.reason))
             if isinstance(event, ProtocolStale):
                 if event.storm:
                     return (
@@ -544,34 +523,31 @@ class TelegramNotifier:
                     lines.append(f"…і ще {len(event.campaigns) - 5}")
                 return "\n".join(lines)
             if isinstance(event, ConnectionLost):
-                return f"📡 <b>Втрачено зв'язок</b>: {esc(event.reason)}. Перепідключаюсь…"
+                return t("tg_conn_lost", reason=esc(event.reason))
             if isinstance(event, ConnectionRestored):
-                return f"📡 Зв'язок відновлено за {round(event.downtime_seconds)}с"
+                return t("tg_conn_ok", seconds=round(event.downtime_seconds))
             if isinstance(event, MinerError):
-                return f"❌ <b>Помилка</b>\n<code>{esc(event.message)}</code>"
+                return t("tg_error", message=esc(event.message))
             if isinstance(event, MinerStopped):
-                return f"🛑 <b>Майнер зупинено</b>: {esc(event.reason)}"
+                return t("tg_stopped", reason=esc(event.reason))
 
         if cfg["notify_rewards"]:
             if isinstance(event, DropClaimed):
-                return (
-                    f"🎁 <b>Отримано дроп</b>\n{esc(event.rewards)}\n"
-                    f"Гра: {esc(event.game)}"
-                )
+                return t("tg_claimed", rewards=esc(event.rewards),
+                         game=esc(event.game))
             if isinstance(event, CampaignFinished):
-                return (
-                    f"🏁 <b>Кампанію завершено</b>\n{esc(event.campaign_name)}\n"
-                    f"Гра: {esc(event.game)}"
-                )
+                return t("tg_campaign_done", name=esc(event.campaign_name),
+                         game=esc(event.game))
 
         if cfg["notify_routine"]:
             if isinstance(event, WatchingChanged) and event.channel is not None:
                 if self._routine_allowed("watching"):
                     game = esc(event.channel.game or "—")
-                    return f"📺 Перемкнувся на {esc(event.channel.name)} ({game})"
+                    return t("tg_switched", channel=esc(event.channel.name),
+                             game=game)
             if isinstance(event, StreamOffline):
                 if self._routine_allowed("offline"):
-                    return f"📴 {esc(event.channel_name)} пішов офлайн"
+                    return t("tg_offline", channel=esc(event.channel_name))
         return None
 
     # ------------------------------------------------------------ періодичний звіт
@@ -761,7 +737,7 @@ class TelegramNotifier:
     async def _handle_command(self, chat_id: int, text: str) -> None:
         # Кнопка панелі надсилає свій напис звичайним повідомленням — перекладаємо
         # його в команду, щоб далі був один спільний шлях обробки.
-        if (mapped := BUTTON_COMMANDS.get(text.strip())) is not None:
+        if (mapped := button_commands().get(text.strip())) is not None:
             text = f"/{mapped}"
         if not text.startswith("/"):
             return
@@ -772,7 +748,7 @@ class TelegramNotifier:
         control = self._twitch.control
 
         if command in ("start", "help", "menu"):
-            await self.send(HELP_TEXT, chat_id=chat_id, keyboard=True)
+            await self.send(help_text(), chat_id=chat_id, keyboard=True)
         elif command == "status":
             await self.send(self._status_text(), chat_id=chat_id, keyboard=True)
         elif command == "inventory":
