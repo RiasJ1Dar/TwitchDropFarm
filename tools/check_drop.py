@@ -15,39 +15,35 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import aiohttp
-from core.constants import (
-    AUTH_PATH,
-    GQL_QUERIES,
-    GQL_URL,
-    ClientType,
-)
 
+from core.config import TOKEN_FILE
+from core.protocol import ANDROID, GQL_ENDPOINT, INVENTORY
 from core.toolbox import load_json as json_load
 
 
 async def fetch(session: aiohttp.ClientSession, headers: dict, op) -> dict:
-    async with session.post(str(GQL_URL), json=op, headers=headers) as response:
+    async with session.post(GQL_ENDPOINT, json=op, headers=headers) as response:
         return await response.json()
 
 
 async def main(needle: str = "") -> int:
-    auth = json_load(AUTH_PATH, {"access_token": "", "user_id": 0})
+    auth = json_load(TOKEN_FILE, {"access_token": "", "user_id": 0})
     if not auth["access_token"]:
         print("Немає збереженого токена — спершу авторизуйся.")
         return 1
 
-    client = ClientType.ANDROID_APP
+    client = ANDROID
     headers = {
         "Accept": "*/*",
-        "Client-Id": client.CLIENT_ID,
-        "User-Agent": client.USER_AGENT,
+        "Client-Id": client.client_id,
+        "User-Agent": client.pick_user_agent(),
         "Authorization": f"OAuth {auth['access_token']}",
-        "Origin": str(client.CLIENT_URL),
-        "Referer": str(client.CLIENT_URL),
+        "Origin": client.home,
+        "Referer": client.home,
     }
 
     async with aiohttp.ClientSession() as session:
-        inventory = await fetch(session, headers, GQL_QUERIES["Inventory"])
+        inventory = await fetch(session, headers, INVENTORY())
         data = inventory["data"]["currentUser"]["inventory"]
         in_progress = data["dropCampaignsInProgress"] or []
         awarded = data["gameEventDrops"] or []
