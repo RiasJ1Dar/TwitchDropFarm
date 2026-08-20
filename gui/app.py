@@ -465,10 +465,10 @@ class GUI:
         lang_box.pack(fill="x")
         self._lang_codes = ["auto", *LANGS]
         labels = [t("language_auto"), *[NAMES[code] for code in LANGS]]
-        stored = settings.language or "auto"
+        stored = settings.language or "uk"
         self.lang_var = tk.StringVar(
-            value=t("language_auto") if stored == "auto" or not stored
-            else NAMES.get(stored, t("language_auto"))
+            value=t("language_auto") if stored == "auto"
+            else NAMES.get(stored, NAMES["uk"])
         )
         combo = ttk.Combobox(
             lang_box, textvariable=self.lang_var, values=labels, state="readonly",
@@ -601,9 +601,9 @@ class GUI:
     def _language_changed(self, _event: object = None) -> None:
         label = self.lang_var.get()
         if label == t("language_auto"):
-            code = ""
+            code = "auto"
         else:
-            code = next((item for item, name in NAMES.items() if name == label), "")
+            code = next((item for item, name in NAMES.items() if name == label), "uk")
         self._twitch.settings.language = code
         self._twitch.settings.save()
         messagebox.showinfo(WINDOW_TITLE, t("language_restart"))
@@ -894,16 +894,18 @@ class GUI:
         self.farm_label.configure(text=t(key), fg=self.palette[colour])
 
     def _farm_from_status(self, text: str) -> None:
-        if text == "Призупинено":
+        watching = t("status_watching", name="").rstrip()
+        stalled = t("status_stalled", minutes="0").split("0")[0].strip()
+        if text == t("status_paused"):
             self._set_farm_state("paused")
-        elif text == "Перегляд не зараховується":
+        elif text == t("status_uncounted"):
             self._set_farm_state("uncounted")
-        elif text.startswith("Дивимось "):
+        elif watching and text.startswith(watching):
             self._set_farm_state("going")
-        elif text.startswith("Прогрес стоїть"):
+        elif stalled and text.startswith(stalled):
             self._set_farm_state("stalled")
-        elif text in ("Очікування", "Шукаю канали", "Обираю канал",
-                      "Читаю інвентар", "Читаю деталі кампаній"):
+        elif text in (t("status_waiting"), t("status_searching"), t("status_picking"),
+                      t("status_inventory"), t("status_details")):
             if self._farm_state in ("stalled", "uncounted"):
                 return
             self._set_farm_state("idle")

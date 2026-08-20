@@ -11,10 +11,6 @@ A single `.exe`, no runtimes alongside it: no Node.js, no Playwright, no bundled
 browser. Sign-in uses the browser already installed on your system (Edge or
 Chrome).
 
-> **Note on language.** The interface, logs and source comments are in
-> Ukrainian. Everything in this document — file names, settings keys, commands —
-> matches the program exactly.
-
 ## What it does
 
 - **Warns when a campaign is out of reach**: if less time is left than the watch minutes still needed, it says so in advance.
@@ -33,6 +29,9 @@ Chrome).
 - **Notices stalls**: if minutes stop accruing (for example, because the same
   account is watching Twitch manually somewhere), it says so instead of staying
   silent.
+- **UI languages** (Settings): Ukrainian by default, plus English, Español,
+  Português, Deutsch, Français, Polski, Türkçe, 简体中文. No Russian. The log
+  stays in Ukrainian. The Telegram bot uses the same language as the window.
 
 ## Requirements
 

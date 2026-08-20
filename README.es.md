@@ -11,11 +11,6 @@ Un único `.exe`, sin runtimes al lado: ni Node.js, ni Playwright, ni un navegad
 incluido. Para iniciar sesión usa el navegador que ya tengas instalado (Edge o
 Chrome).
 
-> **Sobre el idioma.** La interfaz, los registros y los comentarios del código
-> están en ucraniano. Todo lo que aparece en este documento — nombres de
-> archivos, claves de configuración, comandos — coincide exactamente con el
-> programa.
-
 ## Qué hace
 
 - **Avisa cuando no llega a tiempo**: si queda menos tiempo que los minutos de
@@ -36,6 +31,8 @@ Chrome).
 - **Detecta el estancamiento**: si los minutos dejan de acumularse (por ejemplo,
   porque esa misma cuenta está viendo Twitch manualmente en otro sitio), lo avisa
   en lugar de callar.
+- **Idiomas de la interfaz** (Ajustes): ucraniano por defecto, también English,
+  Español, Português, Deutsch, Français, Polski, Türkçe, 简体中文. No hay ruso.
 
 ## Requisitos
 

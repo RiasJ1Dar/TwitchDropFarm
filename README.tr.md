@@ -11,10 +11,6 @@ Tek bir `.exe`, yanında hiçbir çalışma ortamı yok: ne Node.js, ne Playwrig
 de paketlenmiş bir tarayıcı. Giriş için sistemde zaten kurulu olan tarayıcı
 kullanılır (Edge veya Chrome).
 
-> **Dil hakkında.** Arayüz, günlükler ve kaynak kodu yorumları Ukraynacadır. Bu
-> belgedeki her şey — dosya adları, ayar anahtarları, komutlar — programla birebir
-> aynıdır.
-
 ## Neler yapar
 
 - **Yetişemeyeceğini önceden söyler**: kalan süre, hâlâ gereken izleme
@@ -33,6 +29,8 @@ kullanılır (Edge veya Chrome).
   geçmesi, Twitch'in geçici hataları. En kötü durumda kendini yeniden başlatır.
 - **Takılmayı fark eder**: dakikalar birikmeyi bırakırsa (örneğin aynı hesapla
   başka bir yerde elle Twitch izleniyorsa) susmak yerine bunu söyler.
+- **Arayüz dilleri** (Ayarlar): varsayılan Ukraynaca; ayrıca English, Español,
+  Português, Deutsch, Français, Polski, Türkçe, 简体中文. Rusça yok.
 
 ## Gereksinimler
 
