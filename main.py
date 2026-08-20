@@ -106,6 +106,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args(namespace=ParsedArgs())
     settings = Settings(args)
+    from core.i18n import set_language
+    set_language(settings.language)
 
     logger = logging.getLogger("TwitchDrops")
     logger.setLevel(settings.logging_level)

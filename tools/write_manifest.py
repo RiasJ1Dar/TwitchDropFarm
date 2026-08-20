@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -25,7 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from core.toolbox import force_utf8_console  # noqa: E402
-from core.update import build_manifest, file_sha256  # noqa: E402
+from core.update import build_manifest, file_sha256, sign_manifest  # noqa: E402
 
 
 def main() -> int:
@@ -44,6 +45,16 @@ def main() -> int:
     if base:
         for entry in payload["files"]:
             entry["url"] = base + entry["path"]
+    secret = os.environ.get("MANIFEST_SIGNING_KEY", "").strip()
+    if secret:
+        payload = sign_manifest(payload, secret)
+        print("манифест підписано")
+    elif os.environ.get("REQUIRE_MANIFEST_SIGNATURE", "").strip().lower() in (
+        "1", "true", "yes",
+    ):
+        print("немає MANIFEST_SIGNING_KEY — реліз без підпису заборонено",
+              file=sys.stderr)
+        return 2
     (folder / "manifest.json").write_text(
         json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
