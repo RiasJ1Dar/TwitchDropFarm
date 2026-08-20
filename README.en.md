@@ -80,6 +80,7 @@ automatically on first launch. Sample:
 | Key | Meaning |
 |---|---|
 | `farm_mode` | `0` — priority list, `1` — nearest deadline, `2` — tightest fit, `3` — linked campaigns only |
+| `language` | `uk` by default; also `en`, `es`, `pt`, `de`, `fr`, `pl`, `tr`, `zh`; `auto` — Windows language. The bot follows the window |
 | `priority` | games in order of preference |
 | `exclude` | games to leave alone |
 | `farm_cosmetics` | accept campaigns that only grant badges and emotes |

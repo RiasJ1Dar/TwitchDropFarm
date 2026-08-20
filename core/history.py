@@ -16,7 +16,9 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
+from core.config import REPORT_DAYS
 from core.events import CampaignFinished, DeadlineRisk, DropClaimed, Event
+from core.i18n import t
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -107,14 +109,14 @@ class History:
             if isinstance(entry.get("id"), str)
         }
 
-    def summary(self, days: int = 7) -> str:
+    def summary(self, days: int = REPORT_DAYS) -> str:
         """Звіт за період — коротко, для людини."""
         since = datetime.now(timezone.utc) - timedelta(days=days)
         entries = self.entries(since=since)
         drops = [e for e in entries if e.get("kind") == "drop"]
         campaigns = [e for e in entries if e.get("kind") == "campaign"]
         if not drops and not campaigns:
-            return f"За {days} дн. жодної нагороди не зафіксовано."
+            return t("tg_report_empty", days=days)
 
         by_game: dict[str, int] = {}
         for entry in drops:
@@ -122,14 +124,14 @@ class History:
             by_game[game] = by_game.get(game, 0) + 1
 
         lines = [
-            f"За {days} дн.: {len(drops)} дропів, "
-            f"кампаній завершено — {len(campaigns)}."
+            t("tg_report_head", days=days, drops=len(drops),
+              campaigns=len(campaigns)),
         ]
         for game, count in sorted(by_game.items(), key=lambda p: -p[1]):
             lines.append(f"  {game}: {count}")
         recent = drops[-3:]
         if recent:
-            lines.append("Останні:")
+            lines.append(t("tg_report_recent"))
             for entry in reversed(recent):
                 when = str(entry.get("at", ""))[:16].replace("T", " ")
                 lines.append(f"  {when} — {entry.get('rewards', '?')}")
