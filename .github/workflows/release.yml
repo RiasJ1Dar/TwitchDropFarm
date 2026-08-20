@@ -117,7 +117,9 @@ jobs:
           # вище за .exe, і його вже качали частіше за програму. Підпис у
           # UI каже, що качати треба .exe; json лишаємо — старі версії
           # шукають саме .../download/manifest.json.
-          $rel = gh api "repos/${{ github.repository }}/releases/tags/$tag" | ConvertFrom-Json
+          # Чернетка не віддається через /releases/tags/{tag} (404) — тому
+          # беремо активи з `gh release view`, який чернетки бачить.
+          $rel = gh release view $tag --json assets | ConvertFrom-Json
           foreach ($asset in $rel.assets) {
             if ($asset.name -eq "manifest.json") {
               gh api -X PATCH "repos/${{ github.repository }}/releases/assets/$($asset.id)" `
