@@ -1254,23 +1254,21 @@ def update_checks() -> None:
             "files": [{"path": "a.bin", "sha256": "a" * 64, "size": 1}],
         }
         signed = update.sign_manifest(payload, private)
-        update.verify_signature(signed, required=True)
+        update.verify_signature(signed)
         check("валідний підпис проходить", True)
         signed["files"][0]["size"] = 99
         try:
-            update.verify_signature(signed, required=True)
+            update.verify_signature(signed)
             intact = False
         except ValueError:
             intact = True
         check("підміна розміру ламає підпис", intact)
-        update.verify_signature(payload, required=False)
-        check("без підпису можна з вихідників", True)
         try:
-            update.verify_signature(payload, required=True)
+            update.verify_signature(payload)
             need = False
         except ValueError:
             need = True
-        check(".exe вимагає підпис", need)
+        check("без підпису відмова і з вихідників", need)
     finally:
         update.MANIFEST_PUBLIC_KEY = old_pub
 
