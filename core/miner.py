@@ -65,6 +65,7 @@ from core.events import (
     WindowVisibility,
 )
 from core.history import History
+from core.i18n import t
 from core.identity import Identity
 from core.images import ImageCache
 from core.model import Campaign, Drop
@@ -402,7 +403,7 @@ class Miner:
         self._delivery_failures = 0
         self.events.emit(WatchingChanged(channel=self._snapshot(channel)))
         if announce:
-            self.events.status(f"Дивимось {channel.name}")
+            self.events.status(t("status_watching", name=channel.name))
         # показуємо дроп одразу: інакше в інтерфейсі понад хвилину висіло б
         # «дроп не визначено», хоча активна кампанія відома вже зараз
         if (campaign := self.active_campaign(channel)) is not None:
@@ -423,7 +424,7 @@ class Miner:
     # ================================================================ інвентар
 
     async def load_inventory(self) -> None:
-        self.events.status("Читаю інвентар")
+        self.events.status(t("status_inventory"))
         answer = await self.graphql(protocol.INVENTORY())
         block = answer["data"]["currentUser"]["inventory"]
         in_progress = block["dropCampaignsInProgress"] or []
@@ -439,7 +440,7 @@ class Miner:
             c["id"]: c for c in listed if c["status"] in ("ACTIVE", "UPCOMING")
         }
 
-        self.events.status("Читаю деталі кампаній")
+        self.events.status(t("status_details"))
         details = await self._load_details(list(interesting.items()))
         self._maybe_watch_protocol()
         for campaign_id, extra in details.items():
@@ -903,7 +904,7 @@ class Miner:
         """
         self._delivery_failures += 1
         log.warning(f"Хвилина не зарахувалась: {channel.name}")
-        self.events.status("Перегляд не зараховується")
+        self.events.status(t("status_uncounted"))
         if self._delivery_failures == 2:
             self.events.emit(WatchUncounted(
                 channel_name=channel.name,
@@ -914,7 +915,7 @@ class Miner:
         if not self._delivery_failures:
             return
         self._delivery_failures = 0
-        self.events.status(f"Дивимось {channel.name}")
+        self.events.status(t("status_watching", name=channel.name))
 
     def _check_stall(self, before: int | None, channel: Channel,
                      *, now: float | None = None) -> None:
@@ -935,7 +936,7 @@ class Miner:
         if elapsed >= STALL_LIMIT * 60 and not self._stall_alerted:
             self._stall_alerted = True
             minutes = max(STALL_LIMIT, int(elapsed // 60))
-            self.events.status(f"Прогрес стоїть {minutes} хв")
+            self.events.status(t("status_stalled", minutes=minutes))
             # у журнал це пише підписник подій у main; другий рядок звідси лише
             # дублював би той самий факт
             self.events.emit(ProgressStalled(
@@ -1119,7 +1120,7 @@ class Miner:
         if kind is CommandType.PAUSE:
             self._paused = True
             self.stop_watching()
-            self.events.status("Призупинено")
+            self.events.status(t("status_paused"))
             self.go(Stage.IDLE)
         elif kind is CommandType.RESUME:
             self._paused = False
@@ -1228,14 +1229,14 @@ class Miner:
             self._drain_commands()
 
             if self._stage is Stage.QUIT:
-                self.events.status("Завершення роботи")
+                self.events.status(t("status_stopping"))
                 self.events.emit(MinerStopped(reason="Запит користувача"))
                 return
             if self._stage is Stage.RESTART:
                 raise Restart()
 
             if self._stage is Stage.IDLE:
-                self.events.status("Призупинено" if self._paused else "Очікування")
+                self.events.status(t("status_paused") if self._paused else t("status_waiting"))
                 self.stop_watching()
                 self._stage_changed.clear()
             elif self._paused and self._stage in (Stage.LOAD_INVENTORY, Stage.PICK_CHANNEL):
@@ -1374,7 +1375,7 @@ class Miner:
                     leftover.unlink(missing_ok=True)
                 async with aiohttp.ClientSession() as session:
                     for item in items:
-                        self.events.status(f"Качаю {item.spec.path}…")
+                        self.events.status(t("status_download", path=item.spec.path))
                         await update.download_item(session, item)
                 update.verify_staged(items)
             from core.config import APP_DIR
@@ -1402,7 +1403,7 @@ class Miner:
         self.request_stop()
 
     def _drop_stale_channels(self) -> None:
-        self.events.status("Прибирання каналів")
+        self.events.status(t("status_cleanup"))
         if not self.wanted or self._full_sweep:
             doomed = list(self.channels.values())
         else:
@@ -1425,7 +1426,7 @@ class Miner:
             self.go(Stage.IDLE)
 
     async def _find_channels(self) -> None:
-        self.events.status("Шукаю канали")
+        self.events.status(t("status_searching"))
         pool: set[Channel] = set(self.channels.values())
         self.channels.clear()
 
@@ -1486,7 +1487,7 @@ class Miner:
         self.go(Stage.PICK_CHANNEL)
 
     def _pick_channel(self) -> None:
-        self.events.status("Обираю канал")
+        self.events.status(t("status_picking"))
         for channel in sorted(self.channels.values(), key=self.priority_of):
             if self.should_switch_to(channel):
                 self.watch(channel)
@@ -1494,7 +1495,7 @@ class Miner:
                 return
         current = self.watching.peek()
         if current is not None and self.can_farm(current):
-            self.events.status(f"Дивимось {current.name}")
+            self.events.status(t("status_watching", name=current.name))
             self._stage_changed.clear()
             return
         self.say("Немає підходящого каналу для фарму")

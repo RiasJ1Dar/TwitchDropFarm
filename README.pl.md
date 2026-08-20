@@ -11,10 +11,6 @@ Jeden `.exe`, żadnych środowisk uruchomieniowych obok: bez Node.js, bez
 Playwrighta, bez dołączonej przeglądarki. Do logowania używana jest przeglądarka
 już zainstalowana w systemie (Edge albo Chrome).
 
-> **O języku.** Interfejs, dzienniki i komentarze w kodzie są po ukraińsku.
-> Wszystko, co podano w tym dokumencie — nazwy plików, klucze ustawień,
-> polecenia — odpowiada programowi dokładnie.
-
 ## Co potrafi
 
 - **Ostrzega, gdy nie zdąży**: jeśli do końca kampanii zostało mniej czasu niż
@@ -33,6 +29,8 @@ już zainstalowana w systemie (Edge albo Chrome).
   przejściowe błędy Twitcha. W ostateczności restartuje sam siebie.
 - **Zauważa zastój**: jeśli minuty przestają się naliczać (na przykład dlatego,
   że tym samym kontem ktoś ogląda Twitcha ręcznie), powie o tym, zamiast milczeć.
+- **Języki interfejsu** (Ustawienia): domyślnie ukraiński, także English,
+  Español, Português, Deutsch, Français, Polski, Türkçe, 简体中文. Bez rosyjskiego.
 
 ## Wymagania
 

@@ -11,10 +11,6 @@ Eine einzige `.exe`, keine Laufzeitumgebungen daneben: kein Node.js, kein
 Playwright, kein mitgelieferter Browser. Für die Anmeldung wird der Browser
 genutzt, der ohnehin im System steckt (Edge oder Chrome).
 
-> **Zur Sprache.** Oberfläche, Protokolle und Quelltextkommentare sind auf
-> Ukrainisch. Alles, was in diesem Dokument steht — Dateinamen, Einstellungs­
-> schlüssel, Befehle — entspricht exakt dem Programm.
-
 ## Was es kann
 
 - **Warnt, wenn es nicht mehr reicht**: bleibt weniger Zeit übrig als noch
@@ -34,6 +30,9 @@ genutzt, der ohnehin im System steckt (Edge oder Chrome).
   selbst neu.
 - **Bemerkt Stillstand**: wenn keine Minuten mehr dazukommen (etwa weil dasselbe
   Konto anderswo von Hand Twitch schaut), sagt es das, statt zu schweigen.
+- **Oberflächensprachen** (Einstellungen): Ukrainisch als Vorgabe, außerdem
+  English, Español, Português, Deutsch, Français, Polski, Türkçe, 简体中文.
+  Kein Russisch.
 
 ## Voraussetzungen
 
