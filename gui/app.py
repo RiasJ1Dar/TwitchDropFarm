@@ -63,6 +63,16 @@ TILE_LIMIT = 120
 def _shorten(text: str, limit: int = 34) -> str:
     """Довгі назви нагород ламають сітку — рівні картки читаються краще."""
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+# Індикатор у шапці: чи фарм насправді крутиться, а не лише «Дивимось».
+FARM_BADGE = {
+    "going": ("● Іде", "ok"),
+    "stalled": ("● Стоїть", "err"),
+    "uncounted": ("● Не зараховується", "err"),
+    "paused": ("● Пауза", "warn"),
+    "idle": ("● Чекає", "fg"),
+}
 # як часто прокручуємо цикл Tk; 20 к/с — непомітно для ока й дешево для CPU
 TK_TICK = 0.05
 
@@ -98,6 +108,7 @@ class GUI:
         # їх усі — тому показуємо всі, а не той, чий прогрес прийшов останнім.
         self._growing: dict[str, tuple[float, str, int, int]] = {}
         self._watching_name = ""
+        self._farm_state = ""
         self.root.protocol("WM_DELETE_WINDOW", self.on_window_x)
         self._set_window_icon()
         self._apply_theme()
@@ -158,15 +169,27 @@ class GUI:
         style.configure("Treeview.Heading", background=p["bg"], foreground=p["fg"])
         style.map("Treeview", background=[("selected", p["accent"])])
         style.configure("TProgressbar", background=p["accent"], troughcolor=p["alt"])
+        if getattr(self, "farm_label", None) is not None:
+            self.farm_label.configure(bg=p["bg"])
+            previous = self._farm_state
+            self._farm_state = ""
+            self._set_farm_state(previous or "idle")
 
     # ------------------------------------------------------------ розкладка
 
     def _build_layout(self) -> None:
         top = ttk.Frame(self.root, padding=(10, 8))
         top.pack(fill="x")
+        pal = self.palette
+        self.farm_label = tk.Label(
+            top, text="● Чекає", font=("Segoe UI", 11, "bold"),
+            bg=pal["bg"], fg=pal["fg"],
+        )
+        self.farm_label.pack(side="left")
+        self._set_farm_state("idle")
         self.status_var = tk.StringVar(value="Запуск…")
         ttk.Label(top, textvariable=self.status_var,
-                  font=("Segoe UI", 11, "bold")).pack(side="left")
+                  font=("Segoe UI", 11, "bold")).pack(side="left", padx=(12, 0))
         self.conn_var = tk.StringVar(value="")
         ttk.Label(top, textvariable=self.conn_var).pack(side="right")
 
@@ -510,9 +533,11 @@ class GUI:
         if self._twitch._paused:
             self._send(CommandType.RESUME)
             self.pause_btn.configure(text="Призупинити")
+            self._set_farm_state("going" if self._watching_name else "idle")
         else:
             self._send(CommandType.PAUSE)
             self.pause_btn.configure(text="Продовжити")
+            self._set_farm_state("paused")
 
     def _on_channel_activate(self, _event: tk.Event) -> None:
         selection = self.channel_tree.selection()
@@ -555,7 +580,7 @@ class GUI:
         """
         settings = self._twitch.settings
         settings.watch_games = list(self.watch_list.get(0, "end"))
-        settings.alter()
+        settings.touch()
         settings.save()
 
     def _mode_changed(self) -> None:
@@ -663,7 +688,7 @@ class GUI:
 
     def _telegram_changed(self) -> None:
         self._twitch.settings.telegram["enabled"] = self.tg_var.get()
-        self._twitch.settings.alter()
+        self._twitch.settings.touch()
         self.tg_hint["text"] = self._telegram_hint()
 
     def _telegram_hint(self) -> str:
@@ -712,6 +737,7 @@ class GUI:
                 self.hide_to_tray()
         elif isinstance(event, StatusChanged):
             self.status_var.set(event.text)
+            self._farm_from_status(event.text)
         elif isinstance(event, LogLine):
             self._append_log(event.text)
         elif isinstance(event, LoginRequired):
@@ -725,6 +751,7 @@ class GUI:
                 self._growing.clear()
                 self.drop_var.set("Дроп не визначено")
                 self.progress["value"] = 0
+                self._set_farm_state("idle")
             else:
                 if event.channel.name != self._watching_name:
                     # інший канал — інші дропи; старі рядки більше не про це
@@ -740,6 +767,8 @@ class GUI:
                 self.title_var.set(
                     title if len(title) <= 90 else title[:87] + "…"
                 )
+                if not self._twitch._paused:
+                    self._set_farm_state("going")
         elif isinstance(event, DropProgress):
             # Кампанія попереду гри: «EWC 2026» каже, за що дроп, а «Special
             # Events» — лише те, що це подієва категорія Twitch.
@@ -751,6 +780,7 @@ class GUI:
                 event.current_minutes, event.required_minutes,
             )
             self._render_growing()
+            self._set_farm_state("going")
         elif isinstance(event, DropClaimed):
             self._append_log(f"Отримано: {event.rewards} ({event.game})", "ok")
         elif isinstance(event, ProtocolStale):
@@ -803,12 +833,14 @@ class GUI:
                 f"Прогрес стоїть {event.minutes_without_progress} хв на "
                 f"{event.channel_name} — {why}", "err"
             )
+            self._set_farm_state("stalled")
         elif isinstance(event, WatchUncounted):
             self._append_log(
                 f"Перегляд не зараховується на {event.channel_name} — "
                 f"хвилина не дійшла до Twitch",
                 "err",
             )
+            self._set_farm_state("uncounted")
         elif isinstance(event, ConnectionLost):
             self.conn_var.set("● немає зв'язку")
             self._append_log(f"Втрачено зв'язок: {event.reason}", "err")
@@ -823,6 +855,33 @@ class GUI:
             self._render_channels(event)
         elif isinstance(event, InventoryUpdated):
             self._render_inventory(event)
+
+    def _set_farm_state(self, state: str) -> None:
+        """Кольорова мітка в шапці: іде / стоїть / чекає.
+
+        Рядок статусу каже, *що* робить цикл («Дивимось», «Шукаю канали»).
+        Ця мітка — *чи є сенс*: хвилини ростуть чи фарм стоїть на місці.
+        """
+        if state not in FARM_BADGE or state == self._farm_state:
+            return
+        self._farm_state = state
+        text, colour = FARM_BADGE[state]
+        self.farm_label.configure(text=text, fg=self.palette[colour])
+
+    def _farm_from_status(self, text: str) -> None:
+        if text == "Призупинено":
+            self._set_farm_state("paused")
+        elif text == "Перегляд не зараховується":
+            self._set_farm_state("uncounted")
+        elif text.startswith("Дивимось "):
+            self._set_farm_state("going")
+        elif text.startswith("Прогрес стоїть"):
+            self._set_farm_state("stalled")
+        elif text in ("Очікування", "Шукаю канали", "Обираю канал",
+                      "Читаю інвентар", "Читаю деталі кампаній"):
+            if self._farm_state in ("stalled", "uncounted"):
+                return
+            self._set_farm_state("idle")
 
     def _render_websockets(self, event: WebsocketStatus) -> None:
         """Зводить стан усіх зʼєднань в один рядок.

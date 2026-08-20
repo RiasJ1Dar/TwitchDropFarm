@@ -19,6 +19,7 @@ from core.events import (
     ConnectionRestored,
     DeadlineRisk,
     DropClaimed,
+    DropProgress,
     Event,
     LoginRequired,
     MinerError,
@@ -147,11 +148,14 @@ class Tray:
             self.notify(
                 f"{fresh.name.strip()} ({fresh.game}){more}", "Нова кампанія",
             )
+        elif isinstance(event, DropProgress):
+            self.set_state("active")
         elif isinstance(event, ProgressStalled):
             why = (
                 f"; зараховується «{event.counted_elsewhere}»"
                 if event.counted_elsewhere else ""
             )
+            self.set_state("error")
             self.notify(
                 f"{event.minutes_without_progress} хв без приросту на "
                 f"{event.channel_name}{why}",
