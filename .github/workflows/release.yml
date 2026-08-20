@@ -63,6 +63,9 @@ jobs:
 
       - name: Манифест оновлення
         shell: pwsh
+        env:
+          MANIFEST_SIGNING_KEY: ${{ secrets.MANIFEST_SIGNING_KEY }}
+          REQUIRE_MANIFEST_SIGNATURE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
         run: |
           $version = python -c "from core.config import VERSION; print(VERSION)"
           # Базова адреса передається завжди — інакше інструмент кладе поруч
@@ -72,6 +75,9 @@ jobs:
           $base = "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/"
           python tools/write_manifest.py dist $version $base
           Get-Content dist/manifest.json
+          if ($env:REQUIRE_MANIFEST_SIGNATURE -and -not $env:MANIFEST_SIGNING_KEY) {
+            throw "немає секрету MANIFEST_SIGNING_KEY — тег без підпису не публікуємо"
+          }
 
       - name: Перевірити, що .exe узагалі запускається
         shell: pwsh

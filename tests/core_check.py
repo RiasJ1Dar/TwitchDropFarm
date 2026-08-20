@@ -55,6 +55,7 @@ from core.events import (
 )
 from core.exceptions import RequestInvalid
 from core.history import History
+from core.i18n import resolve, set_language, t
 from core.identity import Identity
 from core.images import ImageCache
 from core.miner import Miner
@@ -530,6 +531,21 @@ def watchlist_checks() -> None:
     Miner._check_watchlist(done)
     check("завершена кампанія не рахується новиною",
           not [e for e in done.events.sent if isinstance(e, CampaignAppeared)])
+
+
+def i18n_checks() -> None:
+    print("\n[3ж] Мови")
+    set_language("uk")
+    check("українська", t("pause") == "Призупинити")
+    set_language("en")
+    check("англійська", t("pause") == "Pause")
+    set_language("zh")
+    check("китайська лише коли обрали", t("pause") == "暂停")
+    check("невідомий код → українська", resolve("ru") == "uk")
+    check("авто не падає в порожнє", resolve("") in (
+        "uk", "en", "es", "pt", "de", "fr", "pl", "tr", "zh",
+    ))
+    set_language("uk")
 
 
 # ------------------------------------------------- індикатор іде / стоїть
@@ -1192,6 +1208,44 @@ def update_checks() -> None:
     check("скрипт веде власний журнал", b"waiting for pid" in body)
     check("провал копіювання не тихий", b"XCOPY FAILED" in body)
 
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import (
+        Encoding,
+        NoEncryption,
+        PrivateFormat,
+        PublicFormat,
+    )
+    key = Ed25519PrivateKey.generate()
+    private = key.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()).hex()
+    public = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    old_pub = update.MANIFEST_PUBLIC_KEY
+    update.MANIFEST_PUBLIC_KEY = public
+    try:
+        payload = {
+            "version": "1.0.6",
+            "files": [{"path": "a.bin", "sha256": "a" * 64, "size": 1}],
+        }
+        signed = update.sign_manifest(payload, private)
+        update.verify_signature(signed, required=True)
+        check("валідний підпис проходить", True)
+        signed["files"][0]["size"] = 99
+        try:
+            update.verify_signature(signed, required=True)
+            intact = False
+        except ValueError:
+            intact = True
+        check("підміна розміру ламає підпис", intact)
+        update.verify_signature(payload, required=False)
+        check("без підпису можна з вихідників", True)
+        try:
+            update.verify_signature(payload, required=True)
+            need = False
+        except ValueError:
+            need = True
+        check(".exe вимагає підпис", need)
+    finally:
+        update.MANIFEST_PUBLIC_KEY = old_pub
+
 
 # ------------------------------------------------------------------ доставка
 
@@ -1394,6 +1448,7 @@ def main() -> int:
     protocol_watch_checks()
     watchlist_checks()
     farm_indicator_checks()
+    i18n_checks()
     growing_checks()
     parallel_watch_checks()
     window_checks()

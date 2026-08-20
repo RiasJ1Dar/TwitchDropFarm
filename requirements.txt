@@ -10,3 +10,6 @@ pystray
 
 # сповіщення трею на Windows
 pywin32; sys_platform == "win32"
+
+# підпис манифесту оновлень (Ed25519)
+cryptography
