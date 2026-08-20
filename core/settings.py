@@ -26,6 +26,8 @@ class TelegramConfig(TypedDict):
     notify_routine: bool
     report_every_hours: int
     allow_control: bool
+    # VERSION, коли востаннє ставили аватар. Порожньо — ще не ставили.
+    photo_version: str
 
 
 class ConfigShape(TypedDict):
@@ -59,6 +61,7 @@ DEFAULT_TELEGRAM: TelegramConfig = {
     "notify_routine": False,
     "report_every_hours": 6,
     "allow_control": True,
+    "photo_version": "",
 }
 
 DEFAULTS: ConfigShape = {
