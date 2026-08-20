@@ -123,56 +123,56 @@ class Tray:
             # при старті одразу в трей вікна не видно, і без цього незрозуміло,
             # чи програма взагалі піднялась
             if event.tray:
-                self.notify(f"Працюю у фоні, версія {event.version}")
+                self.notify(t("tray_bg", version=event.version))
         elif isinstance(event, MinerStopped):
             self.set_state("idle")
-            self.notify(f"Майнер зупинено: {event.reason}")
+            self.notify(t("tray_stopped", reason=event.reason))
         elif isinstance(event, DropClaimed):
-            self.notify(f"{event.rewards} — {event.game}", "Отримано дроп")
+            self.notify(f"{event.rewards} — {event.game}", t("tray_claimed"))
         elif isinstance(event, CampaignFinished):
-            self.notify(f"{event.campaign_name} ({event.game})", "Кампанію завершено")
+            self.notify(f"{event.campaign_name} ({event.game})", t("tray_campaign_done"))
         elif isinstance(event, DeadlineRisk):
             first = event.campaigns[0]
-            tail = f" і ще {len(event.campaigns) - 1}" if len(event.campaigns) > 1 else ""
-            self.notify(f"{first.name} ({first.game}){tail}", "Не встигаємо закрити")
+            tail = t("tray_more", n=len(event.campaigns) - 1) if len(event.campaigns) > 1 else ""
+            self.notify(f"{first.name} ({first.game}){tail}", t("tray_deadline"))
         elif isinstance(event, ProtocolStale):
             if not event.storm:
                 self.set_state("error")
                 self.notify(
-                    f"{', '.join(event.operations)} — потрібно оновити protocol.py",
-                    "Twitch змінив запити",
+                    t("tray_protocol_body", names=", ".join(event.operations)),
+                    t("tray_protocol"),
                 )
         elif isinstance(event, CampaignAppeared):
             # своє ім'я: вище `first` — це RiskSnapshot, тут CampaignSnapshot
             fresh = event.campaigns[0]
-            more = f" і ще {len(event.campaigns) - 1}" if len(event.campaigns) > 1 else ""
+            more = t("tray_more", n=len(event.campaigns) - 1) if len(event.campaigns) > 1 else ""
             self.notify(
-                f"{fresh.name.strip()} ({fresh.game}){more}", "Нова кампанія",
+                f"{fresh.name.strip()} ({fresh.game}){more}", t("tray_new"),
             )
         elif isinstance(event, DropProgress):
             self.set_state("active")
         elif isinstance(event, ProgressStalled):
             why = (
-                f"; зараховується «{event.counted_elsewhere}»"
+                t("tray_else", name=event.counted_elsewhere)
                 if event.counted_elsewhere else ""
             )
             self.set_state("error")
             self.notify(
-                f"{event.minutes_without_progress} хв без приросту на "
-                f"{event.channel_name}{why}",
-                "Прогрес стоїть",
+                t("tray_stall_body", minutes=event.minutes_without_progress,
+                  channel=event.channel_name, why=why),
+                t("tray_stall"),
             )
         elif isinstance(event, WatchUncounted):
             self.set_state("error")
             self.notify(
-                f"Хвилина не доходить до Twitch на {event.channel_name}",
-                "Перегляд не зараховується",
+                t("tray_uncounted_body", channel=event.channel_name),
+                t("tray_uncounted"),
             )
         elif isinstance(event, MinerError):
             self.set_state("error")
-            self.notify(event.message, "Помилка")
+            self.notify(event.message, t("tray_error"))
         elif isinstance(event, LoginRequired):
-            self.notify(f"Код: {event.user_code}", "Потрібен вхід")
+            self.notify(t("tray_login_body", code=event.user_code), t("tray_login"))
 
     def set_state(self, state: str) -> None:
         # WatchingChanged приходить часто, а перемальовування іконки безглузде,

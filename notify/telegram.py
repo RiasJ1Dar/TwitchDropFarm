@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiohttp
 
+from core.config import REPORT_DAYS
 from core.config import TRACE as CALL
 from core.events import (
     CampaignAppeared,
@@ -122,7 +123,7 @@ MESSAGE_LIMIT = 3900
 async def _probe(token: str, method: str, **payload: Any) -> tuple[Any, str]:
     """Один короткий виклик Bot API. Повертає (результат, помилка-для-людини)."""
     if not token.strip():
-        return None, "Токен порожній."
+        return None, t("tg_token_empty")
     url = TELEGRAM_API.format(token=token.strip(), method=method)
     try:
         timeout = aiohttp.ClientTimeout(total=15)
@@ -132,15 +133,16 @@ async def _probe(token: str, method: str, **payload: Any) -> tuple[Any, str]:
         ):
             data = await response.json()
     except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
-        return None, f"Немає зв'язку з Telegram: {type(exc).__name__}"
+        return None, t("tg_token_offline", error=type(exc).__name__)
     except ValueError:
-        return None, "Telegram відповів не по-людськи — схоже, токен зіпсований."
+        return None, t("tg_token_garbage")
     if not data.get("ok"):
         # 401 при кривому токені — найчастіша помилка, і опис у неї невиразний
         description = data.get("description", "")
         if "unauthorized" in description.lower():
-            return None, "Telegram не знає такого токена. Скопіюй його ще раз."
-        return None, f"Telegram відмовив: {description or 'без пояснень'}"
+            return None, t("tg_token_unknown")
+        return None, t("tg_token_denied",
+                       reason=description or t("tg_token_silent"))
     return data.get("result"), ""
 
 
@@ -179,7 +181,7 @@ async def send_greeting(token: str, chat_id: int) -> str:
     """Вітальне повідомлення в чат. Повертає помилку або порожній рядок."""
     _, error = await _probe(
         token, "sendMessage", chat_id=chat_id,
-        text="✅ Бот підключено. Майнер Twitch drops на зв'язку.",
+        text=t("tg_connected"),
         reply_markup=control_keyboard(),
     )
     return error
@@ -388,7 +390,7 @@ class TelegramNotifier:
             if found:
                 print(f"Хто вже писав боту (ще не власники): {found}")
             return
-        await self.send("✅ Перевірка звʼязку. Майнер Twitch drops на звʼязку.", )
+        await self.send(t("tg_test_ok"))
         print(f"Тестове повідомлення надіслано у чати: {chat_ids}")
 
     # ------------------------------------------------------------ події → повідомлення
@@ -486,41 +488,42 @@ class TelegramNotifier:
                 return t("tg_update_fail", reason=esc(event.reason))
             if isinstance(event, ProtocolStale):
                 if event.storm:
-                    return (
-                        "⚠️ <b>Twitch не відповідає на жоден наш запит</b>\n"
-                        "Схоже на скид кешу на його боці. Якщо за годину не "
-                        "пройде — це вже зміна протоколу."
-                    )
+                    return t("tg_protocol_storm")
                 names = ", ".join(esc(name) for name in event.operations)
-                return (
-                    f"🛠 <b>Twitch змінив запити</b>\n{names}\n"
-                    "Фарм на цьому спиниться: хеші в <code>protocol.py</code> "
-                    "треба оновити, автоматично це не лікується."
-                )
+                return t("tg_protocol_stale", names=names)
             if isinstance(event, CampaignAppeared):
                 # свої імена: нижче той самий блок для DeadlineRisk працює з
                 # іншим типом знімка, і спільна змінна плутала і читача, і mypy
-                news = [f"🆕 <b>Нова кампанія</b> ({len(event.campaigns)})"]
+                news = [t("tg_new_campaign_title", count=len(event.campaigns))]
                 for fresh in event.campaigns[:5]:
                     ends = fresh.ends_at.astimezone().strftime("%d.%m %H:%M")
-                    news.append(
-                        f"• {esc(fresh.name.strip())} ({esc(fresh.game)}) — "
-                        f"{fresh.total_drops} "
-                        f"{plural(fresh.total_drops, 'дроп', 'дропи', 'дропів')}, до {ends}"
-                    )
+                    news.append(t(
+                        "tg_new_campaign_item",
+                        name=esc(fresh.name.strip()),
+                        game=esc(fresh.game),
+                        drops=fresh.total_drops,
+                        unit=plural(
+                            fresh.total_drops,
+                            t("tg_drop_one"), t("tg_drop_few"), t("tg_drop_many"),
+                        ),
+                        ends=ends,
+                    ))
                 if len(event.campaigns) > 5:
-                    news.append(f"…і ще {len(event.campaigns) - 5}")
-                news.append("Фарм не переривався. Перемкнутись: /switch &lt;канал&gt;")
+                    news.append(t("tg_new_campaign_more", n=len(event.campaigns) - 5))
+                news.append(t("tg_new_campaign_hint"))
                 return "\n".join(news)
             if isinstance(event, DeadlineRisk):
-                lines = [f"⏳ <b>Не встигаємо закрити</b> ({len(event.campaigns)})"]
+                lines = [t("tg_deadline_title", count=len(event.campaigns))]
                 for item in event.campaigns[:5]:
-                    lines.append(
-                        f"• {esc(item.name)} ({esc(item.game)}): треба "
-                        f"{item.minutes_needed} хв, лишилось {item.minutes_available}"
-                    )
+                    lines.append(t(
+                        "tg_deadline_item",
+                        name=esc(item.name),
+                        game=esc(item.game),
+                        needed=item.minutes_needed,
+                        available=item.minutes_available,
+                    ))
                 if len(event.campaigns) > 5:
-                    lines.append(f"…і ще {len(event.campaigns) - 5}")
+                    lines.append(t("tg_deadline_more", n=len(event.campaigns) - 5))
                 return "\n".join(lines)
             if isinstance(event, ConnectionLost):
                 return t("tg_conn_lost", reason=esc(event.reason))
@@ -566,38 +569,43 @@ class TelegramNotifier:
     def _status_text(self) -> str:
         twitch = self._twitch
         esc = html.escape
-        lines = ["📊 <b>Стан майнера</b>"]
+        lines = [t("tg_status_title")]
         channel = twitch.watching.peek()
         if twitch._paused:
-            lines.append("Статус: <i>призупинено</i>")
+            lines.append(t("tg_status_paused"))
         elif channel is None:
-            lines.append("Статус: <i>нічого не фармиться</i>")
+            lines.append(t("tg_status_idle"))
         else:
             game = channel.game.name if channel.game is not None else "—"
-            lines.append(f"Канал: <b>{esc(channel.name)}</b> ({esc(game)})")
+            lines.append(t("tg_status_channel",
+                           channel=esc(channel.name), game=esc(game)))
         campaign = twitch.active_campaign()
         if campaign is not None:
             drop = campaign.next_drop
             if drop is not None:
-                lines.append(
-                    f"Дроп: {esc(drop.name)} — "
-                    f"{drop.minutes}/{drop.required_minutes} хв "
-                    f"(лишилось {drop.minutes_left})"
-                )
-            lines.append(
-                f"Кампанія: {esc(campaign.name)} "
-                f"[{campaign.taken_count}/{campaign.total}]"
-            )
+                lines.append(t(
+                    "tg_status_drop",
+                    name=esc(drop.name),
+                    minutes=drop.minutes,
+                    required=drop.required_minutes,
+                    left=drop.minutes_left,
+                ))
+            lines.append(t(
+                "tg_status_campaign",
+                name=esc(campaign.name),
+                taken=campaign.taken_count,
+                total=campaign.total,
+            ))
         active = [c for c in twitch.campaigns
                   if c.running and c.available_to_me and not c.everything_taken]
-        lines.append(f"Активних кампаній у черзі: {len(active)}")
+        lines.append(t("tg_status_queue", count=len(active)))
         if twitch.api.offline:
-            lines.append("⚠️ Зараз немає зв'язку з Twitch")
+            lines.append(t("tg_status_offline"))
         return "\n".join(lines)
 
     def _inventory_text(self) -> str:
         esc = html.escape
-        lines = ["🎒 <b>Прогрес по дропах</b>"]
+        lines = [t("tg_inv_title")]
         shown = 0
         for campaign in self._twitch.campaigns:
             if not campaign.available_to_me or campaign.everything_taken or not campaign.running:
@@ -605,40 +613,46 @@ class TelegramNotifier:
             lines.append(f"\n<b>{esc(campaign.game.name)}</b> — {esc(campaign.name)}")
             for drop in campaign.all_drops:
                 mark = "✅" if drop.taken else "▫️"
-                lines.append(
-                    f"{mark} {esc(drop.name)}: "
-                    f"{drop.minutes}/{drop.required_minutes} хв"
-                )
+                lines.append(t(
+                    "tg_inv_drop",
+                    mark=mark,
+                    name=esc(drop.name),
+                    minutes=drop.minutes,
+                    required=drop.required_minutes,
+                ))
             shown += 1
             if shown >= 10:
-                lines.append("\n<i>…показано перші 10 кампаній</i>")
+                lines.append(t("tg_inv_more"))
                 break
         if shown == 0:
-            lines.append("Немає активних кампаній, доступних для фарму.")
+            lines.append(t("tg_inv_empty"))
         return "\n".join(lines)
 
     def _campaigns_text(self) -> str:
         esc = html.escape
-        lines = ["📋 <b>Кампанії</b>"]
+        lines = [t("tg_camp_title")]
         now = datetime.now(timezone.utc)
         for campaign in self._twitch.campaigns[:25]:
             if campaign.over:
-                state = "минула"
+                state = t("tg_camp_past")
             elif campaign.not_started:
-                state = "скоро"
+                state = t("tg_camp_soon")
             elif not campaign.available_to_me:
-                state = "не привʼязано акаунт"
+                state = t("tg_camp_unlinked")
             elif campaign.everything_taken:
-                state = "завершено"
+                state = t("tg_camp_done")
             else:
                 hours = max(0, int((campaign.closes_at - now).total_seconds() // 3600))
-                state = f"активна, ще {hours} год"
-            lines.append(
-                f"• {esc(campaign.game.name)} [{campaign.taken_count}/"
-                f"{campaign.total}] — {state}"
-            )
+                state = t("tg_camp_active", hours=hours)
+            lines.append(t(
+                "tg_camp_line",
+                game=esc(campaign.game.name),
+                taken=campaign.taken_count,
+                total=campaign.total,
+                state=state,
+            ))
         if not self._twitch.campaigns:
-            lines.append("Інвентар ще не прочитано.")
+            lines.append(t("tg_camp_unread"))
         return "\n".join(lines)
 
     # ------------------------------------------------------------ команди
@@ -757,63 +771,53 @@ class TelegramNotifier:
             await self.send(self._campaigns_text(), chat_id=chat_id, keyboard=True)
         elif command == "pause":
             control.send(Command(CommandType.PAUSE))
-            await self.send("⏸ Фарм призупинено.", chat_id=chat_id, keyboard=True)
+            await self.send(t("tg_paused"), chat_id=chat_id, keyboard=True)
         elif command == "resume":
             control.send(Command(CommandType.RESUME))
-            await self.send("▶️ Фарм відновлено.", chat_id=chat_id, keyboard=True)
+            await self.send(t("tg_resumed"), chat_id=chat_id, keyboard=True)
         elif command == "reload":
             control.send(Command(CommandType.RELOAD))
-            await self.send("🔄 Перечитую інвентар.", chat_id=chat_id, keyboard=True)
+            await self.send(t("tg_reloading"), chat_id=chat_id, keyboard=True)
         elif command == "reboot":
             # відповідаємо ДО перезапуску: після нього ця сесія бота вже мертва
-            await self.send(
-                "♻️ Перезапускаю програму. Про готовність повідомлю окремо.",
-                chat_id=chat_id,
-            )
+            await self.send(t("tg_rebooting"), chat_id=chat_id)
             control.send(Command(CommandType.REBOOT))
         elif command == "report":
-            days = 7
+            days = REPORT_DAYS
             if argument.strip().isdigit():
                 days = max(1, min(365, int(argument.strip())))
             body = html.escape(self._twitch.history.summary(days))
-            await self.send(f"📈 <b>Звіт</b>\n<pre>{body}</pre>",
+            await self.send(f"{t('tg_report_title')}\n<pre>{body}</pre>",
                             chat_id=chat_id, keyboard=True)
         elif command == "export":
             await self._handle_export(chat_id)
         elif command == "update":
             control.send(Command(CommandType.APPLY_UPDATE))
-            await self.send(
-                "⬆️ Качаю змінені файли, звіряю хеші й перезапускаюсь.\n"
-                "Про результат скажу після перезапуску.",
-                chat_id=chat_id, keyboard=True,
-            )
+            await self.send(t("tg_updating"), chat_id=chat_id, keyboard=True)
         elif command == "later":
             # Відкладаємо до наступного запуску: перевірка робиться раз на
             # старті, тож окремий таймер тут був би зайвою механікою.
             self._twitch.update_postponed = True
-            await self.send(
-                "⏳ Гаразд, не чіпаю. Нагадаю після наступного запуску — "
-                "або постав будь-коли командою /update.",
-                chat_id=chat_id, keyboard=True,
-            )
+            await self.send(t("tg_later"), chat_id=chat_id, keyboard=True)
         elif command == "hide":
             control.send(Command(CommandType.HIDE_WINDOW))
-            await self.send("🙈 Вікно згорнуто в трей.", chat_id=chat_id, keyboard=True)
+            await self.send(t("tg_hidden"), chat_id=chat_id, keyboard=True)
         elif command == "show":
             control.send(Command(CommandType.SHOW_WINDOW))
-            await self.send("🖥 Вікно розгорнуто.", chat_id=chat_id, keyboard=True)
+            await self.send(t("tg_shown"), chat_id=chat_id, keyboard=True)
         elif command == "switch":
             if not argument:
-                await self.send("Вкажи канал: <code>/switch назва</code>", chat_id=chat_id)
+                await self.send(t("tg_switch_need"), chat_id=chat_id)
                 return
             control.send(Command(CommandType.SWITCH, argument))
-            await self.send(f"Перемикаюсь на {html.escape(argument)}…", chat_id=chat_id)
+            await self.send(t("tg_switching", channel=html.escape(argument)),
+                            chat_id=chat_id)
         elif command == "priority":
             await self._handle_priority(chat_id, argument)
         elif command == "watch":
             await self._handle_watch(chat_id, argument)
         else:
-            await self.send("Невідома команда.", chat_id=chat_id, keyboard=True)
+            await self.send(t("tg_unknown"), chat_id=chat_id, keyboard=True)
 
     def _export_dir(self) -> Path:
         from core.config import STATE_DIR
@@ -830,13 +834,13 @@ class TelegramNotifier:
             )
         except OSError as error:
             await self.send(
-                f"Не вдалося зберегти експорт: {html.escape(str(error))}",
+                t("tg_export_fail", error=html.escape(str(error))),
                 chat_id=chat_id, keyboard=True,
             )
             return
         listing = "\n".join(str(path) for path in paths)
         await self.send(
-            f"💾 <b>Експорт</b>\n<code>{html.escape(listing)}</code>",
+            f"{t('tg_export_title')}\n<code>{html.escape(listing)}</code>",
             chat_id=chat_id, keyboard=True,
         )
         for path in paths:
@@ -919,18 +923,17 @@ class TelegramNotifier:
         if len(bits) < 2 or bits[0].lower() not in ("add", "remove"):
             current = self._settings.priority
             listing = "\n".join(f"{i + 1}. {html.escape(g)}"
-                                for i, g in enumerate(current)) or "<i>порожньо</i>"
+                                for i, g in enumerate(current)) or t("tg_empty")
             await self.send(
-                f"<b>Пріоритет ігор</b>\n{listing}\n\n"
-                "Зміна: <code>/priority add Назва гри</code>",
+                f"{t('tg_priority_title')}\n{listing}\n\n{t('tg_priority_hint')}",
                 chat_id=chat_id,
             )
             return
         action, game = bits[0].lower(), bits[1].strip()
         kind = CommandType.PRIORITY_ADD if action == "add" else CommandType.PRIORITY_REMOVE
         self._twitch.control.send(Command(kind, game))
-        verb = "додано до" if action == "add" else "прибрано з"
-        await self.send(f"«{html.escape(game)}» {verb} пріоритету.", chat_id=chat_id)
+        key = "tg_priority_added" if action == "add" else "tg_priority_removed"
+        await self.send(t(key, game=html.escape(game)), chat_id=chat_id)
 
     async def _handle_watch(self, chat_id: int, argument: str) -> None:
         """Список спостереження — про нові кампанії яких ігор повідомляти.
@@ -943,12 +946,10 @@ class TelegramNotifier:
         if len(bits) < 2 or bits[0].lower() not in ("add", "remove"):
             current = self._settings.watch_games
             listing = "\n".join(f"{i + 1}. {html.escape(g)}"
-                                for i, g in enumerate(current)) or "<i>порожньо</i>"
+                                for i, g in enumerate(current)) or t("tg_empty")
             await self.send(
-                f"👀 <b>Спостереження за іграми</b>\n{listing}\n\n"
-                "Повідомляю, коли з'явиться нова кампанія цієї гри. Фарм при "
-                "цьому не переривається.\n"
-                "Зміна: <code>/watch add Rocket League</code>",
+                f"{t('tg_watch_title')}\n{listing}\n\n"
+                f"{t('tg_watch_body')}\n{t('tg_watch_hint')}",
                 chat_id=chat_id, keyboard=True,
             )
             return
@@ -957,7 +958,7 @@ class TelegramNotifier:
         lowered = [item.lower() for item in current]
         if action == "add":
             if game.lower() in lowered:
-                await self.send(f"«{html.escape(game)}» уже у списку.",
+                await self.send(t("tg_watch_already", game=html.escape(game)),
                                 chat_id=chat_id, keyboard=True)
                 return
             current.append(game)
@@ -966,6 +967,6 @@ class TelegramNotifier:
         self._settings.watch_games = current
         self._settings.touch()
         self._settings.save()
-        verb = "додано до спостереження" if action == "add" else "прибрано зі спостереження"
-        await self.send(f"«{html.escape(game)}» {verb}.",
+        key = "tg_watch_added" if action == "add" else "tg_watch_removed"
+        await self.send(t(key, game=html.escape(game)),
                         chat_id=chat_id, keyboard=True)

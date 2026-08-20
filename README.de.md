@@ -32,7 +32,8 @@ genutzt, der ohnehin im System steckt (Edge oder Chrome).
   Konto anderswo von Hand Twitch schaut), sagt es das, statt zu schweigen.
 - **Oberflächensprachen** (Einstellungen): Ukrainisch als Vorgabe, außerdem
   English, Español, Português, Deutsch, Français, Polski, Türkçe, 简体中文.
-  Kein Russisch.
+  Kein Russisch. Das Protokoll bleibt ukrainisch. Der Telegram-Bot spricht
+  dieselbe Sprache wie das Fenster.
 
 ## Voraussetzungen
 
@@ -82,6 +83,7 @@ Start selbst angelegt. Vorlage:
 | Schlüssel | Bedeutung |
 |---|---|
 | `farm_mode` | `0` — Prioritätenliste, `1` — nächster Ablauf, `2` — engste Passung, `3` — nur verknüpfte Kampagnen |
+| `language` | `uk` als Vorgabe; außerdem `en`, `es`, `pt`, `de`, `fr`, `pl`, `tr`, `zh`; `auto` — Windows-Sprache. Der Bot folgt dem Fenster |
 | `priority` | Spiele in bevorzugter Reihenfolge |
 | `exclude` | Spiele, die unangetastet bleiben |
 | `farm_cosmetics` | Kampagnen annehmen, die nur Abzeichen und Emotes geben |

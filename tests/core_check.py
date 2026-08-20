@@ -29,6 +29,7 @@ from core.config import (
     MIN_IMAGE_SIZE,
     SPADE_ATTEMPTS,
     STALL_LIMIT,
+    UPDATE_CHECK_EVERY,
     clamp_image_size,
 )
 from core.events import (
@@ -49,13 +50,14 @@ from core.events import (
     ProtocolStale,
     RiskSnapshot,
     StatusChanged,
+    UpdateAvailable,
     WatchingChanged,
     WatchUncounted,
     WindowVisibility,
 )
 from core.exceptions import RequestInvalid
 from core.history import History
-from core.i18n import resolve, set_language, t
+from core.i18n import LANGS, resolve, set_language, t
 from core.identity import Identity
 from core.images import ImageCache
 from core.miner import Miner
@@ -535,14 +537,40 @@ def watchlist_checks() -> None:
 
 def i18n_checks() -> None:
     print("\n[3ж] Мови")
+    from notify.telegram import help_text
+
     set_language("uk")
     check("українська", t("pause") == "Призупинити")
+    check("бот українською", "Команди" in help_text() and "Commands" not in help_text())
     set_language("en")
     check("англійська", t("pause") == "Pause")
+    check("бот англійською", "Commands" in help_text() and "Команди" not in help_text())
+    check("бот /status англійською", t("tg_status_title") == "📊 <b>Miner status</b>")
     set_language("zh")
     check("китайська лише коли обрали", t("pause") == "暂停")
+    check("бот китайською", "命令" in help_text())
     check("невідомий код → українська", resolve("ru") == "uk")
     check("порожнє → українська, не авто", resolve("") == "uk")
+    missing = []
+    for code in LANGS:
+        set_language(code)
+        if t("tg_paused") in ("tg_paused", "") or t("tg_unknown") in ("tg_unknown", ""):
+            missing.append(code)
+    check("усі мови мають відповіді бота", not missing, ",".join(missing))
+    source = Path("notify/telegram.py").read_text(encoding="utf-8")
+    leftover = [s for s in ("Фарм призупинено", "Невідома команда", "Стан майнера")
+                if s in source]
+    check("у боті немає жорсткої української", not leftover, ", ".join(leftover))
+    gui = Path("gui/app.py").read_text(encoding="utf-8")
+    check("вікно без «Перечитати інвентар»", "Перечитати інвентар" not in gui)
+    check("вікно без «Режим пріоритету»", "Режим пріоритету" not in gui)
+    wiz = Path("gui/telegram_setup.py").read_text(encoding="utf-8")
+    check("майстер без жорсткого заголовка", "Підключення Telegram-бота" not in wiz)
+    locales = Path("core/locales")
+    check("кожна мова — окремий JSON",
+          all((locales / f"{code}.json").is_file() for code in LANGS))
+    set_language("en")
+    check("вікно англійською", t("reload_inventory") == "Reload inventory")
     set_language("uk")
 
 
@@ -948,6 +976,8 @@ def history_checks() -> None:
         # порожня історія не має падати — це стан першого запуску
         check("порожня історія читається", history.entries() == [])
         check("порожній звіт зрозумілий", "жодної нагороди" in history.summary())
+        check("типовий звіт за 3 місяці", "90" in history.summary(),
+              history.summary())
 
         bus = Bus()
         history.attach(types.SimpleNamespace(subscribe=lambda fn: None))
@@ -1243,6 +1273,25 @@ def update_checks() -> None:
         check(".exe вимагає підпис", need)
     finally:
         update.MANIFEST_PUBLIC_KEY = old_pub
+
+    check("інтервал перевірки — 12 годин", UPDATE_CHECK_EVERY == 12 * 60 * 60)
+
+    fake = types.SimpleNamespace(
+        _update_plan=None, update_postponed=False, events=Bus(),
+        say=lambda text: None,
+    )
+    blob = types.SimpleNamespace(spec=types.SimpleNamespace(size=100))
+    ver = types.SimpleNamespace(version="1.0.7")
+    Miner._offer_update(fake, ver, [blob])
+    first = [e for e in fake.events.sent if isinstance(e, UpdateAvailable)]
+    Miner._offer_update(fake, ver, [blob])
+    again = [e for e in fake.events.sent if isinstance(e, UpdateAvailable)]
+    check("перша поява оновлення — подія", len(first) == 1)
+    check("та сама версія вдруге не нагадує", len(again) == 1)
+    fake.update_postponed = True
+    Miner._offer_update(fake, types.SimpleNamespace(version="1.0.8"), [blob])
+    later = [e for e in fake.events.sent if isinstance(e, UpdateAvailable)]
+    check("відкладене не нагадує до перезапуску", len(later) == 1)
 
 
 # ------------------------------------------------------------------ доставка

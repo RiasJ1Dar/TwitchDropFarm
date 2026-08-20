@@ -33,6 +33,8 @@ Chrome).
   en lugar de callar.
 - **Idiomas de la interfaz** (Ajustes): ucraniano por defecto, también English,
   Español, Português, Deutsch, Français, Polski, Türkçe, 简体中文. No hay ruso.
+  El registro se queda en ucraniano. El bot de Telegram usa el mismo idioma que
+  la ventana.
 
 ## Requisitos
 
@@ -81,6 +83,7 @@ primer arranque. Ejemplo:
 | Clave | Significado |
 |---|---|
 | `farm_mode` | `0` — lista de prioridad, `1` — fecha límite más cercana, `2` — mejor encaje, `3` — solo campañas vinculadas |
+| `language` | `uk` por defecto; también `en`, `es`, `pt`, `de`, `fr`, `pl`, `tr`, `zh`; `auto` — idioma de Windows. El bot sigue a la ventana |
 | `priority` | juegos por orden de preferencia |
 | `exclude` | juegos que no tocar |
 | `farm_cosmetics` | aceptar campañas que solo dan insignias y emotes |
