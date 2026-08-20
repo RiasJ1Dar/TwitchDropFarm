@@ -1,9 +1,8 @@
 """Компактний Tkinter-інтерфейс.
 
-Свідомо мінімальний: без власних канвасів для прогрес-барів, без локалізації.
-Усе, що потрібно, дає штатний ttk. Картинки нагород показуються, лише коли їх
-увімкнули в налаштуваннях, і беруться з кешу на диску — сам інтерфейс у мережу
-не ходить.
+Свідомо мінімальний: без власних канвасів для прогрес-барів. Усе, що потрібно,
+дає штатний ttk. Картинки нагород показуються, лише коли їх увімкнули в
+налаштуваннях, і беруться з кешу на диску — сам інтерфейс у мережу не ходить.
 
 Інтеграція з asyncio: замість `root.mainloop()` крутимо `root.update()` з
 asyncio-таски. Так усе лишається однопотоковим, і не потрібні ні
@@ -78,11 +77,11 @@ FARM_BADGE = {
 TK_TICK = 0.05
 
 DARK = {
-    "bg": "#1b1b1f", "fg": "#e6e6e6", "alt": "#26262c",
+    "bg": "#1b1b1f", "fg": "#e6e6e6", "alt": "#26262c", "muted": "#9a9aa3",
     "accent": "#9147ff", "ok": "#33cc66", "warn": "#ffb020", "err": "#ff5c5c",
 }
 LIGHT = {
-    "bg": "#f5f5f7", "fg": "#1b1b1f", "alt": "#ffffff",
+    "bg": "#f5f5f7", "fg": "#1b1b1f", "alt": "#ffffff", "muted": "#6b6b73",
     "accent": "#772ce8", "ok": "#1a9e4b", "warn": "#b06a00", "err": "#c62828",
 }
 
@@ -94,10 +93,14 @@ class GUI:
         self._poll_task: asyncio.Task[None] | None = None
         self.palette = DARK if twitch.settings.dark_theme else LIGHT
 
+        from core.toolbox import enable_windows_dpi
+        enable_windows_dpi()
+
         self.root = tk.Tk()
         self.root.title(WINDOW_TITLE)
         self.root.geometry("900x620")
         self.root.minsize(760, 520)
+        self._apply_ui_fonts()
         # чи є куди ховатись; уточнюється, коли трей реально піднявся
         self._tray_available = False
         # стан кожного вебсокета окремо: індекс -> (статус, кількість топіків)
@@ -140,6 +143,20 @@ class GUI:
     def _image_size(self) -> int:
         return clamp_image_size(self._twitch.settings.image_size)
 
+    def _apply_ui_fonts(self) -> None:
+        """Один шрифт на ttk і tk.Label — інакше шапка виглядає розмитішою за вкладки."""
+        import tkinter.font as tkfont
+        for name, size in (
+            ("TkDefaultFont", 10),
+            ("TkTextFont", 10),
+            ("TkHeadingFont", 10),
+            ("TkMenuFont", 10),
+        ):
+            try:
+                tkfont.nametofont(name).configure(family="Segoe UI", size=size)
+            except tk.TclError:
+                pass
+
     # ------------------------------------------------------------ оформлення
 
     def _apply_theme(self) -> None:
@@ -160,21 +177,63 @@ class GUI:
         style.configure("TLabelframe", background=p["bg"], foreground=p["fg"])
         style.configure("TLabelframe.Label", background=p["bg"], foreground=p["fg"])
         style.configure("TButton", background=p["alt"], foreground=p["fg"], padding=6)
-        style.map("TButton", background=[("active", p["accent"])])
+        style.map("TButton",
+                  background=[("active", p["accent"]), ("pressed", p["accent"])],
+                  foreground=[("active", "#ffffff"), ("pressed", "#ffffff")])
+        style.configure("Accent.TButton", background=p["accent"],
+                        foreground="#ffffff", padding=6)
+        style.map("Accent.TButton",
+                  background=[("active", "#772ce8"), ("pressed", "#5c16c5")],
+                  foreground=[("active", "#ffffff"), ("pressed", "#ffffff")])
         style.configure("TCheckbutton", background=p["bg"], foreground=p["fg"])
+        style.configure("TRadiobutton", background=p["bg"], foreground=p["fg"])
+        style.configure("TCombobox", fieldbackground=p["alt"], background=p["alt"],
+                        foreground=p["fg"], arrowcolor=p["fg"])
+        style.map("TCombobox",
+                  fieldbackground=[("readonly", p["alt"])],
+                  foreground=[("readonly", p["fg"])],
+                  background=[("readonly", p["alt"])])
+        style.configure("TScrollbar", background=p["alt"], troughcolor=p["bg"],
+                        arrowcolor=p["fg"])
+        style.configure("Horizontal.TScale", background=p["bg"], troughcolor=p["alt"])
         # рядок трохи вищий за картинку, інакше вона обрізається зверху й знизу;
         # без картинок висота лишається звичайною, щоб список не був розрідженим
         row = self._image_size + 4 if self._twitch.settings.drop_images else 24
         style.configure("Treeview", background=p["alt"], fieldbackground=p["alt"],
                         foreground=p["fg"], rowheight=row, borderwidth=0)
-        style.configure("Treeview.Heading", background=p["bg"], foreground=p["fg"])
-        style.map("Treeview", background=[("selected", p["accent"])])
-        style.configure("TProgressbar", background=p["accent"], troughcolor=p["alt"])
+        style.configure("Treeview.Heading", background=p["bg"], foreground=p["fg"],
+                        font=("Segoe UI", 9, "bold"))
+        style.map("Treeview", background=[("selected", p["accent"])],
+                  foreground=[("selected", "#ffffff")])
+        style.configure("TProgressbar", background=p["accent"], troughcolor=p["alt"],
+                        thickness=8)
+        self._restyle_widgets()
+
+    def _restyle_widgets(self) -> None:
+        """Те, що ttk не фарбує сам: журнал, списки, шапка."""
+        p = self.palette
         if getattr(self, "farm_label", None) is not None:
-            self.farm_label.configure(bg=p["bg"])
             previous = self._farm_state
             self._farm_state = ""
             self._set_farm_state(previous or "idle")
+        if getattr(self, "log", None) is not None:
+            self.log.configure(bg=p["alt"], fg=p["fg"], insertbackground=p["fg"])
+            self.log.tag_configure("time", foreground=p["muted"])
+            for tag, colour in (("ok", p["ok"]), ("warn", p["warn"]), ("err", p["err"])):
+                self.log.tag_configure(tag, foreground=colour)
+        for name in ("prio_list", "watch_list"):
+            box = getattr(self, name, None)
+            if box is not None:
+                box.configure(bg=p["alt"], fg=p["fg"], selectbackground=p["accent"],
+                              selectforeground="#ffffff", highlightthickness=0)
+        if getattr(self, "tiles_canvas", None) is not None:
+            self.tiles_canvas.configure(bg=p["alt"])
+        if getattr(self, "conn_label", None) is not None:
+            self.conn_label.configure(foreground=p["muted"])
+        if getattr(self, "title_label", None) is not None:
+            self.title_label.configure(foreground=p["accent"])
+        if getattr(self, "root", None) is not None:
+            self.root.configure(bg=p["bg"])
 
     # ------------------------------------------------------------ розкладка
 
@@ -183,16 +242,20 @@ class GUI:
         top.pack(fill="x")
         pal = self.palette
         self.farm_label = tk.Label(
-            top, text=t("farm_idle"), font=("Segoe UI", 11, "bold"),
-            bg=pal["bg"], fg=pal["fg"],
+            top, text=t("farm_idle"), font=("Segoe UI", 10, "bold"),
+            bg=pal["alt"], fg=pal["fg"], padx=8, pady=2,
         )
         self.farm_label.pack(side="left")
         self._set_farm_state("idle")
         self.status_var = tk.StringVar(value=t("starting"))
-        ttk.Label(top, textvariable=self.status_var,
-                  font=("Segoe UI", 11, "bold")).pack(side="left", padx=(12, 0))
+        self.status_label = ttk.Label(top, textvariable=self.status_var,
+                                      font=("Segoe UI", 11, "bold"))
+        self.status_label.pack(side="left", padx=(12, 0), fill="x", expand=True)
         self.conn_var = tk.StringVar(value="")
-        ttk.Label(top, textvariable=self.conn_var).pack(side="right")
+        self.conn_label = ttk.Label(top, textvariable=self.conn_var,
+                                    foreground=pal["muted"])
+        self.conn_label.pack(side="right")
+        ttk.Separator(self.root, orient="horizontal").pack(fill="x")
 
         notebook = ttk.Notebook(self.root)
         notebook.pack(fill="both", expand=True, padx=8, pady=(0, 8))
@@ -214,9 +277,10 @@ class GUI:
         # заголовок трансляції — єдине місце, де названа гра, коли категорія
         # каналу «Special Events»
         self.title_var = tk.StringVar(value="")
-        ttk.Label(box, textvariable=self.title_var,
-                  foreground=p["accent"], wraplength=820,
-                  justify="left").pack(anchor="w")
+        self.title_label = ttk.Label(box, textvariable=self.title_var,
+                                     foreground=p["accent"], wraplength=820,
+                                     justify="left")
+        self.title_label.pack(anchor="w")
         # justify="left" і одна мітка на всі рядки: дропів на каналі буває
         # кілька, і раніше тут лишався той, чий прогрес прийшов останнім —
         # тобто випадковий. З турнірної трансляції це виглядало так, ніби
@@ -230,7 +294,8 @@ class GUI:
 
         controls = ttk.Frame(tab)
         controls.pack(fill="x", pady=8)
-        self.pause_btn = ttk.Button(controls, text=t("pause"), command=self._toggle_pause)
+        self.pause_btn = ttk.Button(controls, text=t("pause"),
+                                    command=self._toggle_pause, style="Accent.TButton")
         self.pause_btn.pack(side="left")
         ttk.Button(controls, text=t("reload_inventory"),
                    command=self._reload_now).pack(side="left", padx=6)
@@ -242,7 +307,9 @@ class GUI:
         log_box = ttk.LabelFrame(tab, text=t("log"), padding=6)
         log_box.pack(fill="both", expand=True)
         self.log = tk.Text(log_box, height=12, wrap="word", bg=p["alt"], fg=p["fg"],
-                           insertbackground=p["fg"], relief="flat")
+                           insertbackground=p["fg"], relief="flat",
+                           font=("Segoe UI", 9), padx=6, pady=4,
+                           highlightthickness=0, borderwidth=0)
         scroll = ttk.Scrollbar(log_box, command=self.log.yview)
         self.log.configure(yscrollcommand=scroll.set, state="disabled")
         scroll.pack(side="right", fill="y")
@@ -263,7 +330,9 @@ class GUI:
             ("viewers", t("col_viewers"), 90), ("status", t("col_status"), 140),
         ):
             self.channel_tree.heading(column, text=title)
-            self.channel_tree.column(column, width=width, anchor="w")
+            self.channel_tree.column(
+                column, width=width, anchor="e" if column == "viewers" else "w",
+            )
         self.channel_tree.bind("<Double-1>", self._on_channel_activate)
         scroll = ttk.Scrollbar(tab, command=self.channel_tree.yview)
         self.channel_tree.configure(yscrollcommand=scroll.set)
@@ -328,7 +397,8 @@ class GUI:
         # картки мусять займати всю ширину полотна, інакше сітка тулиться ліворуч
         canvas.bind("<Configure>", lambda e: self._tiles_resized(window, e.width))
         self._tiles_columns = 0
-        canvas.bind_all("<MouseWheel>", self._tiles_scroll)
+        canvas.bind("<MouseWheel>", self._tiles_scroll)
+        holder.bind("<MouseWheel>", self._tiles_scroll)
         self.tiles_canvas = canvas
         self.tiles_holder = holder
 
@@ -408,7 +478,9 @@ class GUI:
         prio_box.pack(fill="both", expand=True, side="left", padx=(0, 8))
         self.prio_list = tk.Listbox(prio_box, bg=self.palette["alt"],
                                     fg=self.palette["fg"], relief="flat",
-                                    selectbackground=self.palette["accent"])
+                                    highlightthickness=0, activestyle="none",
+                                    selectbackground=self.palette["accent"],
+                                    selectforeground="#ffffff")
         self.prio_list.pack(fill="both", expand=True)
         for game in settings.priority:
             self.prio_list.insert("end", game)
@@ -431,7 +503,9 @@ class GUI:
                   text=t("watch_hint")).pack(anchor="w")
         self.watch_list = tk.Listbox(watch_box, height=4, bg=self.palette["alt"],
                                      fg=self.palette["fg"], relief="flat",
-                                     selectbackground=self.palette["accent"])
+                                     highlightthickness=0, activestyle="none",
+                                     selectbackground=self.palette["accent"],
+                                     selectforeground="#ffffff")
         self.watch_list.pack(fill="both", expand=True, pady=(6, 0))
         for game in settings.watch_games:
             self.watch_list.insert("end", game)
@@ -647,13 +721,12 @@ class GUI:
         settings.drop_images = self.images_var.get()
         settings.check_updates = self.updates_var.get()
         settings.save()
-        if settings.drop_images != images_were:
-            # висота рядка залежить від того, чи є картинки
-            self._apply_theme()
-            if settings.drop_images:
-                # щойно ввімкнули — перечитуємо інвентар, інакше картинки
-                # з'явились би аж за годину, разом із наступним оновленням
-                self._send(CommandType.RELOAD)
+        self.palette = DARK if settings.dark_theme else LIGHT
+        self._apply_theme()
+        if settings.drop_images != images_were and settings.drop_images:
+            # щойно ввімкнули — перечитуємо інвентар, інакше картинки
+            # з'явились би аж за годину, разом із наступним оновленням
+            self._send(CommandType.RELOAD)
 
     # Скільки тримаємо дроп у списку «зараз фармимо» без нового прогресу.
     # Хвилина — крок підтвердження, тож три дає запас на повтори, але не
@@ -883,7 +956,9 @@ class GUI:
             return
         self._farm_state = state
         key, colour = FARM_BADGE[state]
-        self.farm_label.configure(text=t(key), fg=self.palette[colour])
+        self.farm_label.configure(
+            text=t(key), fg=self.palette[colour], bg=self.palette["alt"],
+        )
 
     def _farm_from_status(self, text: str) -> None:
         watching = t("status_watching", name="").rstrip()
@@ -924,7 +999,8 @@ class GUI:
     def _append_log(self, text: str, tag: str = "") -> None:
         stamp = datetime.now().strftime("%H:%M:%S")
         self.log.configure(state="normal")
-        self.log.insert("end", f"{stamp}  {text}\n", tag or ())
+        self.log.insert("end", f"{stamp}  ", "time")
+        self.log.insert("end", f"{text}\n", tag or ())
         # не даємо журналу рости нескінченно
         if int(self.log.index("end-1c").split(".")[0]) > 500:
             self.log.delete("1.0", "100.0")

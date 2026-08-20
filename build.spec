@@ -62,6 +62,7 @@ exe = EXE(
     # Режим --console пише в консоль батьківського процесу, якщо його запустили з неї.
     console=False,
     disable_windowed_traceback=False,
+    manifest="tools/app.manifest",
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
