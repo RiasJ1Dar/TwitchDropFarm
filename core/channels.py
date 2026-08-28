@@ -155,8 +155,23 @@ class WatchReporter:
 
         try:
             answer = await self._backend.graphql(protocol.spade_mutation(event))
+        except Exception as error:
+            # ⚠️ Це останній шлях звітування перегляду: spade сюди вже не довіз.
+            # Мовчазне `return False` означало «хвилини не капають, а в журналі
+            # порожньо» — саме той симптом, який доводилось розбирати запитами
+            # до Twitch замість читання журналу. Усі сусідні гілки вище
+            # називають причину; ця чомусь ні.
+            log.warning(
+                f"GQL-звіт про перегляд не пройшов ({type(error).__name__}: {error})"
+            )
+            return False
+        try:
             return answer["data"]["sendSpadeEvents"]["statusCode"] == 204
-        except Exception:
+        except (KeyError, TypeError) as error:
+            # Відповідь є, але не такої форми, якої чекали, — ознака того, що
+            # Twitch змінив схему. Без цього рядка це виглядало б так само, як
+            # мережевий збій, і сторожа persisted-запитів мовчала б.
+            log.warning(f"Twitch відповів на звіт не тим, чого чекали: {error}")
             return False
 
 
