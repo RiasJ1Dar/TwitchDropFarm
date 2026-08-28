@@ -11,11 +11,20 @@
 # встановленні, — і якщо venv колись копіювали з іншої теки, вони мовчки
 # запускають чужий Python із чужими бібліотеками. `python -m` бере інтерпретатор
 # за розташуванням і такої підміни не допускає.
+from PyInstaller.utils.hooks import collect_data_files
+
+# CustomTkinter тримає теми й описи віджетів у JSON поруч із пакетом і читає їх
+# під час запуску. PyInstaller бачить лише імпорти, тому сам їх не візьме:
+# локально все працює, а зібраний .exe падає на старті, не знайшовши
+# themes/blue.json. Рівно той клас дефекту, який ловиться тільки живим запуском
+# збірки, — тому крок «перевірити .exe» у релізному CI обов'язковий.
+CTK_DATA = collect_data_files("customtkinter")
+
 a = Analysis(
     ["main.py"],
     pathex=[],
     binaries=[],
-    datas=[("core/locales", "core/locales")],
+    datas=[("core/locales", "core/locales"), *CTK_DATA],
     hiddenimports=[
         # підтягуються динамічно, тому PyInstaller їх сам не бачить
         "gui.app",

@@ -596,7 +596,8 @@ def farm_indicator_checks() -> None:
     )
     box._set_farm_state = lambda state: GUI._set_farm_state(box, state)
     GUI._set_farm_state(box, "going")
-    check("іде", box.farm_label.text == "● Іде" and box.farm_label.fg == DARK["ok"],
+    # Кружечок більше не в тексті: його малює PulseDot поруч із підписом.
+    check("іде", box.farm_label.text == "Іде" and box.farm_label.fg == DARK["ok"],
           box.farm_label.text)
     GUI._set_farm_state(box, "stalled")
     check("стоїть червоним",
@@ -633,11 +634,26 @@ def growing_checks() -> None:
         def set(self, text: str) -> None:
             self.value = text
 
+    class FakeBar:
+        """CTkProgressBar рахує 0..1. Тест дивиться соті, як раніше ttk."""
+
+        def __init__(self) -> None:
+            self.value = 0.0
+
+        def set(self, fraction: float) -> None:
+            self.value = fraction * 100
+
+        def __getitem__(self, key: str) -> float:
+            if key == "value":
+                return self.value
+            raise KeyError(key)
+
     box = types.SimpleNamespace(
         _growing={}, _watching_name="berbatow",
-        drop_var=FakeVar(), progress={},
+        drop_var=FakeVar(), progress=FakeBar(),
         GROWING_WINDOW=GUI.GROWING_WINDOW, GROWING_LINES=GUI.GROWING_LINES,
     )
+    box._set_progress = lambda percent: GUI._set_progress(box, percent)
     now = 1000.0
     box._growing = {
         "EWC Platinum": (now, "EWC 2026 · Special Events", 298, 360),
