@@ -129,8 +129,11 @@ async def main() -> int:
 
     check("біографія бота показує застій",
           any("Стоїть" in line for line in bios), str(bios))
-    check("біографія бота показує канал",
-          any("Іде · ibeast" in line for line in bios), str(bios))
+    # Канал у біо свідомо прибрано: профіль бота бачать сторонні, а перемикання
+    # каналів ще й молотило Bot API. У біо лишається лише стан.
+    check("біографія бота не світить канал",
+          any(line.startswith("● Іде") for line in bios)
+          and not any("ibeast" in line for line in bios), str(bios))
 
     # ---------------------------------------------------------------- тексти
     print("\n[2] Тексти станів")

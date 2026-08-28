@@ -275,6 +275,7 @@ class TelegramNotifier:
             self._report_task = asyncio.create_task(self._report_loop())
         logger.info("Telegram-сповіщення активні")
         await self._ensure_profile_photo()
+        await self._set_description()
         await self._set_bio(t("farm_idle"))
 
     async def stop(self) -> None:
@@ -415,21 +416,24 @@ class TelegramNotifier:
         return deliver()
 
     def _bio_text(self, event: Event) -> str | None:
-        """Рядок у профіль бота (short description, до 120 символів)."""
+        """Рядок у профіль бота (short description, до 120 символів).
+
+        ⚠️ Тільки стан, без назви каналу. Профіль бота бачать усі, кому він
+        трапиться, і кого саме дивиться майнер — не їхня справа. Друга причина
+        практична: з каналом у рядку біо перемальовувалось на кожному
+        перемиканні й дарма молотило Bot API, хоча стан лишався тим самим.
+        """
         if isinstance(event, WatchingChanged):
-            if event.channel is None:
-                return t("farm_idle")
-            return f"{t('farm_going')} · {event.channel.name}"
+            return t("farm_idle") if event.channel is None else t("farm_going")
         if isinstance(event, ProgressStalled):
-            return t("tg_bio_stalled", minutes=event.minutes_without_progress,
-                     channel=event.channel_name)
+            return t("tg_bio_stalled", minutes=event.minutes_without_progress)
         if isinstance(event, WatchUncounted):
-            return t("tg_bio_uncounted", channel=event.channel_name)
+            return t("farm_uncounted")
         if isinstance(event, StatusChanged):
             if event.text == t("status_paused"):
                 return t("farm_paused")
             if event.text.startswith(t("status_stalled", minutes="").rstrip()):
-                return f"● {event.text}"
+                return t("farm_stalled")
             if event.text == t("status_uncounted"):
                 return t("farm_uncounted")
         if isinstance(event, ConnectionLost):
@@ -441,17 +445,34 @@ class TelegramNotifier:
         return None
 
     async def _set_bio(self, text: str) -> None:
-        text = text[:120]
+        # Кружечок ставимо тут, а не в перекладах: це оформлення, однакове для
+        # всіх станів. Поки він жив у текстах локалей, частина станів його мала,
+        # частина ні — і в дев'яти мовах це розходилось непомітно.
+        text = f"● {text}"[:120]
         if text == self._bio:
             return
-        # Той самий вид («Іде · канал») не частіше ніж раз на 15 с — інакше
-        # перемикання каналів молотить Bot API. Зміна виду (Іде → Стоїть) одразу.
-        same_kind = self._bio[: self._bio.find("·") + 1] == text[: text.find("·") + 1]
+        # Тротлінг лише для рядків з «·» (застій зі зміною хвилин). Без крапки
+        # find() дає -1, зріз [:0] порожній, і всі стани («Іде», «Чекає»,
+        # «Не зараховується») виглядали як один вид — зміна Іде←Стоїть
+        # губилась на 15 с. Після того як канал прибрали з біо, точний збіг
+        # вище вже закриває «те саме Іде».
+        old_dot, new_dot = self._bio.find("·"), text.find("·")
+        same_kind = (
+            old_dot >= 0 and new_dot >= 0
+            and self._bio[: old_dot + 1] == text[: new_dot + 1]
+        )
         if same_kind and self._bio and not self._routine_allowed("bio", 15.0):
             return
         self._bio = text
+        # ⚠️ Тільки короткий опис. `setMyDescription` — інше поле: Telegram
+        # показує його великим блоком у порожньому чаті, замість «Що вміє цей
+        # бот?». Поточний стан там недоречний, а виглядало це як випадковий
+        # текст, продубльований поруч зі статусом.
         await self._api("setMyShortDescription", short_description=text)
-        await self._api("setMyDescription", description=text)
+
+    async def _set_description(self) -> None:
+        """Опис у порожньому чаті. Ставиться раз при старті й далі не міняється."""
+        await self._api("setMyDescription", description=t("tg_description")[:512])
 
     def _routine_allowed(self, key: str, min_interval: float = 60.0) -> bool:
         now = time()

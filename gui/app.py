@@ -1,8 +1,14 @@
-"""Компактний Tkinter-інтерфейс.
+"""Tkinter-інтерфейс: ttk для таблиць, CustomTkinter для вкладки «Майнінг».
 
-Свідомо мінімальний: без власних канвасів для прогрес-барів. Усе, що потрібно,
-дає штатний ttk. Картинки нагород показуються, лише коли їх увімкнули в
-налаштуваннях, і беруться з кешу на диску — сам інтерфейс у мережу не ходить.
+Чому два набори віджетів. Заокруглень, тумблерів і пристойного скролбара ttk
+не вміє взагалі, і саме через це вікно виглядало старим. CustomTkinter це дає,
+але не має аналога `Treeview` — а на ньому стоять «Канали» й «Інвентар». Тому
+межа проведена там, де вона дешева: екран без таблиць переїхав, екрани з
+таблицями лишились на ttk. Обидва набори — це той самий tkinter, тож живуть в
+одному вікні без прошарків.
+
+Картинки нагород показуються, лише коли їх увімкнули в налаштуваннях, і
+беруться з кешу на диску — сам інтерфейс у мережу не ходить.
 
 Інтеграція з asyncio: замість `root.mainloop()` крутимо `root.update()` з
 asyncio-таски. Так усе лишається однопотоковим, і не потрібні ні
@@ -17,6 +23,8 @@ from datetime import datetime, timezone
 from time import monotonic
 from tkinter import messagebox, ttk
 from typing import TYPE_CHECKING, Any
+
+import customtkinter as ctk
 
 from core import autostart
 from core.config import MAX_IMAGE_SIZE, MIN_IMAGE_SIZE, TILE_SIZE, clamp_image_size
@@ -48,6 +56,7 @@ from core.events import (
 )
 from core.i18n import LANGS, NAMES, t
 from core.toolbox import human_size, plural
+from gui.pulse import PulseDot
 
 if TYPE_CHECKING:
     from core.miner import Miner as Twitch
@@ -85,16 +94,37 @@ LIGHT = {
     "accent": "#772ce8", "ok": "#1a9e4b", "warn": "#b06a00", "err": "#c62828",
 }
 
+# Додаткові тони для вкладки «Майнінг»: картка мусить відрізнятись від тла, а в
+# ttk-палітрі для цього не було чого взяти — `alt` там зайнятий полями вводу.
+# `line` — межа картки замість рамки: тонка світліша смуга читається спокійніше
+# за намальований бордюр, а тіней Tk не вміє взагалі.
+CARD_DARK = {"page": "#141317", "card": "#1e1d24", "line": "#2a2933",
+             "hover": "#3a2a63"}
+CARD_LIGHT = {"page": "#eceaf0", "card": "#ffffff", "line": "#dcdae2",
+              "hover": "#e6ddff"}
+
+# Скільки місця лишати навколо картки. Винесено в константу, бо ті самі відступи
+# повторюються в кожному блоці вкладки, і різнобій одразу видно оком.
+PAD = 12
+
 
 class GUI:
     def __init__(self, twitch: Twitch):
         self._twitch = twitch
         self._closed = asyncio.Event()
         self._poll_task: asyncio.Task[None] | None = None
-        self.palette = DARK if twitch.settings.dark_theme else LIGHT
+        dark = twitch.settings.dark_theme
+        self.palette = DARK if dark else LIGHT
+        self.cards = CARD_DARK if dark else CARD_LIGHT
 
         from core.toolbox import enable_windows_dpi
         enable_windows_dpi()
+
+        # CustomTkinter має власне поняття теми й масштабу. Масштаб вимикаємо
+        # свідомо: DPI ми вже підняли самі (`enable_windows_dpi`), і другий
+        # множник поверх нього роздував вікно на екранах зі 150 %.
+        ctk.set_appearance_mode("dark" if dark else "light")
+        ctk.deactivate_automatic_dpi_awareness()
 
         self.root = tk.Tk()
         self.root.title(WINDOW_TITLE)
@@ -217,7 +247,8 @@ class GUI:
             self._farm_state = ""
             self._set_farm_state(previous or "idle")
         if getattr(self, "log", None) is not None:
-            self.log.configure(bg=p["alt"], fg=p["fg"], insertbackground=p["fg"])
+            self.log.configure(bg=self.cards["card"], fg=p["fg"],
+                               insertbackground=p["fg"])
             self.log.tag_configure("time", foreground=p["muted"])
             for tag, colour in (("ok", p["ok"]), ("warn", p["warn"]), ("err", p["err"])):
                 self.log.tag_configure(tag, foreground=colour)
@@ -231,7 +262,8 @@ class GUI:
         if getattr(self, "conn_label", None) is not None:
             self.conn_label.configure(foreground=p["muted"])
         if getattr(self, "title_label", None) is not None:
-            self.title_label.configure(foreground=p["accent"])
+            # CTkLabel: колір тексту зветься інакше, ніж у ttk
+            self.title_label.configure(text_color=p["accent"])
         if getattr(self, "root", None) is not None:
             self.root.configure(bg=p["bg"])
 
@@ -241,9 +273,16 @@ class GUI:
         top = ttk.Frame(self.root, padding=(10, 8))
         top.pack(fill="x")
         pal = self.palette
+        # Бейдж стану: жива крапка + підпис. Крапка дихає, поки фарм іде, і
+        # завмирає в усіх інших станах — рух помітний боковим зором, тож не
+        # доводиться вчитуватись у текст, щоб зрозуміти, чи є робота.
+        badge = tk.Frame(top, bg=pal["alt"])
+        badge.pack(side="left")
+        self.farm_dot = PulseDot(badge, background=pal["alt"], colour=pal["fg"])
+        self.farm_dot.pack(side="left", padx=(6, 0))
         self.farm_label = tk.Label(
-            top, text=t("farm_idle"), font=("Segoe UI", 10, "bold"),
-            bg=pal["alt"], fg=pal["fg"], padx=8, pady=2,
+            badge, text=t("farm_idle"), font=("Segoe UI", 10, "bold"),
+            bg=pal["alt"], fg=pal["fg"], padx=6, pady=2,
         )
         self.farm_label.pack(side="left")
         self._set_farm_state("idle")
@@ -264,55 +303,103 @@ class GUI:
         self._build_inventory_tab(notebook)
         self._build_settings_tab(notebook)
 
-    def _build_mining_tab(self, notebook: ttk.Notebook) -> None:
-        p = self.palette
-        tab = ttk.Frame(notebook, padding=10)
-        notebook.add(tab, text=t("tab_mining"))
+    def _card(self, parent: tk.Misc, title: str) -> ctk.CTkFrame:
+        """Заокруглена картка з підписом-шапкою.
 
-        box = ttk.LabelFrame(tab, text=t("farming_now"), padding=10)
-        box.pack(fill="x")
+        Заміна `ttk.LabelFrame`: той малює прямокутну рамку з врізаним у неї
+        текстом, і саме ця рамка найбільше видавала вік вікна. Тут підпис
+        стоїть над вмістом приглушеним кольором, а межу тримає тонка лінія.
+        """
+        c = self.cards
+        ttk.Label(parent, text=title, foreground=self.palette["muted"]).pack(
+            anchor="w", padx=4, pady=(0, 4),
+        )
+        card = ctk.CTkFrame(parent, corner_radius=12, fg_color=c["card"],
+                            border_width=1, border_color=c["line"])
+        card.pack(fill="x")
+        return card
+
+    def _button(self, parent: tk.Misc, text: str, command: Any,
+                *, accent: bool = False) -> ctk.CTkButton:
+        """Кнопка вкладки. Акцентна — та, яку натискають найчастіше."""
+        p, c = self.palette, self.cards
+        return ctk.CTkButton(
+            parent, text=text, command=command, corner_radius=8, height=32,
+            font=("Segoe UI", 12, "bold" if accent else "normal"),
+            fg_color=p["accent"] if accent else c["card"],
+            hover_color=p["accent"] if accent else c["hover"],
+            text_color="#ffffff" if accent else p["fg"],
+            border_width=0 if accent else 1, border_color=c["line"],
+        )
+
+    def _set_progress(self, percent: float) -> None:
+        """Прогрес у відсотках. CTk рахує від 0 до 1, решта коду — у сотих."""
+        self.progress.set(max(0.0, min(1.0, percent / 100)))
+
+    def _build_mining_tab(self, notebook: ttk.Notebook) -> None:
+        p, c = self.palette, self.cards
+        tab = ctk.CTkFrame(notebook, corner_radius=0, fg_color=c["page"])
+        notebook.add(tab, text=t("tab_mining"))
+        body = ctk.CTkFrame(tab, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=PAD, pady=PAD)
+
+        box = self._card(body, t("farming_now"))
+        inner = ctk.CTkFrame(box, fg_color="transparent")
+        inner.pack(fill="x", padx=PAD, pady=PAD)
+
         self.channel_var = tk.StringVar(value="—")
-        ttk.Label(box, textvariable=self.channel_var,
-                  font=("Segoe UI", 12, "bold")).pack(anchor="w")
+        ctk.CTkLabel(inner, textvariable=self.channel_var, anchor="w",
+                     font=("Segoe UI", 15, "bold"), text_color=p["fg"]).pack(
+            anchor="w", fill="x")
         # заголовок трансляції — єдине місце, де названа гра, коли категорія
         # каналу «Special Events»
         self.title_var = tk.StringVar(value="")
-        self.title_label = ttk.Label(box, textvariable=self.title_var,
-                                     foreground=p["accent"], wraplength=820,
-                                     justify="left")
-        self.title_label.pack(anchor="w")
-        # justify="left" і одна мітка на всі рядки: дропів на каналі буває
-        # кілька, і раніше тут лишався той, чий прогрес прийшов останнім —
-        # тобто випадковий. З турнірної трансляції це виглядало так, ніби
-        # фармиться подія, а гра невідома.
+        self.title_label = ctk.CTkLabel(inner, textvariable=self.title_var,
+                                        text_color=p["accent"], anchor="w",
+                                        wraplength=820, justify="left")
+        self.title_label.pack(anchor="w", fill="x")
+        # одна мітка на всі рядки: дропів на каналі буває кілька, і раніше тут
+        # лишався той, чий прогрес прийшов останнім — тобто випадковий. З
+        # турнірної трансляції це виглядало так, ніби фармиться подія, а гра
+        # невідома.
         self.drop_var = tk.StringVar(value=t("drop_unknown"))
-        ttk.Label(box, textvariable=self.drop_var, justify="left").pack(
-            anchor="w", pady=(4, 2),
+        ctk.CTkLabel(inner, textvariable=self.drop_var, anchor="w",
+                     justify="left", text_color=p["fg"]).pack(
+            anchor="w", fill="x", pady=(6, 8))
+        self.progress = ctk.CTkProgressBar(
+            inner, height=10, corner_radius=5, progress_color=p["accent"],
+            fg_color=c["line"],
         )
-        self.progress = ttk.Progressbar(box, maximum=100)
-        self.progress.pack(fill="x", pady=(4, 0))
+        self.progress.pack(fill="x")
+        self._set_progress(0)
 
-        controls = ttk.Frame(tab)
-        controls.pack(fill="x", pady=8)
-        self.pause_btn = ttk.Button(controls, text=t("pause"),
-                                    command=self._toggle_pause, style="Accent.TButton")
+        controls = ctk.CTkFrame(body, fg_color="transparent")
+        controls.pack(fill="x", pady=(PAD, 0))
+        self.pause_btn = self._button(controls, t("pause"), self._toggle_pause,
+                                      accent=True)
         self.pause_btn.pack(side="left")
-        ttk.Button(controls, text=t("reload_inventory"),
-                   command=self._reload_now).pack(side="left", padx=6)
-        ttk.Button(controls, text=t("hide_tray"),
-                   command=self.hide_to_tray).pack(side="right")
-        ttk.Button(controls, text=t("quit_miner"),
-                   command=self.confirm_quit).pack(side="right", padx=6)
+        self._button(controls, t("reload_inventory"), self._reload_now).pack(
+            side="left", padx=8)
+        self._button(controls, t("hide_tray"), self.hide_to_tray).pack(side="right")
+        self._button(controls, t("quit_miner"), self.confirm_quit).pack(
+            side="right", padx=8)
 
-        log_box = ttk.LabelFrame(tab, text=t("log"), padding=6)
+        log_wrap = ctk.CTkFrame(body, fg_color="transparent")
+        log_wrap.pack(fill="both", expand=True, pady=(PAD, 0))
+        log_box = self._card(log_wrap, t("log"))
         log_box.pack(fill="both", expand=True)
-        self.log = tk.Text(log_box, height=12, wrap="word", bg=p["alt"], fg=p["fg"],
+        # Журнал лишається tk.Text свідомо: у CTkTextbox інші імена кольорів,
+        # а тут працюють теги (`ok`/`warn`/`err`) і перефарбування при зміні
+        # теми. Сучасний вигляд дає скролбар — саме він тут і був старим.
+        self.log = tk.Text(log_box, height=12, wrap="word", bg=c["card"], fg=p["fg"],
                            insertbackground=p["fg"], relief="flat",
-                           font=("Segoe UI", 9), padx=6, pady=4,
+                           font=("Segoe UI", 9), padx=PAD, pady=8,
                            highlightthickness=0, borderwidth=0)
-        scroll = ttk.Scrollbar(log_box, command=self.log.yview)
+        scroll = ctk.CTkScrollbar(log_box, command=self.log.yview, width=12,
+                                  button_color=c["line"],
+                                  button_hover_color=p["accent"])
         self.log.configure(yscrollcommand=scroll.set, state="disabled")
-        scroll.pack(side="right", fill="y")
+        scroll.pack(side="right", fill="y", pady=8, padx=(0, 6))
         self.log.pack(side="left", fill="both", expand=True)
         for tag, colour in (("ok", p["ok"]), ("warn", p["warn"]), ("err", p["err"])):
             self.log.tag_configure(tag, foreground=colour)
@@ -755,7 +842,7 @@ class GUI:
                 del self._growing[name]
         if not fresh:
             self.drop_var.set(t("drop_unknown"))
-            self.progress["value"] = 0
+            self._set_progress(0)
             return
         # найближчий до завершення — першим: саме він заклеймиться раніше
         fresh.sort(key=lambda row: (row[3] - row[2]) if row[3] else 1 << 30)
@@ -767,7 +854,7 @@ class GUI:
             lines.append(t("growing_more", n=len(fresh) - self.GROWING_LINES))
         self.drop_var.set("\n".join(lines))
         head = fresh[0]
-        self.progress["value"] = (
+        self._set_progress(
             min(100, head[2] / head[3] * 100) if head[3] > 0 else 0
         )
 
@@ -846,7 +933,7 @@ class GUI:
                 self.title_var.set("")
                 self._growing.clear()
                 self.drop_var.set(t("drop_unknown"))
-                self.progress["value"] = 0
+                self._set_progress(0)
                 self._set_farm_state("idle")
             else:
                 if event.channel.name != self._watching_name:
@@ -959,6 +1046,16 @@ class GUI:
         self.farm_label.configure(
             text=t(key), fg=self.palette[colour], bg=self.palette["alt"],
         )
+        dot = getattr(self, "farm_dot", None)
+        if dot is None:
+            return
+        dot.recolour(colour=self.palette[colour], background=self.palette["alt"])
+        # Дихає лише «Іде». В решті станів рух означав би роботу, якої немає, —
+        # а застигла крапка сама собою є сигналом.
+        if state == "going":
+            dot.start()
+        else:
+            dot.stop()
 
     def _farm_from_status(self, text: str) -> None:
         watching = t("status_watching", name="").rstrip()
