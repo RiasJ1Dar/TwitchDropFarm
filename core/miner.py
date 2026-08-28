@@ -1194,8 +1194,13 @@ class Miner:
                 if self.stopping:
                     return
                 log.exception("Ядро впало, перезапускаю")
+                # Людині — сам текст, без назви класу винятку: «ApiError:» на
+                # початку рядка нічого їй не каже, а виглядає як поломка
+                # програми. Тип нікуди не дівається — він лишається в
+                # `traceback` і в журналі вище. Порожній текст буває у винятків
+                # без повідомлення (той же KeyError), тоді тип — усе, що є.
                 self.events.emit(MinerError(
-                    message=f"{type(error).__name__}: {error}",
+                    message=str(error).strip() or type(error).__name__,
                     traceback=describe_exception(error),
                 ))
                 self.say(t("say_crash", error=type(error).__name__, pause=pause))
