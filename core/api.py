@@ -120,7 +120,14 @@ class TwitchApi:
         try:
             if COOKIE_FILE.exists():
                 jar.load(COOKIE_FILE)
-        except Exception:
+        except Exception as error:
+            # Скидати биті cookie правильно, але робити це мовчки — ні: для
+            # людини це виглядало як розлогінення без причини, і в журналі не
+            # лишалось нічого. Файл після цього перезапишеться свіжими.
+            log.warning(
+                f"Збережені cookie не прочитались ({type(error).__name__}: {error}) "
+                f"— починаю з порожніх"
+            )
             jar.clear()
         self._session = aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(sock_connect=10, total=20),
