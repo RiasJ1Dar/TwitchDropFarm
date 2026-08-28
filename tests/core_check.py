@@ -18,6 +18,7 @@ import tempfile
 import types
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from time import monotonic
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import autostart, export, protocol, update
@@ -1333,7 +1334,15 @@ def delivery_checks() -> None:
         url="https://www.twitch.tv/ibeast", stream=stream,
     )
 
-    def send(backend: FakeBackend) -> bool:
+    def send(backend: FakeBackend, *, fresh: bool = True) -> bool:
+        # ⚠️ Стан `WatchReporter` спільний на всі канали (адреса spade одна на
+        # весь Twitch), тому кожна перевірка починає з чистого аркуша. Без
+        # цього рядка перевірки нижче ставали фіктивними: фолбек, увімкнений
+        # попередньою, тягнувся далі, і spade вже ніхто не смикав — тест
+        # лишався зеленим, перевіряючи не те, що написано в його назві.
+        if fresh:
+            WatchReporter._spade_url = None
+            WatchReporter._fallback_until = 0.0
         return asyncio.run(WatchReporter(backend).report(channel))
 
     ok_spade = FakeBackend()
@@ -1364,6 +1373,32 @@ def delivery_checks() -> None:
     no_page = NoPage()
     check("немає сторінки каналу — теж GQL",
           send(no_page) and no_page.gqls == 1 and no_page.posts == 0)
+
+    # Адреса spade одна на весь Twitch. Раніше кожен канал шукав її сам і
+    # качав заради цього повну HTML-сторінку; тепер перший знайшов — усі
+    # користуються.
+    WatchReporter._spade_url = None
+    WatchReporter._fallback_until = 0.0
+    first, second = FakeBackend(), FakeBackend()
+    send(first, fresh=False)
+    send(second, fresh=False)
+    check("адресу spade шукають один раз на всіх",
+          first.fetch_kwargs != {} and second.fetch_kwargs == {}
+          and second.posts == 1,
+          f"друга сторінка={second.fetch_kwargs}")
+
+    # Фолбек на GQL мусить бути тимчасовим: вічний прапорець саджав би
+    # програму на запасний шлях через одну випадкову невдачу.
+    WatchReporter._spade_url = None
+    WatchReporter._fallback_until = 0.0
+    send(FakeBackend(post_error=OSError("sinkhole")), fresh=False)
+    check("після збою сидимо на GQL", WatchReporter(FakeBackend())._use_mutation)
+    WatchReporter._fallback_until = monotonic() - 1.0
+    check("фолбек сам гасне з часом",
+          not WatchReporter(FakeBackend())._use_mutation)
+    after = FakeBackend()
+    send(after, fresh=False)
+    check("коли фолбек згас — spade пробують знову", after.posts == 1)
 
     fake = types.SimpleNamespace(
         _delivery_failures=0, events=Bus(),
