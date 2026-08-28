@@ -34,9 +34,30 @@ a = Analysis(
         "numpy", "scipy", "pandas", "matplotlib",
         "PIL.ImageQt", "PyQt5", "PySide2", "tkinter.test",
         "test", "unittest", "pydoc_data",
+        # Плагіни Pillow, яких проєкт не торкається. З PIL використовуються
+        # рівно три речі: `Image`, `ImageTk` і `ImageDraw` (значок у
+        # gui/icon.py). Нагороди Twitch віддає в PNG/JPEG.
+        #   _avif.pyd       7,5 МБ — найбільший файл у всій збірці
+        #   _imagingft.pyd  2,1 МБ — шрифти; `draw.text` не викликається ніде
+        #   _imagingcms.pyd 0,3 МБ — керування кольором
+        "PIL.AvifImagePlugin", "PIL.ImageFont", "PIL.ImageCms",
     ],
     noarchive=False,
 )
+
+# Часові пояси й локалізацію Tcl програма не використовує: час рахується в
+# Python через `datetime`, а переклад свій — `core/i18n.py`. Розмір тут
+# дрібний, важлива кількість: у onefile усі ці файли розпаковуються в
+# %TEMP%\_MEIxxxx на кожному запуску, а при /reboot — удруге.
+# ⚠️ Роздільник нормалізуємо: у `a.datas` шляхи записані по-віндовому
+# (`_tcl_data\tzdata\...`), і фільтр із прямими слешами мовчки не збігається
+# ні з чим. Перша редакція цієї правки саме так і «спрацювала» — розмір упав
+# від виключень Pillow, а часові пояси лишились усі до одного.
+JUNK = ("_tcl_data/tzdata", "_tcl_data/msgs", "_tk_data/msgs")
+a.datas = [
+    entry for entry in a.datas
+    if not entry[0].replace("\\", "/").startswith(JUNK)
+]
 
 pyz = PYZ(a.pure)
 
@@ -55,7 +76,12 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # ⚠️ Було `upx=True` — і це була неправда. UPX на машині немає, а
+    # PyInstaller у такому разі **мовчки** пропускає стиснення: 27,6 МБ
+    # виходили без нього. Рядок вводив в оману, ніби по розміру вже все
+    # зроблено. Ставити UPX не хочемо свідомо: пакувальники регулярно дають
+    # хибні спрацювання антивірусів, а в цього проєкту вже є історія з ESET.
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     # False — програма має GUI; консольне вікно поверх нього не потрібне.
