@@ -135,7 +135,7 @@ class Miner:
         self.campaigns: list[Campaign] = []
         self._by_id: dict[str, Campaign] = {}
         self._drops: dict[str, Drop] = {}
-        self.wanted: list[Game] = []
+        self.wanted = []  # сеттер нижче будує ще й індекс пріоритетів
         self.channels: OrderedDict[int, Channel] = OrderedDict()
         self.watching: Slot[Channel] = Slot()
 
@@ -364,12 +364,29 @@ class Miner:
 
     # ================================================================ вибір
 
+    @property
+    def wanted(self) -> list[Game]:
+        """Ігри в порядку пріоритету."""
+        return self._wanted
+
+    @wanted.setter
+    def wanted(self, games: list[Game]) -> None:
+        self._wanted = games
+        # Індекс будується разом зі списком і тільки тут: якби його оновлювали
+        # окремим рядком, рано чи пізно хтось присвоїв би `wanted` і забув про
+        # ранг — і сортування мовчки поїхало б.
+        self._wanted_rank = {game: index for index, game in enumerate(games)}
+
     def priority_of(self, channel: Channel) -> int:
-        """Менше — важливіше. Дуже велике — байдуже."""
+        """Менше — важливіше. Дуже велике — байдуже.
+
+        Раніше тут стояв `list.index()` — лінійний пошук на кожен виклик, а
+        викликається це як ключ сортування списків у сотні каналів.
+        """
         game = channel.game
-        if game is None or game not in self.wanted:
+        if game is None:
             return 1 << 30
-        return self.wanted.index(game)
+        return self._wanted_rank.get(game, 1 << 30)
 
     def can_farm(self, channel: Channel) -> bool:
         if not channel.live:
