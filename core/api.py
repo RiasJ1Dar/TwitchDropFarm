@@ -35,7 +35,22 @@ TRANSIENT = frozenset({
     "service unavailable",
     "context deadline exceeded",
     "PersistedQueryNotFound",
+    # Аварія на боці Twitch (спіймано 27.08 на другій машині): шлюз рвав власні
+    # запити й віддавав це клієнтам. Без цього рядка помилка вважалась
+    # фатальною, ядро падало, і в Telegram прилітало
+    # «ApiError: [{'message': 'request cancelled'}]» — текст, з якого неможливо
+    # зрозуміти, що зламалось не в тебе.
+    "request cancelled",
 })
+# Те саме, але з мінливою частиною: «Failed to fetch from Subgraph
+# 'twitch.graphql.monolith'.» — усередині назва підграфа, тому точний збіг не
+# спрацює й порівнювати доводиться за початком рядка.
+TRANSIENT_PREFIXES = ("Failed to fetch from Subgraph",)
+
+
+def is_transient(message: str) -> bool:
+    """Чи варто повторити: збій на боці Twitch, а не наша помилка."""
+    return message in TRANSIENT or message.startswith(TRANSIENT_PREFIXES)
 # Помилка, після якої відповідь усе одно придатна: гілку, на яку вказує
 # `path`, треба занулити й читати решту.
 PARTIAL = "server error"
@@ -105,7 +120,14 @@ class TwitchApi:
         try:
             if COOKIE_FILE.exists():
                 jar.load(COOKIE_FILE)
-        except Exception:
+        except Exception as error:
+            # Скидати биті cookie правильно, але робити це мовчки — ні: для
+            # людини це виглядало як розлогінення без причини, і в журналі не
+            # лишалось нічого. Файл після цього перезапишеться свіжими.
+            log.warning(
+                f"Збережені cookie не прочитались ({type(error).__name__}: {error}) "
+                f"— починаю з порожніх"
+            )
             jar.clear()
         self._session = aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(sock_connect=10, total=20),
@@ -302,7 +324,7 @@ class TwitchApi:
                 message = problem.get("message")
                 if message is None:
                     continue
-                if message in TRANSIENT:
+                if is_transient(message):
                     if retries_left > 0:
                         return message
                     raise ApiError(f"Twitch не відповідає: {message}")
@@ -310,7 +332,14 @@ class TwitchApi:
                     self._blank_out(item.get("data"), problem.get("path") or [])
                     break
             else:
-                raise ApiError(str(problems))
+                # Не `str(problems)`: це репр списку словників, і людина бачила
+                # «[{'message': 'request cancelled'}]» замість причини. Беремо
+                # самі тексти — вони й так від Twitch, але хоч читаються.
+                texts = "; ".join(
+                    str(p.get("message")) for p in problems
+                    if isinstance(p, dict) and p.get("message")
+                )
+                raise ApiError(f"Twitch відмовив: {texts or problems}")
         return None
 
     @staticmethod

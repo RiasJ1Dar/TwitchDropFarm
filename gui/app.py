@@ -1220,7 +1220,13 @@ class GUI:
             with Image.open(path) as picture:
                 picture.thumbnail((side, side))
                 photo = ImageTk.PhotoImage(picture.convert("RGBA"))
-        except Exception:
+        except Exception as error:
+            # Тут свідомо `debug`, а не `warning`: метод малює кожну плитку
+            # інвентаря, і при зіпсованому кеші журнал засипало б сотнями
+            # однакових рядків. Але й повного мовчання бути не має — з `-vvv`
+            # видно і файл, і причину.
+            logger.debug(f"Картинка {path.name} не відкрилась: "
+                         f"{type(error).__name__}: {error}")
             return ""
         self._images[key] = photo
         return photo
