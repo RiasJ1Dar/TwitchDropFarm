@@ -62,9 +62,11 @@ from core.i18n import LANGS, resolve, set_language, t
 from core.identity import Identity
 from core.images import ImageCache
 from core.miner import Miner
+from core.model import Campaign
 from core.seen import SeenCampaigns
 from core.settings import Settings
 from core.toolbox import (
+    Game,
     claim_single_instance,
     force_utf8_console,
     human_size,
@@ -1293,6 +1295,77 @@ def update_checks() -> None:
     check("відкладене не нагадує до перезапуску", len(later) == 1)
 
 
+# ------------------------------------------------------------------ модель
+
+def model_cache_checks() -> None:
+    print("\n[12] Кеш моделі та пріоритети")
+
+    def payload(*kinds: str, cid: str = "c1") -> dict:
+        return {
+            "id": cid, "name": "Кампанія",
+            "game": {"id": "1", "displayName": "Гра"},
+            "self": {"isAccountConnected": True},
+            "startAt": "2020-01-01T00:00:00Z",
+            "endAt": "2099-01-01T00:00:00Z",
+            "status": "ACTIVE",
+            "timeBasedDrops": [
+                {
+                    "id": f"d{n}", "name": f"Дроп {n}",
+                    "benefitEdges": [{"benefit": {
+                        "id": f"b{n}", "name": "нагорода", "distributionType": kind,
+                    }}],
+                    "startAt": "2020-01-01T00:00:00Z",
+                    "endAt": "2099-01-01T00:00:00Z",
+                    "preconditionDrops": None,
+                    "requiredMinutesWatched": 60,
+                    "self": {"isClaimed": False, "currentMinutesWatched": 0},
+                }
+                for n, kind in enumerate(kinds)
+            ],
+        }
+
+    owner = types.SimpleNamespace(cosmetics_wanted=False)
+    only_badges = Campaign(owner, payload("BADGE", "EMOTE"), {})
+    with_item = Campaign(owner, payload("BADGE", "DIRECT_ENTITLEMENT"), {})
+
+    check("сама косметика — видно", only_badges.only_cosmetics)
+    check("є справжній предмет — не косметика", not with_item.only_cosmetics)
+    check("справжній предмет знайдено", with_item.has_real_item)
+    check("серед значків предмета немає", not only_badges.has_real_item)
+
+    # Обидві властивості кешовані. Кеш живе рівно стільки, скільки об'єкт
+    # кампанії, а той створюється наново на кожне читання інвентаря — саме
+    # тому кешувати безпечно. Перевіряємо, що нова кампанія рахує заново.
+    fresh = Campaign(owner, payload("DIRECT_ENTITLEMENT"), {})
+    check("нова кампанія рахує наново, а не з чужого кеша",
+          fresh.has_real_item and not fresh.only_cosmetics)
+
+    # ⚠️ Головне через кеш: `available_to_me` мусить лишитись живою. Вона
+    # питає налаштування, і якби кеш заліз і сюди, галочка «фармити косметику»
+    # перестала б діяти до перезапуску.
+    check("косметику не беремо, поки не дозволили", not only_badges.available_to_me)
+    owner.cosmetics_wanted = True
+    check("дозволили косметику — беремо", only_badges.available_to_me)
+
+    # Пріоритети: індекс будується сеттером разом зі списком.
+    fake = types.SimpleNamespace()
+    Miner.wanted.fset(fake, [Game({"id": "10", "name": "перша"}),
+                            Game({"id": "20", "name": "друга"})])
+    first = types.SimpleNamespace(game=Game({"id": "10", "name": "перша"}))
+    second = types.SimpleNamespace(game=Game({"id": "20", "name": "друга"}))
+    stranger = types.SimpleNamespace(game=Game({"id": "99", "name": "чужа"}))
+    nameless = types.SimpleNamespace(game=None)
+    check("порядок пріоритетів збережено",
+          Miner.priority_of(fake, first) == 0 and Miner.priority_of(fake, second) == 1)
+    check("гра поза списком — у кінець", Miner.priority_of(fake, stranger) == 1 << 30)
+    check("канал без гри не падає", Miner.priority_of(fake, nameless) == 1 << 30)
+
+    Miner.wanted.fset(fake, [Game({"id": "20", "name": "друга"})])
+    check("новий список — новий індекс, без залишків старого",
+          Miner.priority_of(fake, second) == 0
+          and Miner.priority_of(fake, first) == 1 << 30)
+
+
 # ------------------------------------------------------------------ доставка
 
 def delivery_checks() -> None:
@@ -1541,6 +1614,7 @@ def main() -> int:
     image_cache_checks()
     autostart_checks()
     update_checks()
+    model_cache_checks()
     delivery_checks()
     request_limit_checks()
     settings_method_checks()
