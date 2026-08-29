@@ -30,6 +30,10 @@ log = logging.getLogger("TwitchDrops")
 # Скільки останніх рядків тримати. Подій тут одиниці на добу, тож навіть за рік
 # файл лишається дрібним; межа існує на випадок, якщо щось почне сипати.
 MAX_ENTRIES = 5000
+# Через скільки записів заглядати, чи не час обрізати. Читати весь файл на
+# кожен запис було б безглуздо: за нормального темпу подій обрізання не
+# знадобиться роками, а от коли щось почне сипати — спрацює вчасно.
+TRIM_EVERY = 200
 
 
 class History:
@@ -37,6 +41,7 @@ class History:
 
     def __init__(self, path: Path):
         self.path = path
+        self._since_trim = 0
 
     # ------------------------------------------------------------ запис
 
@@ -64,6 +69,34 @@ class History:
                 handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
         except OSError as error:
             log.log(logging.DEBUG, f"Історію не записано: {error}")
+            return
+        self._since_trim += 1
+        if self._since_trim >= TRIM_EVERY:
+            self._since_trim = 0
+            self._trim()
+
+    def _trim(self) -> None:
+        """Лишає останні `MAX_ENTRIES` рядків.
+
+        Досі межа обмежувала тільки читання, а файл дописувався довічно —
+        тобто «останні 5000» ставало дорожчим із кожним роком, бо читати все
+        одно доводилось усе. Пишемо через тимчасовий файл: обрив живлення
+        посеред перезапису інакше лишив би зрізану історію.
+        """
+        try:
+            lines = self.path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            return
+        if len(lines) <= MAX_ENTRIES:
+            return
+        tmp = self.path.with_suffix(self.path.suffix + ".tmp")
+        try:
+            tmp.write_text("\n".join(lines[-MAX_ENTRIES:]) + "\n", encoding="utf-8")
+            tmp.replace(self.path)
+        except OSError as error:
+            log.log(logging.DEBUG, f"Історію не обрізано: {error}")
+            return
+        log.debug(f"Історію обрізано: {len(lines)} -> {MAX_ENTRIES} записів")
 
     # ------------------------------------------------------------ читання
 

@@ -125,9 +125,19 @@ jobs:
           # вище за .exe, і його вже качали частіше за програму. Підпис у
           # UI каже, що качати треба .exe; json лишаємо — старі версії
           # шукають саме .../download/manifest.json.
-          # Чернетка не віддається через /releases/tags/{tag} (404) — тому
-          # беремо активи з `gh release view`, який чернетки бачить.
-          $rel = gh release view $tag --json assets | ConvertFrom-Json
+          # Чернетка не віддається через /releases/tags/{tag} (404), тому
+          # шукаємо реліз у загальному списку — він чернетки показує.
+          #
+          # ⚠️ Саме REST, а не `gh release view --json assets`. Той повертає
+          # GraphQL node ID («RA_kwDOT1MFqs4fzRT3»), а ендпоінт
+          # /releases/assets/{id} чекає числовий REST id — і мовчки відповідає
+          # 404. Через це крок падав на v1.0.6.1 і v1.0.6.2, хоч файли до
+          # релізу прикріплювались нормально: помилка виглядала як проблема
+          # доступу, а була підміною типу ідентифікатора.
+          $rel = gh api "repos/${{ github.repository }}/releases" --paginate `
+            | ConvertFrom-Json `
+            | Where-Object { $_.tag_name -eq $tag } `
+            | Select-Object -First 1
           foreach ($asset in $rel.assets) {
             if ($asset.name -eq "manifest.json") {
               gh api -X PATCH "repos/${{ github.repository }}/releases/assets/$($asset.id)" `

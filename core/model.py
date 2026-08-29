@@ -16,9 +16,11 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+from functools import cached_property
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from core import protocol
+from core.config import BLIND_MINUTES_LIMIT
 from core.toolbox import Game, parse_timestamp
 
 if TYPE_CHECKING:
@@ -211,7 +213,6 @@ class Drop:
 
     def _basic_fitness(self) -> bool:
         """Умови, не пов'язані з часом і каналом."""
-        from core.config import BLIND_MINUTES_LIMIT
         return (
             not self.taken
             and self.required_minutes > 0
@@ -275,7 +276,6 @@ class Drop:
 
     def add_blind_minute(self, channel: Channel | None) -> bool:
         """Домальовує хвилину, коли Twitch мовчить. True — ліміт довіри вичерпано."""
-        from core.config import BLIND_MINUTES_LIMIT
         if not self.farmable(channel):
             return False
         self.blind_minutes += 1
@@ -421,17 +421,27 @@ class Campaign:
             need for drop in self.all_drops if not drop.taken for need in drop.needs
         )
 
-    @property
+    @cached_property
     def has_real_item(self) -> bool:
-        """Чи дають тут щось, крім значків та емоцій."""
+        """Чи дають тут щось, крім значків та емоцій.
+
+        Кешується: на цьому стоїть режим LINKED_ONLY, тобто виклик іде на
+        кожну кампанію при кожному доборі каналів. Нагороди дропа — кортеж із
+        конструктора, вони не міняються; а сам об'єкт кампанії створюється
+        наново на кожне читання інвентаря, тож кеш не переживе оновлення
+        даних. Місце під нього вже є: у `__slots__` є `__dict__`.
+        """
         return any(
             not reward.kind.cosmetic
             for drop in self.all_drops
             for reward in drop.rewards
         )
 
-    @property
+    @cached_property
     def only_cosmetics(self) -> bool:
+        """Кешується з тієї ж причини, що й `has_real_item`: цей перебір
+        «кампанії × дропи × нагороди» лежить під `farmable`, а той — під
+        добором каналу, який перевіряє кожен канал проти кожної кампанії."""
         rewards = [r for d in self.all_drops for r in d.rewards]
         return bool(rewards) and all(r.kind.cosmetic for r in rewards)
 

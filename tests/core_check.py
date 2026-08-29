@@ -12,15 +12,18 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import json
 import logging
 import sys
 import tempfile
 import types
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from time import monotonic
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import autostart, export, protocol, update
+from core import history as history_module
 from core.api import ApiError, TwitchApi
 from core.channels import WatchReporter
 from core.config import (
@@ -61,9 +64,11 @@ from core.i18n import LANGS, resolve, set_language, t
 from core.identity import Identity
 from core.images import ImageCache
 from core.miner import Miner
-from core.seen import SeenCampaigns
+from core.model import Campaign
+from core.seen import RETENTION_DAYS, SeenCampaigns
 from core.settings import Settings
 from core.toolbox import (
+    Game,
     claim_single_instance,
     force_utf8_console,
     human_size,
@@ -1056,6 +1061,29 @@ def history_checks() -> None:
               and "кампаній немає" in (Path(folder) / "empty" / "inventory.html"
                                        ).read_text(encoding="utf-8").lower())
 
+    # ⚠️ `MAX_ENTRIES` досі обмежував лише читання: файл дописувався довічно,
+    # тож «останні 5000» з кожним роком коштували дедалі дорожче — читати
+    # однаково доводилось усе.
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "history.jsonl"
+        history = History(path)
+        keep, every = history_module.MAX_ENTRIES, history_module.TRIM_EVERY
+        history_module.MAX_ENTRIES, history_module.TRIM_EVERY = 5, 3
+        try:
+            for number in range(12):
+                history.record("drop", game="гра", drop=f"дроп {number}")
+            lines = path.read_text(encoding="utf-8").splitlines()
+            check("історія обрізається до межі", len(lines) <= 5, f"рядків={len(lines)}")
+            check("лишились саме останні записи", "дроп 11" in lines[-1], lines[-1])
+            check("обрізана історія лишається читабельною",
+                  len(history.entries()) == len(lines))
+
+            short = History(Path(folder) / "short.jsonl")
+            short.record("drop", game="гра", drop="єдиний")
+            check("коротку історію не чіпаємо", len(short.entries()) == 1)
+        finally:
+            history_module.MAX_ENTRIES, history_module.TRIM_EVERY = keep, every
+
 
 # ------------------------------------------------------------------ картинки
 
@@ -1308,6 +1336,167 @@ def update_checks() -> None:
     check("відкладене не нагадує до перезапуску", len(later) == 1)
 
 
+# ------------------------------------------------------------------ побачене
+
+def seen_checks() -> None:
+    print("\n[12] Побачені кампанії")
+
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "seen.json"
+        book = SeenCampaigns(path)
+        check("порожньо — перший запуск, сповіщати нічого", not book.known)
+        check("усе нове, поки нічого не бачили", book.fresh({"a", "b"}) == {"a", "b"})
+        book.remember({"a", "b"})
+        check("після запису вже є з чим порівнювати", book.known)
+        check("бачене більше не нове", book.fresh({"a", "c"}) == {"c"})
+
+        # Старий формат — простий список без дат. Оновлення програми не має
+        # змітати набір, інакше людина отримає десятки «нових» кампаній.
+        path.write_text(json.dumps(["x", "y"]), encoding="utf-8")
+        old = SeenCampaigns(path)
+        check("старий формат читається", old.fresh({"x", "z"}) == {"z"})
+
+        # ⚠️ Головне заради чого все: набір мусить забувати давнє, інакше
+        # росте довічно. Але не раніше строку.
+        long_ago = (datetime.now(timezone.utc).date()
+                    - timedelta(days=RETENTION_DAYS + 1)).isoformat()
+        recent = (datetime.now(timezone.utc).date()
+                  - timedelta(days=RETENTION_DAYS - 1)).isoformat()
+        path.write_text(json.dumps({"старе": long_ago, "свіже": recent}),
+                        encoding="utf-8")
+        aged = SeenCampaigns(path)
+        aged.remember({"нове"})
+        check("давно не бачене забуто", "старе" in aged.fresh({"старе"}))
+        check("те, що в межах строку, лишається",
+              aged.fresh({"свіже"}) == set())
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        check("забуте зникло і з файлу",
+              set(saved) == {"свіже", "нове"}, str(sorted(saved)))
+
+        # Файл не має переписуватись, коли нічого не змінилось: `remember`
+        # кличеться на кожне читання інвентаря, тобто щогодини.
+        before = path.stat().st_mtime_ns
+        aged.remember({"нове"})
+        check("той самий склад того ж дня — файл не чіпаємо",
+              path.stat().st_mtime_ns == before)
+
+
+# ------------------------------------------------------------------ особа
+
+def identity_checks() -> None:
+    print("\n[13] Готовність особи")
+
+    person = Identity(types.SimpleNamespace())
+    person.token = "oauth"
+    person.user_id = 42
+    check("токен і користувач — уже готові", person.known)
+
+    # ⚠️ `ensure()` кличеться перед КОЖНИМ запитом до Twitch. Поки він брав
+    # замок беззастережно, паралельні пакети шикувались у чергу заради
+    # перевірки прапорця. Тримаємо замок зайнятим і переконуємось, що
+    # готова особа крізь нього проходить.
+    async def through_busy_lock() -> bool:
+        await person._lock.acquire()
+        try:
+            await asyncio.wait_for(person.ensure(), timeout=1.0)
+            return True
+        except asyncio.TimeoutError:
+            return False
+        finally:
+            person._lock.release()
+
+    check("готова особа не чекає на замок", asyncio.run(through_busy_lock()))
+    check("готовність оголошено", person._ready.is_set())
+
+    # А ось незавершена особа мусить дійти до замка, а не проскочити повз
+    # нього: інакше двоє одночасно полізли б по токен.
+    fresh = Identity(types.SimpleNamespace())
+
+    async def blocked_when_unknown() -> bool:
+        await fresh._lock.acquire()
+        try:
+            await asyncio.wait_for(fresh.ensure(), timeout=0.3)
+            return False
+        except asyncio.TimeoutError:
+            return True
+        finally:
+            fresh._lock.release()
+
+    check("незнайома особа таки чекає на замок",
+          asyncio.run(blocked_when_unknown()))
+
+
+# ------------------------------------------------------------------ модель
+
+def model_cache_checks() -> None:
+    print("\n[14] Кеш моделі та пріоритети")
+
+    def payload(*kinds: str, cid: str = "c1") -> dict:
+        return {
+            "id": cid, "name": "Кампанія",
+            "game": {"id": "1", "displayName": "Гра"},
+            "self": {"isAccountConnected": True},
+            "startAt": "2020-01-01T00:00:00Z",
+            "endAt": "2099-01-01T00:00:00Z",
+            "status": "ACTIVE",
+            "timeBasedDrops": [
+                {
+                    "id": f"d{n}", "name": f"Дроп {n}",
+                    "benefitEdges": [{"benefit": {
+                        "id": f"b{n}", "name": "нагорода", "distributionType": kind,
+                    }}],
+                    "startAt": "2020-01-01T00:00:00Z",
+                    "endAt": "2099-01-01T00:00:00Z",
+                    "preconditionDrops": None,
+                    "requiredMinutesWatched": 60,
+                    "self": {"isClaimed": False, "currentMinutesWatched": 0},
+                }
+                for n, kind in enumerate(kinds)
+            ],
+        }
+
+    owner = types.SimpleNamespace(cosmetics_wanted=False)
+    only_badges = Campaign(owner, payload("BADGE", "EMOTE"), {})
+    with_item = Campaign(owner, payload("BADGE", "DIRECT_ENTITLEMENT"), {})
+
+    check("сама косметика — видно", only_badges.only_cosmetics)
+    check("є справжній предмет — не косметика", not with_item.only_cosmetics)
+    check("справжній предмет знайдено", with_item.has_real_item)
+    check("серед значків предмета немає", not only_badges.has_real_item)
+
+    # Обидві властивості кешовані. Кеш живе рівно стільки, скільки об'єкт
+    # кампанії, а той створюється наново на кожне читання інвентаря — саме
+    # тому кешувати безпечно. Перевіряємо, що нова кампанія рахує заново.
+    fresh = Campaign(owner, payload("DIRECT_ENTITLEMENT"), {})
+    check("нова кампанія рахує наново, а не з чужого кеша",
+          fresh.has_real_item and not fresh.only_cosmetics)
+
+    # ⚠️ Головне через кеш: `available_to_me` мусить лишитись живою. Вона
+    # питає налаштування, і якби кеш заліз і сюди, галочка «фармити косметику»
+    # перестала б діяти до перезапуску.
+    check("косметику не беремо, поки не дозволили", not only_badges.available_to_me)
+    owner.cosmetics_wanted = True
+    check("дозволили косметику — беремо", only_badges.available_to_me)
+
+    # Пріоритети: індекс будується сеттером разом зі списком.
+    fake = types.SimpleNamespace()
+    Miner.wanted.fset(fake, [Game({"id": "10", "name": "перша"}),
+                            Game({"id": "20", "name": "друга"})])
+    first = types.SimpleNamespace(game=Game({"id": "10", "name": "перша"}))
+    second = types.SimpleNamespace(game=Game({"id": "20", "name": "друга"}))
+    stranger = types.SimpleNamespace(game=Game({"id": "99", "name": "чужа"}))
+    nameless = types.SimpleNamespace(game=None)
+    check("порядок пріоритетів збережено",
+          Miner.priority_of(fake, first) == 0 and Miner.priority_of(fake, second) == 1)
+    check("гра поза списком — у кінець", Miner.priority_of(fake, stranger) == 1 << 30)
+    check("канал без гри не падає", Miner.priority_of(fake, nameless) == 1 << 30)
+
+    Miner.wanted.fset(fake, [Game({"id": "20", "name": "друга"})])
+    check("новий список — новий індекс, без залишків старого",
+          Miner.priority_of(fake, second) == 0
+          and Miner.priority_of(fake, first) == 1 << 30)
+
+
 # ------------------------------------------------------------------ доставка
 
 def delivery_checks() -> None:
@@ -1349,7 +1538,15 @@ def delivery_checks() -> None:
         url="https://www.twitch.tv/ibeast", stream=stream,
     )
 
-    def send(backend: FakeBackend) -> bool:
+    def send(backend: FakeBackend, *, fresh: bool = True) -> bool:
+        # ⚠️ Стан `WatchReporter` спільний на всі канали (адреса spade одна на
+        # весь Twitch), тому кожна перевірка починає з чистого аркуша. Без
+        # цього рядка перевірки нижче ставали фіктивними: фолбек, увімкнений
+        # попередньою, тягнувся далі, і spade вже ніхто не смикав — тест
+        # лишався зеленим, перевіряючи не те, що написано в його назві.
+        if fresh:
+            WatchReporter._spade_url = None
+            WatchReporter._fallback_until = 0.0
         return asyncio.run(WatchReporter(backend).report(channel))
 
     ok_spade = FakeBackend()
@@ -1380,6 +1577,32 @@ def delivery_checks() -> None:
     no_page = NoPage()
     check("немає сторінки каналу — теж GQL",
           send(no_page) and no_page.gqls == 1 and no_page.posts == 0)
+
+    # Адреса spade одна на весь Twitch. Раніше кожен канал шукав її сам і
+    # качав заради цього повну HTML-сторінку; тепер перший знайшов — усі
+    # користуються.
+    WatchReporter._spade_url = None
+    WatchReporter._fallback_until = 0.0
+    first, second = FakeBackend(), FakeBackend()
+    send(first, fresh=False)
+    send(second, fresh=False)
+    check("адресу spade шукають один раз на всіх",
+          first.fetch_kwargs != {} and second.fetch_kwargs == {}
+          and second.posts == 1,
+          f"друга сторінка={second.fetch_kwargs}")
+
+    # Фолбек на GQL мусить бути тимчасовим: вічний прапорець саджав би
+    # програму на запасний шлях через одну випадкову невдачу.
+    WatchReporter._spade_url = None
+    WatchReporter._fallback_until = 0.0
+    send(FakeBackend(post_error=OSError("sinkhole")), fresh=False)
+    check("після збою сидимо на GQL", WatchReporter(FakeBackend())._use_mutation)
+    WatchReporter._fallback_until = monotonic() - 1.0
+    check("фолбек сам гасне з часом",
+          not WatchReporter(FakeBackend())._use_mutation)
+    after = FakeBackend()
+    send(after, fresh=False)
+    check("коли фолбек згас — spade пробують знову", after.posts == 1)
 
     fake = types.SimpleNamespace(
         _delivery_failures=0, events=Bus(),
@@ -1522,6 +1745,9 @@ def main() -> int:
     image_cache_checks()
     autostart_checks()
     update_checks()
+    seen_checks()
+    identity_checks()
+    model_cache_checks()
     delivery_checks()
     request_limit_checks()
     settings_method_checks()
