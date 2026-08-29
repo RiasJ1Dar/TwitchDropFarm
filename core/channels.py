@@ -9,13 +9,20 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from typing import Any, Protocol
+from time import monotonic
+from typing import Any, ClassVar, Protocol
 
 from core import protocol
 from core.config import SPADE_ATTEMPTS, STREAM_UP_DELAY, TRACE
 from core.toolbox import Game
 
 log = logging.getLogger("TwitchDrops")
+
+# Скільки триматись на запасному шляху (GQL), перш ніж знову спробувати spade.
+# Година: збій spade зазвичай або хвилинний на боці Twitch, або довгий і
+# зовнішній (блокувальник у мережі) — тоді зайва спроба раз на годину нічого
+# не коштує, а от вічний фолбек приховав би, що пряма дорога вже вільна.
+SPADE_RETRY_AFTER = 3600.0
 
 
 class Backend(Protocol):
@@ -85,12 +92,30 @@ class WatchReporter:
     злам розмітки зупиняв фарм.
     """
 
-    __slots__ = ("_backend", "_spade_url", "_use_mutation")
+    __slots__ = ("_backend",)
+
+    # ⚠️ Спільне на всі канали, а не на кожен окремо. Адреса spade у Twitch
+    # одна на весь сайт, а `WatchReporter` створювався свій кожному каналу — і
+    # кожен качав повну HTML-сторінку, щоб знайти те саме значення. Гірше:
+    # об'єкти каналів перестворюються на кожне читання інвентаря
+    # (`core/model.py`, `Channel.from_allowlist`), тож кеш губився навіть тоді,
+    # коли канал не мінявся.
+    _spade_url: ClassVar[str | None] = None
+    # Замість вічного прапорця «spade зламався» — час, до якого сидимо на GQL.
+    # Глобальний прапорець назавжди саджав би програму на запасний шлях через
+    # одну випадкову невдачу.
+    _fallback_until: ClassVar[float] = 0.0
 
     def __init__(self, backend: Backend):
         self._backend = backend
-        self._spade_url: str | None = None
-        self._use_mutation = False
+
+    @property
+    def _use_mutation(self) -> bool:
+        return monotonic() < WatchReporter._fallback_until
+
+    @staticmethod
+    def _fall_back_to_gql() -> None:
+        WatchReporter._fallback_until = monotonic() + SPADE_RETRY_AFTER
 
     async def _resolve_spade_url(self, channel_url: str) -> str | None:
         page = await self._backend.fetch_text(
@@ -121,23 +146,23 @@ class WatchReporter:
         )
 
         if not self._use_mutation:
-            if self._spade_url is None:
+            if WatchReporter._spade_url is None:
                 try:
-                    self._spade_url = await self._resolve_spade_url(channel.url)
+                    WatchReporter._spade_url = await self._resolve_spade_url(channel.url)
                 except Exception as error:
                     log.warning(
                         f"Сторінка {channel.login} недоступна "
                         f"({type(error).__name__}) — переходжу на GQL"
                     )
-                    self._use_mutation = True
+                    self._fall_back_to_gql()
                 else:
-                    if self._spade_url is None:
+                    if WatchReporter._spade_url is None:
                         log.warning("Адресу spade не знайдено — переходжу на GQL")
-                        self._use_mutation = True
-            if self._spade_url is not None and not self._use_mutation:
+                        self._fall_back_to_gql()
+            if WatchReporter._spade_url is not None and not self._use_mutation:
                 try:
                     status = await self._backend.post_form(
-                        self._spade_url, protocol.spade_body(event),
+                        WatchReporter._spade_url, protocol.spade_body(event),
                         attempts=SPADE_ATTEMPTS, count_as_network=False,
                     )
                 except Exception as error:
@@ -146,17 +171,32 @@ class WatchReporter:
                     log.warning(
                         f"spade недоступний ({type(error).__name__}) — переходжу на GQL"
                     )
-                    self._use_mutation = True
+                    self._fall_back_to_gql()
                 else:
                     if status == 204:
                         return True
                     log.warning(f"spade відповів {status} — переходжу на GQL")
-                    self._use_mutation = True
+                    self._fall_back_to_gql()
 
         try:
             answer = await self._backend.graphql(protocol.spade_mutation(event))
+        except Exception as error:
+            # ⚠️ Це останній шлях звітування перегляду: spade сюди вже не довіз.
+            # Мовчазне `return False` означало «хвилини не капають, а в журналі
+            # порожньо» — саме той симптом, який доводилось розбирати запитами
+            # до Twitch замість читання журналу. Усі сусідні гілки вище
+            # називають причину; ця чомусь ні.
+            log.warning(
+                f"GQL-звіт про перегляд не пройшов ({type(error).__name__}: {error})"
+            )
+            return False
+        try:
             return answer["data"]["sendSpadeEvents"]["statusCode"] == 204
-        except Exception:
+        except (KeyError, TypeError) as error:
+            # Відповідь є, але не такої форми, якої чекали, — ознака того, що
+            # Twitch змінив схему. Без цього рядка це виглядало б так само, як
+            # мережевий збій, і сторожа persisted-запитів мовчала б.
+            log.warning(f"Twitch відповів на звіт не тим, чого чекали: {error}")
             return False
 
 
