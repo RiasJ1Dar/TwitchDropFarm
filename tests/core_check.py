@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import json
 import logging
 import sys
 import tempfile
@@ -22,6 +23,7 @@ from time import monotonic
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import autostart, export, protocol, update
+from core import history as history_module
 from core.api import ApiError, TwitchApi
 from core.channels import WatchReporter
 from core.config import (
@@ -63,7 +65,7 @@ from core.identity import Identity
 from core.images import ImageCache
 from core.miner import Miner
 from core.model import Campaign
-from core.seen import SeenCampaigns
+from core.seen import RETENTION_DAYS, SeenCampaigns
 from core.settings import Settings
 from core.toolbox import (
     Game,
@@ -1043,6 +1045,29 @@ def history_checks() -> None:
               and "кампаній немає" in (Path(folder) / "empty" / "inventory.html"
                                        ).read_text(encoding="utf-8").lower())
 
+    # ⚠️ `MAX_ENTRIES` досі обмежував лише читання: файл дописувався довічно,
+    # тож «останні 5000» з кожним роком коштували дедалі дорожче — читати
+    # однаково доводилось усе.
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "history.jsonl"
+        history = History(path)
+        keep, every = history_module.MAX_ENTRIES, history_module.TRIM_EVERY
+        history_module.MAX_ENTRIES, history_module.TRIM_EVERY = 5, 3
+        try:
+            for number in range(12):
+                history.record("drop", game="гра", drop=f"дроп {number}")
+            lines = path.read_text(encoding="utf-8").splitlines()
+            check("історія обрізається до межі", len(lines) <= 5, f"рядків={len(lines)}")
+            check("лишились саме останні записи", "дроп 11" in lines[-1], lines[-1])
+            check("обрізана історія лишається читабельною",
+                  len(history.entries()) == len(lines))
+
+            short = History(Path(folder) / "short.jsonl")
+            short.record("drop", game="гра", drop="єдиний")
+            check("коротку історію не чіпаємо", len(short.entries()) == 1)
+        finally:
+            history_module.MAX_ENTRIES, history_module.TRIM_EVERY = keep, every
+
 
 # ------------------------------------------------------------------ картинки
 
@@ -1295,10 +1320,55 @@ def update_checks() -> None:
     check("відкладене не нагадує до перезапуску", len(later) == 1)
 
 
+# ------------------------------------------------------------------ побачене
+
+def seen_checks() -> None:
+    print("\n[12] Побачені кампанії")
+
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "seen.json"
+        book = SeenCampaigns(path)
+        check("порожньо — перший запуск, сповіщати нічого", not book.known)
+        check("усе нове, поки нічого не бачили", book.fresh({"a", "b"}) == {"a", "b"})
+        book.remember({"a", "b"})
+        check("після запису вже є з чим порівнювати", book.known)
+        check("бачене більше не нове", book.fresh({"a", "c"}) == {"c"})
+
+        # Старий формат — простий список без дат. Оновлення програми не має
+        # змітати набір, інакше людина отримає десятки «нових» кампаній.
+        path.write_text(json.dumps(["x", "y"]), encoding="utf-8")
+        old = SeenCampaigns(path)
+        check("старий формат читається", old.fresh({"x", "z"}) == {"z"})
+
+        # ⚠️ Головне заради чого все: набір мусить забувати давнє, інакше
+        # росте довічно. Але не раніше строку.
+        long_ago = (datetime.now(timezone.utc).date()
+                    - timedelta(days=RETENTION_DAYS + 1)).isoformat()
+        recent = (datetime.now(timezone.utc).date()
+                  - timedelta(days=RETENTION_DAYS - 1)).isoformat()
+        path.write_text(json.dumps({"старе": long_ago, "свіже": recent}),
+                        encoding="utf-8")
+        aged = SeenCampaigns(path)
+        aged.remember({"нове"})
+        check("давно не бачене забуто", "старе" in aged.fresh({"старе"}))
+        check("те, що в межах строку, лишається",
+              aged.fresh({"свіже"}) == set())
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        check("забуте зникло і з файлу",
+              set(saved) == {"свіже", "нове"}, str(sorted(saved)))
+
+        # Файл не має переписуватись, коли нічого не змінилось: `remember`
+        # кличеться на кожне читання інвентаря, тобто щогодини.
+        before = path.stat().st_mtime_ns
+        aged.remember({"нове"})
+        check("той самий склад того ж дня — файл не чіпаємо",
+              path.stat().st_mtime_ns == before)
+
+
 # ------------------------------------------------------------------ особа
 
 def identity_checks() -> None:
-    print("\n[12] Готовність особи")
+    print("\n[13] Готовність особи")
 
     person = Identity(types.SimpleNamespace())
     person.token = "oauth"
@@ -1343,7 +1413,7 @@ def identity_checks() -> None:
 # ------------------------------------------------------------------ модель
 
 def model_cache_checks() -> None:
-    print("\n[13] Кеш моделі та пріоритети")
+    print("\n[14] Кеш моделі та пріоритети")
 
     def payload(*kinds: str, cid: str = "c1") -> dict:
         return {
@@ -1659,6 +1729,7 @@ def main() -> int:
     image_cache_checks()
     autostart_checks()
     update_checks()
+    seen_checks()
     identity_checks()
     model_cache_checks()
     delivery_checks()
