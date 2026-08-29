@@ -1295,10 +1295,55 @@ def update_checks() -> None:
     check("відкладене не нагадує до перезапуску", len(later) == 1)
 
 
+# ------------------------------------------------------------------ особа
+
+def identity_checks() -> None:
+    print("\n[12] Готовність особи")
+
+    person = Identity(types.SimpleNamespace())
+    person.token = "oauth"
+    person.user_id = 42
+    check("токен і користувач — уже готові", person.known)
+
+    # ⚠️ `ensure()` кличеться перед КОЖНИМ запитом до Twitch. Поки він брав
+    # замок беззастережно, паралельні пакети шикувались у чергу заради
+    # перевірки прапорця. Тримаємо замок зайнятим і переконуємось, що
+    # готова особа крізь нього проходить.
+    async def through_busy_lock() -> bool:
+        await person._lock.acquire()
+        try:
+            await asyncio.wait_for(person.ensure(), timeout=1.0)
+            return True
+        except asyncio.TimeoutError:
+            return False
+        finally:
+            person._lock.release()
+
+    check("готова особа не чекає на замок", asyncio.run(through_busy_lock()))
+    check("готовність оголошено", person._ready.is_set())
+
+    # А ось незавершена особа мусить дійти до замка, а не проскочити повз
+    # нього: інакше двоє одночасно полізли б по токен.
+    fresh = Identity(types.SimpleNamespace())
+
+    async def blocked_when_unknown() -> bool:
+        await fresh._lock.acquire()
+        try:
+            await asyncio.wait_for(fresh.ensure(), timeout=0.3)
+            return False
+        except asyncio.TimeoutError:
+            return True
+        finally:
+            fresh._lock.release()
+
+    check("незнайома особа таки чекає на замок",
+          asyncio.run(blocked_when_unknown()))
+
+
 # ------------------------------------------------------------------ модель
 
 def model_cache_checks() -> None:
-    print("\n[12] Кеш моделі та пріоритети")
+    print("\n[13] Кеш моделі та пріоритети")
 
     def payload(*kinds: str, cid: str = "c1") -> dict:
         return {
@@ -1614,6 +1659,7 @@ def main() -> int:
     image_cache_checks()
     autostart_checks()
     update_checks()
+    identity_checks()
     model_cache_checks()
     delivery_checks()
     request_limit_checks()
