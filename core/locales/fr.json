@@ -37,7 +37,6 @@
   "file_one": "fichier",
   "growing_line": "{name} — {game} ({have}/{need} min)",
   "growing_more": "…et {n} de plus",
-  "hide_tray": "Réduire dans la barre",
   "image_cache_hint": "Les images sont téléchargées une fois et restent sur le disque ; la taille peut changer à tout moment, sans re-télécharger.",
   "image_size_label": "Taille :",
   "inv_claimed": "récupéré",
@@ -297,5 +296,6 @@
   "ws_all": "{n} connexions",
   "ws_line": "{state} · {topics} sujets",
   "ws_some": "{ok}/{total} connexions",
-  "tg_description": "Pilote le mineur Twitch Drop Farm : état du farm, inventaire, campagnes et rapports. Utilisez les boutons ci-dessous ou /help."
+  "tg_description": "Pilote le mineur Twitch Drop Farm : état du farm, inventaire, campagnes et rapports. Utilisez les boutons ci-dessous ou /help.",
+  "progress_rainbow": "Barre de progression arc-en-ciel"
 }

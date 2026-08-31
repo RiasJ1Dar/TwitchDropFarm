@@ -37,7 +37,6 @@
   "file_one": "个文件",
   "growing_line": "{name} — {game}（{have}/{need} 分钟）",
   "growing_more": "…还有 {n} 个",
-  "hide_tray": "最小化到托盘",
   "image_cache_hint": "图片只下载一次并留在磁盘上；可随时改尺寸，不必重新下载。",
   "image_size_label": "尺寸：",
   "inv_claimed": "已领取",
@@ -297,5 +296,6 @@
   "ws_all": "{n} 个连接",
   "ws_line": "{state} · {topics} 个主题",
   "ws_some": "{ok}/{total} 个连接",
-  "tg_description": "控制 Twitch Drop Farm 挖掘器：farm 状态、库存、活动与报告。请使用下方按钮或 /help。"
+  "tg_description": "控制 Twitch Drop Farm 挖掘器：farm 状态、库存、活动与报告。请使用下方按钮或 /help。",
+  "progress_rainbow": "彩虹进度条"
 }

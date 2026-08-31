@@ -56,7 +56,8 @@ from core.events import (
 )
 from core.i18n import LANGS, NAMES, t
 from core.toolbox import human_size, plural
-from gui.pulse import PulseDot
+from gui.celebrate import Confetti
+from gui.pulse import PulseDot, rainbow
 
 if TYPE_CHECKING:
     from core.miner import Miner as Twitch
@@ -143,6 +144,14 @@ class GUI:
         self._growing: dict[str, tuple[float, str, int, int]] = {}
         self._watching_name = ""
         self._farm_state = ""
+        # Смуга прогресу їде до цілі плавно, а не стрибає: показане значення й
+        # бажане живуть окремо, а `after` посуває перше до другого.
+        self._progress_shown = 0.0
+        self._progress_target = 0.0
+        self._progress_job: str | None = None
+        # Переливчаста смуга: окремий цикл, який крутиться лише коли її обрали.
+        self._rainbow_phase = 0.0
+        self._rainbow_job: str | None = None
         self.root.protocol("WM_DELETE_WINDOW", self.on_window_x)
         self._set_window_icon()
         self._apply_theme()
@@ -302,6 +311,8 @@ class GUI:
         self._build_channels_tab(notebook)
         self._build_inventory_tab(notebook)
         self._build_settings_tab(notebook)
+        # Смуга вже існує — можна вмикати перелив, якщо його обрали минулого разу
+        self._apply_progress_style()
 
     def _card(self, parent: tk.Misc, title: str) -> ctk.CTkFrame:
         """Заокруглена картка з підписом-шапкою.
@@ -332,9 +343,91 @@ class GUI:
             border_width=0 if accent else 1, border_color=c["line"],
         )
 
+    # Яку частку шляху до цілі проходимо за кадр. 0.25 дає рух, який око
+    # встигає простежити, але який не тягнеться: смуга доїжджає за ~10 кадрів.
+    PROGRESS_STEP = 0.25
+    PROGRESS_FRAME_MS = 40
+    # Ближче за це до цілі — вважаємо, що приїхали, і зупиняємо анімацію.
+    PROGRESS_EPSILON = 0.002
+
+    @classmethod
+    def _advance(cls, current: float, target: float) -> float:
+        """Один крок до цілі. Винесено окремо, щоб перевірятись без вікна."""
+        if abs(target - current) <= cls.PROGRESS_EPSILON:
+            return target
+        return current + (target - current) * cls.PROGRESS_STEP
+
+    # Скільки часу забирає повний круг веселки. Півхвилини — перелив помітний,
+    # але не миготить перед очима, коли на нього не дивишся.
+    RAINBOW_PERIOD_MS = 30000
+    RAINBOW_FRAME_MS = 60
+
+    def _apply_progress_style(self) -> None:
+        """Вмикає або гасить перелив за налаштуванням.
+
+        Стиль «за станом» несе зміст: колір каже, іде фарм чи стоїть. Перелив
+        цього не каже нічого — він просто святковий, тому типово вимкнений і
+        вмикається свідомо.
+        """
+        bar = getattr(self, "progress", None)
+        if bar is None or not hasattr(bar, "configure"):
+            return
+        wanted = self._twitch.settings.progress_style == "rainbow"
+        if wanted and self._rainbow_job is None:
+            self._rainbow_job = self.root.after(self.RAINBOW_FRAME_MS,
+                                                self._rainbow_tick)
+        elif not wanted and self._rainbow_job is not None:
+            self.root.after_cancel(self._rainbow_job)
+            self._rainbow_job = None
+            bar.configure(progress_color=self._progress_colour())
+
+    def _rainbow_tick(self) -> None:
+        self._rainbow_job = None
+        self._rainbow_phase += self.RAINBOW_FRAME_MS / self.RAINBOW_PERIOD_MS
+        bar = getattr(self, "progress", None)
+        if bar is not None:
+            bar.configure(progress_color=rainbow(self._rainbow_phase))
+        if self._twitch.settings.progress_style != "rainbow":
+            return
+        self._rainbow_job = self.root.after(self.RAINBOW_FRAME_MS,
+                                            self._rainbow_tick)
+
+    def _progress_colour(self) -> str:
+        """Колір смуги за станом фарму.
+
+        Смуга завжди була фіолетова, хоч програма чудово знає, іде фарм чи
+        стоїть. Колір повторює мітку в шапці — око ловить його швидше, ніж
+        читає слово.
+        """
+        p = self.palette
+        return {
+            "going": p["ok"], "stalled": p["err"],
+            "uncounted": p["err"], "paused": p["warn"],
+        }.get(self._farm_state, p["accent"])
+
     def _set_progress(self, percent: float) -> None:
         """Прогрес у відсотках. CTk рахує від 0 до 1, решта коду — у сотих."""
-        self.progress.set(max(0.0, min(1.0, percent / 100)))
+        self._progress_target = max(0.0, min(1.0, percent / 100))
+        # Без вікна (перевірки ганяють метод на заглушці) анімувати нема чим і
+        # нема навіщо — ставимо одразу, щоб тест бачив кінцеве значення.
+        root = getattr(self, "root", None)
+        if root is None:
+            self._progress_shown = self._progress_target
+            self.progress.set(self._progress_target)
+            return
+        if self._progress_job is None:
+            self._progress_job = root.after(self.PROGRESS_FRAME_MS,
+                                            self._progress_tick)
+
+    def _progress_tick(self) -> None:
+        self._progress_job = None
+        self._progress_shown = self._advance(self._progress_shown,
+                                             self._progress_target)
+        self.progress.set(self._progress_shown)
+        if self._progress_shown == self._progress_target:
+            return
+        self._progress_job = self.root.after(self.PROGRESS_FRAME_MS,
+                                             self._progress_tick)
 
     def _build_mining_tab(self, notebook: ttk.Notebook) -> None:
         p, c = self.palette, self.cards
@@ -372,6 +465,12 @@ class GUI:
         )
         self.progress.pack(fill="x")
         self._set_progress(0)
+        # Накладка святкування: лежить поверх цієї ж картки й показується лише
+        # на півтори секунди після клейму. Решту часу її не видно взагалі.
+        self.confetti = Confetti(
+            inner, background=c["card"],
+            colours=(p["accent"], p["ok"], p["warn"], "#ffffff"),
+        )
 
         controls = ctk.CTkFrame(body, fg_color="transparent")
         controls.pack(fill="x", pady=(PAD, 0))
@@ -380,9 +479,15 @@ class GUI:
         self.pause_btn.pack(side="left")
         self._button(controls, t("reload_inventory"), self._reload_now).pack(
             side="left", padx=8)
-        self._button(controls, t("hide_tray"), self.hide_to_tray).pack(side="right")
+        # Кнопки «Згорнути в трей» тут немає навмисно: хрестик вікна робить
+        # рівно те саме і за тієї самої умови (`on_window_x` → `hide_to_tray`,
+        # поки трей живий). Гірше: коли трей не піднявся, хрестик коректно
+        # закриває програму, а кнопка сховала б вікно назовсім — повернути його
+        # можна було б хіба що командою /show із Telegram.
+        # Сам `hide_to_tray` лишається: його кличуть хрестик, меню трея і
+        # запуск із `--tray`.
         self._button(controls, t("quit_miner"), self.confirm_quit).pack(
-            side="right", padx=8)
+            side="right")
 
         log_wrap = ctk.CTkFrame(body, fg_color="transparent")
         log_wrap.pack(fill="both", expand=True, pady=(PAD, 0))
@@ -685,6 +790,15 @@ class GUI:
             misc, text=t("dark_theme"),
             variable=self.dark_var, command=self._misc_changed,
         ).pack(anchor="w")
+        # Перелив — окремою галочкою, а не заміною: колір за станом несе зміст
+        # (іде / стоїть / не зараховується), і хто цим користується, той не має
+        # втратити його заради краси.
+        self.rainbow_var = tk.BooleanVar(
+            value=settings.progress_style == "rainbow")
+        ttk.Checkbutton(
+            misc, text=t("progress_rainbow"),
+            variable=self.rainbow_var, command=self._misc_changed,
+        ).pack(anchor="w")
 
         tg = ttk.LabelFrame(right, text=t("telegram"), padding=8)
         tg.pack(fill="x", pady=(8, 0))
@@ -807,9 +921,12 @@ class GUI:
         images_were = settings.drop_images
         settings.drop_images = self.images_var.get()
         settings.check_updates = self.updates_var.get()
+        settings.progress_style = "rainbow" if self.rainbow_var.get() else "state"
         settings.save()
         self.palette = DARK if settings.dark_theme else LIGHT
+        self.cards = CARD_DARK if settings.dark_theme else CARD_LIGHT
         self._apply_theme()
+        self._apply_progress_style()
         if settings.drop_images != images_were and settings.drop_images:
             # щойно ввімкнули — перечитуємо інвентар, інакше картинки
             # з'явились би аж за годину, разом із наступним оновленням
@@ -966,6 +1083,9 @@ class GUI:
             self._set_farm_state("going")
         elif isinstance(event, DropClaimed):
             self._append_log(t("claimed_log", rewards=event.rewards, game=event.game), "ok")
+            party = getattr(self, "confetti", None)
+            if party is not None:
+                party.burst()
         elif isinstance(event, ProtocolStale):
             if event.storm:
                 self._append_log(t("protocol_storm_log"), "warn")
@@ -1046,6 +1166,12 @@ class GUI:
         self.farm_label.configure(
             text=t(key), fg=self.palette[colour], bg=self.palette["alt"],
         )
+        bar = getattr(self, "progress", None)
+        # Поки смуга переливається, стан кольором не показуємо: інакше два
+        # правила фарбували б її по черзі й вона мигтіла б.
+        if (bar is not None and hasattr(bar, "configure")
+                and self._rainbow_job is None):
+            bar.configure(progress_color=self._progress_colour())
         dot = getattr(self, "farm_dot", None)
         if dot is None:
             return

@@ -44,6 +44,9 @@ class ConfigShape(TypedDict):
     verify_channel_drops: bool
     drop_images: bool
     check_updates: bool
+    # Як забарвлювати смугу прогресу: "state" — кольором стану фарму
+    # (зелена/червона/жовта), "rainbow" — переливається незалежно від стану.
+    progress_style: str
     image_size: int
     inventory_view: str
     browser_path: str
@@ -84,6 +87,9 @@ DEFAULTS: ConfigShape = {
     "drop_images": False,
     # Раз на запуск питати GitHub, чи є новіші файли (за SHA-256).
     "check_updates": True,
+    # Типово — за станом: колір смуги несе зміст (іде / стоїть / не
+    # зараховується), і це корисніше за красу. Переливання вмикається окремо.
+    "progress_style": "state",
     # Розмір картинки в списку. Кеш на диску завжди більший, тож це число
     # можна міняти будь-коли — качати наново нічого не доведеться.
     "image_size": DEFAULT_IMAGE_SIZE,

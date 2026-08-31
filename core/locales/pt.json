@@ -37,7 +37,6 @@
   "file_one": "ficheiro",
   "growing_line": "{name} — {game} ({have}/{need} min)",
   "growing_more": "…e mais {n}",
-  "hide_tray": "Minimizar para o tabuleiro",
   "image_cache_hint": "As imagens são descarregadas uma vez e ficam no disco; o tamanho pode mudar a qualquer momento, sem voltar a descarregar.",
   "image_size_label": "Tamanho:",
   "inv_claimed": "obtido",
@@ -297,5 +296,6 @@
   "ws_all": "{n} ligações",
   "ws_line": "{state} · {topics} tópicos",
   "ws_some": "{ok}/{total} ligações",
-  "tg_description": "Controla o minerador Twitch Drop Farm: estado do farm, inventário, campanhas e relatórios. Use os botões abaixo ou /help."
+  "tg_description": "Controla o minerador Twitch Drop Farm: estado do farm, inventário, campanhas e relatórios. Use os botões abaixo ou /help.",
+  "progress_rainbow": "Barra de progresso multicolor"
 }
