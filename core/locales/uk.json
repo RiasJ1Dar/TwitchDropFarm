@@ -37,7 +37,6 @@
   "file_one": "файл",
   "growing_line": "{name} — {game} ({have}/{need} хв)",
   "growing_more": "…і ще {n}",
-  "hide_tray": "Згорнути в трей",
   "image_cache_hint": "Картинки беруться раз і лишаються на диску; розмір можна міняти будь-коли, качати наново не треба.",
   "image_size_label": "Розмір:",
   "inv_claimed": "отримано",
@@ -297,5 +296,6 @@
   "ws_all": "{n} зʼєднань",
   "ws_line": "{state} · {topics} топіків",
   "ws_some": "{ok}/{total} зʼєднань",
-  "tg_description": "Керує майнером Twitch Drop Farm: стан фарму, інвентар, кампанії та звіти. Тисніть кнопки внизу або /help."
+  "tg_description": "Керує майнером Twitch Drop Farm: стан фарму, інвентар, кампанії та звіти. Тисніть кнопки внизу або /help.",
+  "progress_rainbow": "Переливчаста смуга прогресу"
 }

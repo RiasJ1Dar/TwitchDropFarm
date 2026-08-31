@@ -37,7 +37,6 @@
   "file_one": "dosya",
   "growing_line": "{name} — {game} ({have}/{need} dk)",
   "growing_more": "…ve {n} tane daha",
-  "hide_tray": "Tepsiye küçült",
   "image_cache_hint": "Görseller bir kez indirilir ve diskte kalır; boyutu istediğin zaman değiştirebilirsin, yeniden indirmeye gerek yok.",
   "image_size_label": "Boyut:",
   "inv_claimed": "alındı",
@@ -297,5 +296,6 @@
   "ws_all": "{n} bağlantı",
   "ws_line": "{state} · {topics} konu",
   "ws_some": "{ok}/{total} bağlantı",
-  "tg_description": "Twitch Drop Farm madencisini yönetir: farm durumu, envanter, kampanyalar ve raporlar. Aşağıdaki düğmeleri veya /help kullanın."
+  "tg_description": "Twitch Drop Farm madencisini yönetir: farm durumu, envanter, kampanyalar ve raporlar. Aşağıdaki düğmeleri veya /help kullanın.",
+  "progress_rainbow": "Gökkuşağı ilerleme çubuğu"
 }

@@ -77,6 +77,7 @@ from core.toolbox import (
 )
 from gui.app import DARK, GUI
 from gui.icon import profile_photo_jpeg
+from gui.pulse import rainbow
 from gui.tray import Tray
 
 ok = 0
@@ -687,6 +688,96 @@ def growing_checks() -> None:
     GUI._render_growing(box, now=now)
     check("нічого не росте — так і кажемо",
           box.drop_var.value == "Дроп не визначено", box.drop_var.value)
+
+    # Смуга їде до цілі плавно. Крок винесено окремою функцією саме заради
+    # перевірки: сама анімація живе на `after`, якого в заглушці немає, тож
+    # інакше вона лишилась би непокритою зовсім.
+    step = GUI._advance(0.0, 1.0)
+    check("крок іде в бік цілі", 0.0 < step < 1.0, str(step))
+    check("крок не перестрибує ціль", GUI._advance(0.99, 1.0) <= 1.0)
+    value = 0.0
+    for _ in range(60):
+        value = GUI._advance(value, 1.0)
+    check("смуга доїжджає до цілі", value == 1.0, str(value))
+    check("на цілі стоїть на місці", GUI._advance(1.0, 1.0) == 1.0)
+    down = GUI._advance(1.0, 0.0)
+    check("назад рухається так само", 0.0 < down < 1.0, str(down))
+
+    # Колір смуги повторює мітку в шапці: око ловить його швидше, ніж читає
+    # слово. Раніше вона була фіолетова завжди.
+    tinted = types.SimpleNamespace(palette=DARK)
+    shades = {}
+    for state in ("going", "stalled", "uncounted", "paused", "idle"):
+        tinted._farm_state = state
+        shades[state] = GUI._progress_colour(tinted)
+    check("фарм іде — смуга зелена", shades["going"] == DARK["ok"])
+    check("застій і незарахований перегляд — червона",
+          shades["stalled"] == DARK["err"] and shades["uncounted"] == DARK["err"])
+    check("пауза — жовта", shades["paused"] == DARK["warn"])
+    check("очікування — звичайний акцент", shades["idle"] == DARK["accent"])
+
+    # Перелив — окремий стиль, який вмикається галочкою. Колір рахує чиста
+    # функція, тож її можна перевірити без вікна.
+    check("веселка дає правильний формат кольору",
+          len(rainbow(0.0)) == 7 and rainbow(0.0).startswith("#"), rainbow(0.0))
+    check("різні фази — різні кольори", rainbow(0.0) != rainbow(0.33))
+    check("коло замикається", rainbow(0.0) == rainbow(1.0))
+    check("фаза поза межами не ламає", rainbow(2.25) == rainbow(0.25))
+
+    class FakeRoot:
+        def __init__(self) -> None:
+            self.cancelled: list[str] = []
+            self.planned = 0
+
+        def after(self, _ms: int, _fn: object) -> str:
+            self.planned += 1
+            return f"job{self.planned}"
+
+        def after_cancel(self, job: str) -> None:
+            self.cancelled.append(job)
+
+    class FakeColourBar:
+        def __init__(self) -> None:
+            self.colour = ""
+
+        def configure(self, **kwargs: str) -> None:
+            self.colour = kwargs.get("progress_color", self.colour)
+
+    def styled(style: str, job: str | None) -> types.SimpleNamespace:
+        fake = types.SimpleNamespace(
+            palette=DARK, progress=FakeColourBar(), root=FakeRoot(),
+            _farm_state="going", _rainbow_job=job,
+            RAINBOW_FRAME_MS=GUI.RAINBOW_FRAME_MS,
+            RAINBOW_PERIOD_MS=GUI.RAINBOW_PERIOD_MS,
+            _rainbow_tick=lambda: None,
+            _twitch=types.SimpleNamespace(
+                settings=types.SimpleNamespace(progress_style=style)),
+        )
+        # Прив'язуємо справжній метод, а не додаємо чергове поле в заглушку:
+        # інакше кожна нова дрібниця всередині коду вимагає латати цей об'єкт
+        # ще раз — так уже сталось тричі поспіль, поки писались ці перевірки.
+        fake._progress_colour = lambda: GUI._progress_colour(fake)
+        return fake
+
+    on = styled("rainbow", None)
+    GUI._apply_progress_style(on)
+    check("перелив увімкнувся", on._rainbow_job is not None)
+
+    off = styled("state", "job1")
+    GUI._apply_progress_style(off)
+    check("перелив вимкнувся", off._rainbow_job is None)
+    check("вимкнення повертає колір стану",
+          off.progress.colour == DARK["ok"], off.progress.colour)
+    check("зупинений цикл справді скасовано", off.root.cancelled == ["job1"])
+
+    # ⚠️ Поки смуга переливається, стан її не перефарбовує: інакше два
+    # правила фарбували б по черзі й вона мигтіла б.
+    busy = styled("rainbow", "job1")
+    busy.farm_label = types.SimpleNamespace(configure=lambda **_: None)
+    busy._farm_state = ""
+    GUI._set_farm_state(busy, "stalled")
+    check("під час переливу стан кольором не втручається",
+          busy.progress.colour == "", busy.progress.colour)
 
 
 # ------------------------------------------------------ чужий перегляд
