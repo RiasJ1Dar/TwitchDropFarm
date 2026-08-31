@@ -78,6 +78,7 @@ from core.toolbox import (
 from gui.app import DARK, GUI
 from gui.icon import profile_photo_jpeg
 from gui.pulse import rainbow
+from gui.theme import blended, read_overrides
 from gui.tray import Tray
 
 ok = 0
@@ -1427,10 +1428,52 @@ def update_checks() -> None:
     check("відкладене не нагадує до перезапуску", len(later) == 1)
 
 
+# ------------------------------------------------------------------ тема
+
+def theme_checks() -> None:
+    print("\n[12] Своя тема оформлення")
+
+    allowed = frozenset(DARK) | frozenset({"page", "card", "line", "hover"})
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "theme.json"
+        check("теми немає — і не треба", read_overrides(path, allowed) == {})
+
+        path.write_text(json.dumps({"accent": "#FF8800", "card": "#101014"}),
+                        encoding="utf-8")
+        good = read_overrides(path, allowed)
+        check("свої кольори прийнято",
+              good == {"accent": "#ff8800", "card": "#101014"}, str(good))
+
+        # Одруківка в назві не має виглядати як «тема не працює» — такий
+        # ключ відкидається окремо й гучно, а решта файлу лишається чинною.
+        path.write_text(json.dumps({"акцент": "#ff8800", "ok": "#00ff00"}),
+                        encoding="utf-8")
+        check("невідомий ключ пропускається, решта діє",
+              read_overrides(path, allowed) == {"ok": "#00ff00"})
+
+        path.write_text(json.dumps({"accent": "червоний", "ok": "#fff",
+                                    "err": 16711680, "warn": "#ffb020"}),
+                        encoding="utf-8")
+        check("кольори не виду #rrggbb відкинуто",
+              read_overrides(path, allowed) == {"warn": "#ffb020"})
+
+        path.write_text("{зламаний", encoding="utf-8")
+        check("побитий файл не валить вікно", read_overrides(path, allowed) == {})
+        path.write_text(json.dumps(["#ff8800"]), encoding="utf-8")
+        check("список замість об'єкта — теж не валить",
+              read_overrides(path, allowed) == {})
+
+    mixed = blended(DARK, {"accent": "#ff8800", "невідоме": "#000000"})
+    check("накладається лише відоме",
+          mixed["accent"] == "#ff8800" and "невідоме" not in mixed)
+    check("решта кольорів лишається вбудованою", mixed["ok"] == DARK["ok"])
+    check("вбудована палітра не псується", DARK["accent"] == "#9147ff")
+
+
 # ------------------------------------------------------------------ побачене
 
 def seen_checks() -> None:
-    print("\n[12] Побачені кампанії")
+    print("\n[13] Побачені кампанії")
 
     with tempfile.TemporaryDirectory() as folder:
         path = Path(folder) / "seen.json"
@@ -1475,7 +1518,7 @@ def seen_checks() -> None:
 # ------------------------------------------------------------------ особа
 
 def identity_checks() -> None:
-    print("\n[13] Готовність особи")
+    print("\n[14] Готовність особи")
 
     person = Identity(types.SimpleNamespace())
     person.token = "oauth"
@@ -1520,7 +1563,7 @@ def identity_checks() -> None:
 # ------------------------------------------------------------------ модель
 
 def model_cache_checks() -> None:
-    print("\n[14] Кеш моделі та пріоритети")
+    print("\n[15] Кеш моделі та пріоритети")
 
     def payload(*kinds: str, cid: str = "c1") -> dict:
         return {
@@ -1836,6 +1879,7 @@ def main() -> int:
     image_cache_checks()
     autostart_checks()
     update_checks()
+    theme_checks()
     seen_checks()
     identity_checks()
     model_cache_checks()
