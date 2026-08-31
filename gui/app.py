@@ -27,7 +27,13 @@ from typing import TYPE_CHECKING, Any
 import customtkinter as ctk
 
 from core import autostart
-from core.config import MAX_IMAGE_SIZE, MIN_IMAGE_SIZE, TILE_SIZE, clamp_image_size
+from core.config import (
+    MAX_IMAGE_SIZE,
+    MIN_IMAGE_SIZE,
+    THEME_FILE,
+    TILE_SIZE,
+    clamp_image_size,
+)
 from core.config import VERSION as __version__
 from core.config import FarmMode as PriorityMode
 from core.events import (
@@ -58,6 +64,7 @@ from core.i18n import LANGS, NAMES, t
 from core.toolbox import human_size, plural
 from gui.celebrate import Confetti
 from gui.pulse import PulseDot, rainbow
+from gui.theme import blended, read_overrides
 
 if TYPE_CHECKING:
     from core.miner import Miner as Twitch
@@ -115,8 +122,7 @@ class GUI:
         self._closed = asyncio.Event()
         self._poll_task: asyncio.Task[None] | None = None
         dark = twitch.settings.dark_theme
-        self.palette = DARK if dark else LIGHT
-        self.cards = CARD_DARK if dark else CARD_LIGHT
+        self._load_palette(dark)
 
         from core.toolbox import enable_windows_dpi
         enable_windows_dpi()
@@ -158,6 +164,18 @@ class GUI:
 
         self._build_layout()
         twitch.events.subscribe(self._on_event)
+
+    def _load_palette(self, dark: bool) -> None:
+        """Вбудована палітра плюс `theme.json`, якщо людина його поклала.
+
+        Читаємо щоразу, а не один раз при старті: так виправлену тему видно
+        після перемикання темної/світлої, без перезапуску програми.
+        """
+        base = DARK if dark else LIGHT
+        cards = CARD_DARK if dark else CARD_LIGHT
+        custom = read_overrides(THEME_FILE, frozenset(base) | frozenset(cards))
+        self.palette = blended(base, custom)
+        self.cards = blended(cards, custom)
 
     def _set_window_icon(self) -> None:
         """Значок у заголовку й на панелі завдань.
@@ -923,8 +941,7 @@ class GUI:
         settings.check_updates = self.updates_var.get()
         settings.progress_style = "rainbow" if self.rainbow_var.get() else "state"
         settings.save()
-        self.palette = DARK if settings.dark_theme else LIGHT
-        self.cards = CARD_DARK if settings.dark_theme else CARD_LIGHT
+        self._load_palette(settings.dark_theme)
         self._apply_theme()
         self._apply_progress_style()
         if settings.drop_images != images_were and settings.drop_images:
