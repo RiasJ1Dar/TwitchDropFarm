@@ -37,7 +37,6 @@
   "file_one": "archivo",
   "growing_line": "{name} — {game} ({have}/{need} min)",
   "growing_more": "…y {n} más",
-  "hide_tray": "Minimizar a la bandeja",
   "image_cache_hint": "Las imágenes se bajan una vez y quedan en disco; el tamaño se puede cambiar cuando quieras, sin volver a descargar.",
   "image_size_label": "Tamaño:",
   "inv_claimed": "reclamado",
@@ -297,5 +296,6 @@
   "ws_all": "{n} conexiones",
   "ws_line": "{state} · {topics} temas",
   "ws_some": "{ok}/{total} conexiones",
-  "tg_description": "Controla el minero Twitch Drop Farm: estado del farmeo, inventario, campañas e informes. Usa los botones de abajo o /help."
+  "tg_description": "Controla el minero Twitch Drop Farm: estado del farmeo, inventario, campañas e informes. Usa los botones de abajo o /help.",
+  "progress_rainbow": "Barra de progreso multicolor"
 }

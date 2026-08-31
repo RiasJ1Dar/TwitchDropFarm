@@ -37,7 +37,6 @@
   "file_one": "plik",
   "growing_line": "{name} — {game} ({have}/{need} min)",
   "growing_more": "…i jeszcze {n}",
-  "hide_tray": "Zwiń do zasobnika",
   "image_cache_hint": "Obrazki pobierane raz zostają na dysku; rozmiar można zmieniać w każdej chwili, bez ponownego pobierania.",
   "image_size_label": "Rozmiar:",
   "inv_claimed": "odebrano",
@@ -297,5 +296,6 @@
   "ws_all": "{n} połączeń",
   "ws_line": "{state} · {topics} tematów",
   "ws_some": "{ok}/{total} połączeń",
-  "tg_description": "Steruje minerem Twitch Drop Farm: stan farmienia, ekwipunek, kampanie i raporty. Użyj przycisków poniżej lub /help."
+  "tg_description": "Steruje minerem Twitch Drop Farm: stan farmienia, ekwipunek, kampanie i raporty. Użyj przycisków poniżej lub /help.",
+  "progress_rainbow": "Tęczowy pasek postępu"
 }

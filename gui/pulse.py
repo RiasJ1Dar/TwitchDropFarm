@@ -15,6 +15,7 @@
 """
 from __future__ import annotations
 
+import colorsys
 import tkinter as tk
 
 # Період одного «вдиху». 1,6 с — повільніше за пульс, тому читається як
@@ -23,6 +24,17 @@ PERIOD_MS = 1600
 # 25 кадрів на секунду: рух уже плавний, а перемальовування двох кіл раз на
 # 40 мс не помітне для CPU навіть на слабкій машині.
 FRAME_MS = 40
+
+
+def rainbow(phase: float, *, saturation: float = 0.62,
+            value: float = 0.95) -> str:
+    """Колір веселки за фазою 0..1. Використовується для «переливчастої» смуги.
+
+    Насиченість свідомо не повна: чисті кольори на темному тлі ріжуть око, а
+    приглушені лишаються святковими, але не заважають читати цифри поруч.
+    """
+    red, green, blue = colorsys.hsv_to_rgb(phase % 1.0, saturation, value)
+    return f"#{round(red * 255):02x}{round(green * 255):02x}{round(blue * 255):02x}"
 
 
 def blend(colour: str, background: str, amount: float) -> str:

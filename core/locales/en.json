@@ -37,7 +37,6 @@
   "file_one": "file",
   "growing_line": "{name} — {game} ({have}/{need} min)",
   "growing_more": "…and {n} more",
-  "hide_tray": "Minimize to tray",
   "image_cache_hint": "Images are fetched once and kept on disk; you can change the size any time without downloading again.",
   "image_size_label": "Size:",
   "inv_claimed": "claimed",
@@ -297,5 +296,6 @@
   "ws_all": "{n} connections",
   "ws_line": "{state} · {topics} topics",
   "ws_some": "{ok}/{total} connections",
-  "tg_description": "Controls the Twitch Drop Farm miner: farming status, inventory, campaigns and reports. Use the buttons below or /help."
+  "tg_description": "Controls the Twitch Drop Farm miner: farming status, inventory, campaigns and reports. Use the buttons below or /help.",
+  "progress_rainbow": "Rainbow progress bar"
 }

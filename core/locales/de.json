@@ -37,7 +37,6 @@
   "file_one": "Datei",
   "growing_line": "{name} — {game} ({have}/{need} Min)",
   "growing_more": "…und noch {n}",
-  "hide_tray": "In den Infobereich",
   "image_cache_hint": "Bilder werden einmal geladen und bleiben auf der Platte; die Größe kann jederzeit geändert werden, ohne neu zu laden.",
   "image_size_label": "Größe:",
   "inv_claimed": "abgeholt",
@@ -297,5 +296,6 @@
   "ws_all": "{n} Verbindungen",
   "ws_line": "{state} · {topics} Themen",
   "ws_some": "{ok}/{total} Verbindungen",
-  "tg_description": "Steuert den Twitch-Drop-Farm-Miner: Farm-Status, Inventar, Kampagnen und Berichte. Nutze die Buttons unten oder /help."
+  "tg_description": "Steuert den Twitch-Drop-Farm-Miner: Farm-Status, Inventar, Kampagnen und Berichte. Nutze die Buttons unten oder /help.",
+  "progress_rainbow": "Regenbogen-Fortschrittsbalken"
 }
