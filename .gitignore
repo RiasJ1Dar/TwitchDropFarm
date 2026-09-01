@@ -1,6 +1,10 @@
 env/
 build/
 dist/
+# теки перевірочних збірок: dist-ctk, dist-rel, build-check…
+# `dist/` їх не покриває, і 22-мегабайтний .exe одного разу вже потрапив у коміт
+dist-*/
+build-*/
 __pycache__/
 *.py[cod]
 .ruff_cache/
