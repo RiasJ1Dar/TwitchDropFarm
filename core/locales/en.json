@@ -297,5 +297,18 @@
   "ws_line": "{state} · {topics} topics",
   "ws_some": "{ok}/{total} connections",
   "tg_description": "Controls the Twitch Drop Farm miner: farming status, inventory, campaigns and reports. Use the buttons below or /help.",
-  "progress_rainbow": "Rainbow progress bar"
+  "progress_rainbow": "Rainbow progress bar",
+  "soon_title": "Almost there",
+  "ending_title": "Ending soon",
+  "soon_empty": "Nothing yet",
+  "minutes_left_short": "{minutes} min",
+  "hours_left_short": "{hours} h",
+  "about_title": "About",
+  "about_text": "Farms Twitch timed drops without an open browser. A single file, no extra runtimes. How it works and what to do when it doesn't — in the wiki.",
+  "about_wiki": "Wiki",
+  "about_repo": "Repository",
+  "about_releases": "Releases",
+  "about_author": "Version {version} · Viktor Hartunh · MIT licence",
+  "skip_hopeless": "Skip what can't be finished",
+  "skip_hopeless_hint": "Campaigns where no drop can be completed in time are skipped. Those with at least one reachable reward stay."
 }

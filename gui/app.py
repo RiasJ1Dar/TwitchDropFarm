@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import tkinter as tk
+import webbrowser
 from datetime import datetime, timezone
 from time import monotonic
 from tkinter import messagebox, ttk
@@ -28,6 +29,7 @@ import customtkinter as ctk
 
 from core import autostart
 from core.config import (
+    GITHUB_REPO,
     MAX_IMAGE_SIZE,
     MIN_IMAGE_SIZE,
     THEME_FILE,
@@ -150,6 +152,12 @@ CARD_LIGHT = {"page": "#eceaf0", "card": "#ffffff", "line": "#dcdae2",
 # Скільки місця лишати навколо картки. Винесено в константу, бо ті самі відступи
 # повторюються в кожному блоці вкладки, і різнобій одразу видно оком.
 PAD = 12
+# Ширина правої колонки на вкладці «Майнінг». Вужче — назви дропів не влазять,
+# ширше — з'їдає місце в журналу без користі.
+SIDE_WIDTH = 330
+# Скільки рядків показуємо в «Ось-ось заберемо». Більше не має сенсу: це не
+# інвентар, а підказка «що трапиться найближчим часом».
+SOON_LIMIT = 8
 
 
 class GUI:
@@ -451,6 +459,12 @@ class GUI:
         c = self.cards
         tabs = ctk.CTkTabview(
             self.root, corner_radius=12, fg_color=c["page"],
+            # По центру — за словом людини. Щоб смуга при цьому не виглядала
+            # загубленою в порожнечі, кнопки робимо помітно більшими: своєї
+            # ширини `CTkTabview` задати не дає, тож єдиний важіль — шрифт,
+            # за яким кнопка й розтягується.
+            anchor="center",
+            segmented_button_font=("Segoe UI", 16, "bold"),
             segmented_button_selected_color=self.palette["accent"],
             segmented_button_selected_hover_color=self.palette["accent"],
             segmented_button_unselected_color=c["card"],
@@ -658,13 +672,115 @@ class GUI:
         self._progress_job = self.root.after(self.PROGRESS_FRAME_MS,
                                              self._progress_tick)
 
+    def _build_side_column(self, side: tk.Misc) -> None:
+        """Права колонка: що заберемо найближчим часом і що ось-ось згорить.
+
+        Обидві картки живляться зрізом інвентаря, який вікно й так отримує
+        (`InventoryUpdated`), — жодного нового запиту до Twitch.
+        """
+        soon = self._card(side, t("soon_title"))
+        self.soon_rows = ctk.CTkFrame(soon, fg_color="transparent")
+        self.soon_rows.pack(fill="x", padx=PAD, pady=PAD)
+
+        ending = self._card(side, t("ending_title"))
+        self.ending_rows = ctk.CTkFrame(ending, fg_color="transparent")
+        self.ending_rows.pack(fill="x", padx=PAD, pady=PAD)
+        self._render_side()
+
+    def _render_side(self) -> None:
+        """Перемальовує обидві картки правої колонки."""
+        rows = getattr(self, "soon_rows", None)
+        if rows is None:
+            return
+        p = self.palette
+        snapshot = self._last_inventory
+        campaigns = snapshot.campaigns if snapshot is not None else ()
+
+        # ---- що ось-ось заберемо: дропи з початим прогресом, найближчі перші
+        started = [
+            (drop, campaign)
+            for campaign in campaigns if campaign.active
+            for drop in campaign.drops
+            if not drop.claimed and drop.required_minutes > 0
+            and drop.current_minutes > 0
+        ]
+        started.sort(key=lambda pair: pair[0].required_minutes - pair[0].current_minutes)
+
+        for child in rows.winfo_children():
+            child.destroy()
+        if not started:
+            ctk.CTkLabel(rows, text=t("soon_empty"), anchor="w",
+                         text_color=p["muted"]).pack(anchor="w", fill="x")
+        for drop, campaign in started[:SOON_LIMIT]:
+            left = drop.required_minutes - drop.current_minutes
+            line = ctk.CTkFrame(rows, fg_color="transparent")
+            line.pack(fill="x", pady=2)
+            ctk.CTkLabel(line, text=_shorten(drop.name, 24), anchor="w",
+                         text_color=p["fg"]).pack(side="left", fill="x", expand=True)
+            # лишилось хвилин — головне число, тому кольором стану
+            ctk.CTkLabel(line, text=t("minutes_left_short", minutes=left),
+                         anchor="e", text_color=p["ok"] if left <= 30 else p["muted"],
+                         ).pack(side="right")
+            # гра дрібним рядком: без неї «Drop 1» нічого не каже, а назви
+            # дропів у Twitch майже завжди однакові в різних кампаніях
+            ctk.CTkLabel(rows, text=_shorten(campaign.game, 28), anchor="w",
+                         font=("Segoe UI", 9), text_color=p["muted"]).pack(
+                anchor="w", fill="x")
+            bar = ctk.CTkProgressBar(rows, height=4, corner_radius=2,
+                                     progress_color=p["accent"], fg_color=self.cards["line"])
+            bar.pack(fill="x", pady=(0, 6))
+            bar.set(min(1.0, drop.current_minutes / drop.required_minutes))
+
+        # ---- що ось-ось згорить: активні кампанії за часом до кінця
+        ends = getattr(self, "ending_rows", None)
+        if ends is None:
+            return
+        for child in ends.winfo_children():
+            child.destroy()
+        now = datetime.now(timezone.utc)
+        alive = sorted(
+            (c for c in campaigns
+             if c.active and c.claimed_drops < c.total_drops and c.ends_at > now),
+            key=lambda c: c.ends_at,
+        )
+        if not alive:
+            ctk.CTkLabel(ends, text=t("soon_empty"), anchor="w",
+                         text_color=p["muted"]).pack(anchor="w", fill="x")
+        for campaign in alive[:SOON_LIMIT]:
+            hours = max(0, int((campaign.ends_at - now).total_seconds() // 3600))
+            line = ctk.CTkFrame(ends, fg_color="transparent")
+            line.pack(fill="x", pady=2)
+            ctk.CTkLabel(line, text=_shorten(campaign.game, 20), anchor="w",
+                         text_color=p["fg"]).pack(side="left", fill="x", expand=True)
+            ctk.CTkLabel(
+                line,
+                text=t("hours_left_short", hours=hours),
+                anchor="e",
+                # менше доби — попередження: встигнути вже може не вийти
+                text_color=p["warn"] if hours < 24 else p["muted"],
+            ).pack(side="right")
+            ctk.CTkLabel(ends, text=f"{campaign.claimed_drops}/{campaign.total_drops}",
+                         anchor="w", text_color=p["muted"]).pack(anchor="w")
+
     def _build_mining_tab(self, tabs: ctk.CTkTabview) -> None:
         p, c = self.palette, self.cards
         tab = tabs.add(t("tab_mining"))
         body = ctk.CTkFrame(tab, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=PAD, pady=PAD)
 
-        box = self._card(body, t("farming_now"))
+        # Дві колонки. Права вужча й фіксована: без неї на широкому моніторі
+        # пів вікна лишалось порожнім, бо журнал розтягувався на всю ширину,
+        # маючи в собі три рядки. Дані для неї програма вже має — просто ніде
+        # не показувала.
+        side = ctk.CTkFrame(body, fg_color="transparent", width=SIDE_WIDTH)
+        side.pack(side="right", fill="y", padx=(PAD, 0))
+        side.pack_propagate(False)  # інакше колонка стиснеться під вміст
+        self._build_side_column(side)
+
+        main = ctk.CTkFrame(body, fg_color="transparent")
+        main.pack(side="left", fill="both", expand=True)
+
+        box = self._card(main, t("farming_now"))
         inner = ctk.CTkFrame(box, fg_color="transparent")
         inner.pack(fill="x", padx=PAD, pady=PAD)
 
@@ -700,7 +816,7 @@ class GUI:
             colours=(p["accent"], p["ok"], p["warn"], "#ffffff"),
         )
 
-        controls = ctk.CTkFrame(body, fg_color="transparent")
+        controls = ctk.CTkFrame(main, fg_color="transparent")
         controls.pack(fill="x", pady=(PAD, 0))
         self.pause_btn = self._button(controls, t("pause"), self._toggle_pause,
                                       accent=True)
@@ -717,7 +833,7 @@ class GUI:
         self._button(controls, t("quit_miner"), self.confirm_quit).pack(
             side="right")
 
-        log_wrap = ctk.CTkFrame(body, fg_color="transparent")
+        log_wrap = ctk.CTkFrame(main, fg_color="transparent")
         log_wrap.pack(fill="both", expand=True, pady=(PAD, 0))
         log_box = self._card(log_wrap, t("log"))
         log_box.pack(fill="both", expand=True)
@@ -1044,6 +1160,11 @@ class GUI:
         # Перелив — окремим тумблером, а не заміною: колір за станом несе зміст
         # (іде / стоїть / не зараховується), і хто цим користується, той не має
         # втратити його заради краси.
+        self.hopeless_var = tk.BooleanVar(value=settings.skip_hopeless)
+        self._switch(misc, t("skip_hopeless"), self.hopeless_var,
+                     self._misc_changed).pack(anchor="w", pady=3)
+        self._hint(misc, t("skip_hopeless_hint")).pack(anchor="w", fill="x",
+                                                       pady=(0, 4))
         self.rainbow_var = tk.BooleanVar(
             value=settings.progress_style == "rainbow")
         self._switch(misc, t("progress_rainbow"), self.rainbow_var,
@@ -1057,6 +1178,22 @@ class GUI:
             anchor="w", pady=(8, 0))
         self.tg_hint = self._hint(tg, self._telegram_hint())
         self.tg_hint.pack(anchor="w", fill="x", pady=(6, 0))
+
+        about = self._block(right, t("about_title"), top=PAD)
+        self._hint(about, t("about_text")).pack(anchor="w", fill="x")
+        links = ctk.CTkFrame(about, fg_color="transparent")
+        links.pack(anchor="w", fill="x", pady=(8, 0))
+        # Вікі першою: там пояснено, як усе працює, і саме туди має піти
+        # людина, а не в код.
+        for label, url in (
+            (t("about_wiki"), f"https://github.com/{GITHUB_REPO}/wiki"),
+            (t("about_repo"), f"https://github.com/{GITHUB_REPO}"),
+            (t("about_releases"), f"https://github.com/{GITHUB_REPO}/releases"),
+        ):
+            self._button(links, label, lambda link=url: webbrowser.open(link),
+                         width=150).pack(side="left", padx=(0, 8))
+        self._hint(about, t("about_author", version=__version__)).pack(
+            anchor="w", fill="x", pady=(8, 0))
 
     # ------------------------------------------------------------ дії користувача
 
@@ -1129,6 +1266,12 @@ class GUI:
 
     def _mode_changed(self) -> None:
         self._twitch.settings.farm_mode = PriorityMode[self.mode_var.get()]
+        # ⚠️ Зберігаємо одразу. Раніше запис на диск траплявся сам собою: RELOAD
+        # веде ядро в LOAD_INVENTORY, а там уже є `save()`. Але на паузі та
+        # стадія відводиться в IDLE, і збереження не стається взагалі — вибір
+        # доживав до диска тільки при штатному виході. Рядок дешевий, а
+        # поведінка перестає залежати від чужого ланцюжка.
+        self._twitch.settings.save()
         self._send(CommandType.RELOAD)
 
     def _autostart_changed(self) -> None:
@@ -1172,6 +1315,7 @@ class GUI:
         settings.drop_images = self.images_var.get()
         settings.check_updates = self.updates_var.get()
         settings.progress_style = "rainbow" if self.rainbow_var.get() else "state"
+        settings.skip_hopeless = self.hopeless_var.get()
         settings.save()
         # CustomTkinter тримає власне поняття теми, і без цього рядка його
         # віджети лишались би світлими в темному вікні (й навпаки)
@@ -1509,6 +1653,9 @@ class GUI:
         # разом зі списком, інакше набір ріс би з кожним оновленням інвентаря.
         self._images = {}
         self._last_inventory = event
+        # права колонка живиться тим самим зрізом — оновлюємо її завжди,
+        # незалежно від того, який вигляд обрано в «Інвентарі»
+        self._render_side()
         if self._inventory_view == "tiles":
             self._render_tiles(event)
             return
