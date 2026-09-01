@@ -156,6 +156,9 @@ class Miner:
         self._delivery_failures = 0
         self._shown_progress: dict[str, tuple[int, int]] = {}
         self._update_plan: tuple | None = None
+        # остання причина, чому перевірка оновлень не вдалась: щоб та сама
+        # не летіла в Telegram двічі на добу
+        self._update_problem: str | None = None
         # людина натиснула «Відкласти» — до наступного запуску не нагадуємо
         self.update_postponed = False
         # оновлення ставиться просто зараз: вікно й Telegram — два входи
@@ -1378,17 +1381,45 @@ class Miner:
             async with __import__("aiohttp").ClientSession() as session:
                 found = await update.check_for_update(session)
         except Exception as error:
-            # Поки жоден реліз не несе манифесту, GitHub віддає 404 — це не
-            # поломка, а «оновлень не викладали». Кричати про це щостарту
-            # означає привчити не читати червоні рядки взагалі.
-            if "404" in str(error):
-                log.log(TRACE, "Манифест оновлень ще не опубліковано")
-            else:
-                log.warning(f"Перевірка оновлення не вдалась: {error}")
+            self._update_check_failed(error)
             return
+        self._update_problem = None
         if found is None:
             return
         self._offer_update(*found)
+
+    def _update_check_failed(self, error: Exception) -> None:
+        """Провал перевірки: коли досить журналу, а коли треба сказати вголос.
+
+        ⚠️ ЦЕ КОШТУВАЛО МІСЯЦІВ ТИШІ. Тут був самий `log.warning`. Приватний
+        ключ на GitHub розійшовся з публічним у програмі, манифест чесно
+        відкидався — і людина не бачила НІЧОГО: у вікні порожньо, у Telegram
+        порожньо, а журнал до 1.1 вівся лише з ключем `--log`, тобто на
+        звичайному запуску не вівся взагалі. Симптом звався «оновлення не
+        приходить», і шукати причину не було по чому.
+
+        Тому: 404 (манифест ще не викладали) і мережеві збої лишаються в
+        журналі, а поломка доставки — немає підпису, підпис недійсний, кривий
+        манифест — іде в подію, тобто у вікно і в бота. Ту саму причину
+        повторно не шлемо: інакше двічі на добу летіло б одне й те саме.
+        """
+        text = str(error).strip() or type(error).__name__
+        # Поки жоден реліз не несе манифесту, GitHub віддає 404 — це не
+        # поломка, а «оновлень не викладали». Кричати про це щостарту
+        # означає привчити не читати червоні рядки взагалі.
+        if "404" in text:
+            log.log(TRACE, "Манифест оновлень ще не опубліковано")
+            return
+        log.warning(f"Перевірка оновлення не вдалась: {text}")
+        # ValueError тут — це наші власні перевірки манифесту: підпис,
+        # структура, версія. Обірвана мережа приходить іншими типами, і
+        # смикати нею людину не треба: наступна спроба сама все виправить.
+        if not isinstance(error, ValueError):
+            return
+        if text == self._update_problem:
+            return
+        self._update_problem = text
+        self.events.emit(UpdateFailed(reason=text))
 
     def _offer_update(self, manifest: Any, items: list) -> None:
         already = (

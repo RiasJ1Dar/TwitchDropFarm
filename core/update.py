@@ -250,6 +250,10 @@ def write_apply_script() -> Path:
         "&& goto wait_image\r\n"
         ":copy_start\r\n"
         "echo all processes gone, copying >> \"%LOG%\"\r\n"
+        # Копія робочої збірки поруч. Автоматично нею ніхто не
+        # користується — це ручний шлях назад, коли нова версія
+        # виявилась гіршою. Прибирається при наступному старті.
+        "copy /Y \"%EXE%\" \"%EXE%.old\" >> \"%LOG%\" 2>&1\r\n"
         # Кілька спроб: Windows звільняє файл не миттєво після виходу процесу —
         # антивірус чи індексатор можуть потримати його ще секунду-дві.
         "set TRY=0\r\n"
@@ -268,6 +272,14 @@ def write_apply_script() -> Path:
         "goto copy\r\n"
         ":copied\r\n"
         "echo copied, removing stage >> \"%LOG%\"\r\n"
+        # ⚠️ Пауза перед запуском, а не одразу. 01.09 нова збірка на
+        # чужому ПК показала «Failed to load Python DLL … _MEI…\python314.dll»
+        # і піднялась лише з другої спроби. Бутлоадер onefile
+        # розпаковує себе з .exe у %TEMP%, а щойно записаний файл на
+        # 24 МБ ще тримає антивірус: читання дає не весь архів, і
+        # рантайму в теці не виявляється. Кілька секунд коштують
+        # нічого, а помилка на старті коштує довіри до оновлення.
+        "ping -n 6 127.0.0.1 >nul\r\n"
         "rmdir /S /Q \"%STAGE%\"\r\n"
         "echo starting app >> \"%LOG%\"\r\n"
         # З тими самими аргументами: інакше після оновлення програма підіймалась
@@ -332,6 +344,64 @@ def apply_outcome() -> tuple[str, str]:
     if "done" in body:
         return "ok", ""
     return "none", ""
+
+
+def drop_backup() -> None:
+    """Прибирає копію попередньої збірки — програма піднялась, вона не потрібна.
+
+    Копію лишає скрипт підміни поруч із `.exe`. Тримати її вічно означало б
+    носити зайві 24 МБ і плутати людину двома файлами в теці; тримати рівно
+    до першого успішного старту — рівно те, для чого вона робилась.
+    """
+    backup = APP_DIR / "TwitchDropFarm.exe.old"
+    try:
+        backup.unlink(missing_ok=True)
+    except OSError as error:
+        # не привід псувати запуск: файл просто полежить до наступного разу
+        log.debug(f"Не вдалось прибрати {backup.name}: {error}")
+
+
+def sweep_stale_bundles() -> int:
+    r"""Прибирає розпаковані теки `_MEI*`, які лишились від аварійних виходів.
+
+    ⚠️ Це не дрібниця. Onefile-збірка на кожному запуску розпаковує рантайм у
+    `%TEMP%\_MEIxxxxx` — у нас це 43 МБ — і прибирає його сама, коли процес
+    завершується нормально. Коли не завершується (падіння бутлоадера, вбитий
+    процес, вимкнене живлення), тека лишається назавжди, і прибирати її нікому.
+    01.09 на одній машині за вечір набралось три штуки, 127 МБ.
+
+    Дві обережності, без яких прибирання було б гіршим за сміття:
+
+    * чужих не чіпаємо — тека вважається нашою, лише якщо в ній лежать наші
+      переклади. У `%TEMP%` можуть жити теки будь-якої іншої onefile-програми;
+    * теку живого процесу теж не чіпаємо, і перевіряємо це перейменуванням.
+      Windows не дасть перейменувати теку із завантаженими DLL, а от `rmtree`
+      видалив би з неї все незайняте — і зламав би працюючу копію на ходу.
+      Тому спершу перейменування як пропуск, і лише потім видалення.
+    """
+    import shutil
+    import sys
+    import tempfile
+
+    if not FROZEN:
+        return 0
+    current = getattr(sys, "_MEIPASS", "")
+    removed = 0
+    for folder in Path(tempfile.gettempdir()).glob("_MEI*"):
+        if not folder.is_dir() or str(folder) == str(current):
+            continue
+        if not (folder / "core" / "locales" / "uk.json").exists():
+            continue
+        doomed = folder.with_name(folder.name + ".stale")
+        try:
+            folder.rename(doomed)
+        except OSError:
+            continue  # нею користується живий процес
+        shutil.rmtree(doomed, ignore_errors=True)
+        removed += 1
+    if removed:
+        log.info(f"Прибрано тек від колишніх запусків: {removed}")
+    return removed
 
 
 def forget_outcome() -> None:
