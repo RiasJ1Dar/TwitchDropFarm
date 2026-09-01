@@ -297,5 +297,18 @@
   "ws_line": "{state} · {topics} konu",
   "ws_some": "{ok}/{total} bağlantı",
   "tg_description": "Twitch Drop Farm madencisini yönetir: farm durumu, envanter, kampanyalar ve raporlar. Aşağıdaki düğmeleri veya /help kullanın.",
-  "progress_rainbow": "Gökkuşağı ilerleme çubuğu"
+  "progress_rainbow": "Gökkuşağı ilerleme çubuğu",
+  "soon_title": "Neredeyse hazır",
+  "ending_title": "Yakında bitiyor",
+  "soon_empty": "Henüz yok",
+  "minutes_left_short": "{minutes} dk",
+  "hours_left_short": "{hours} sa",
+  "about_title": "Hakkında",
+  "about_text": "Tarayıcı açmadan Twitch timed drop toplar. Tek dosya, ek çalışma ortamı yok. Nasıl çalıştığı ve sorun giderme — wiki'de.",
+  "about_wiki": "Wiki",
+  "about_repo": "Depo",
+  "about_releases": "Sürümler",
+  "about_author": "Sürüm {version} · Viktor Hartunh · MIT lisansı",
+  "skip_hopeless": "Yetişilmeyecekleri atla",
+  "skip_hopeless_hint": "Hiçbir drop'un zamanında tamamlanamayacağı kampanyalar atlanır. En az bir ödüle ulaşılabilenler kalır."
 }
