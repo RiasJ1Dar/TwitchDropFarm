@@ -319,5 +319,8 @@
   "theme_mono": "Thema: Mono",
   "theme_export": "Thema in Datei speichern",
   "theme_saved": "Thema gespeichert:\n{path}\n\nDatei öffnen und Farben anpassen — sie greifen beim Umschalten des dunklen Themas.",
-  "theme_save_failed": "Thema konnte nicht gespeichert werden. Details im Protokoll."
+  "theme_save_failed": "Thema konnte nicht gespeichert werden. Details im Protokoll.",
+  "about_open": "Über…",
+  "about_thanks": "Die App sendet deine Daten nirgendwohin: Alles, was sie weiß, liegt im Zustandsordner auf diesem Rechner. Der Quellcode ist offen.",
+  "close": "Schließen"
 }

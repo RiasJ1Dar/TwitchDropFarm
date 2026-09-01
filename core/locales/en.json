@@ -319,5 +319,8 @@
   "theme_mono": "Theme: mono",
   "theme_export": "Save theme to file",
   "theme_saved": "Theme saved:\n{path}\n\nOpen the file and edit the colours — they apply when you toggle the dark theme.",
-  "theme_save_failed": "Could not save the theme. Details in the log."
+  "theme_save_failed": "Could not save the theme. Details in the log.",
+  "about_open": "About…",
+  "about_thanks": "The app sends your data nowhere: everything it knows sits in the state folder on this computer. The source is open — you can see exactly what it does.",
+  "close": "Close"
 }
