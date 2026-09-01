@@ -49,6 +49,9 @@ class ConfigShape(TypedDict):
     progress_style: str
     # Не братися за кампанії, де жоден дроп уже не встигнути до їх кінця.
     skip_hopeless: bool
+    # Вбудований набір кольорів. Порожньо — вбудована тема. Перекривається
+    # файлом theme.json, якщо він є.
+    theme_preset: str
     image_size: int
     inventory_view: str
     browser_path: str
@@ -95,6 +98,7 @@ DEFAULTS: ConfigShape = {
     # Типово вимкнено: програма не має мовчки звужувати те, що фармить. Хто
     # хоче не витрачати години на безнадійне — вмикає свідомо.
     "skip_hopeless": False,
+    "theme_preset": "",
     # Розмір картинки в списку. Кеш на диску завжди більший, тож це число
     # можна міняти будь-коли — качати наново нічого не доведеться.
     "image_size": DEFAULT_IMAGE_SIZE,

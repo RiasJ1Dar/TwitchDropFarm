@@ -78,7 +78,8 @@ from core.toolbox import (
 from gui.app import DARK, GUI, rounded_points
 from gui.icon import profile_photo_jpeg
 from gui.pulse import rainbow
-from gui.theme import blended, read_overrides
+from gui.theme import COLOUR, PRESETS, blended, preset, read_overrides
+from gui.theme import export as export_theme
 from gui.tray import Tray
 
 ok = 0
@@ -1489,6 +1490,37 @@ def theme_checks() -> None:
           mixed["accent"] == "#ff8800" and "невідоме" not in mixed)
     check("решта кольорів лишається вбудованою", mixed["ok"] == DARK["ok"])
     check("вбудована палітра не псується", DARK["accent"] == "#9147ff")
+
+    # Набори: обирають зі списку ті, хто не хоче писати JSON руками.
+    check("порожня назва — вбудована тема", preset("") == {})
+    check("невідомий набір не валить вікно", preset("бла-бла") == {})
+    check("набір дає кольори", preset("ocean").get("accent") == "#4d7cff")
+    for name, colours in PRESETS.items():
+        # окремою змінною: вкладені лапки в f-рядку з'явились аж у 3.12, а
+        # проєкт обіцяє працювати з 3.10
+        label = name or "вбудований"
+        wrong = [k for k, v in colours.items() if not COLOUR.match(v)]
+        check(f"набір «{label}» має лише коректні кольори", not wrong, str(wrong))
+        unknown = set(colours) - (set(DARK) | {"page", "card", "line", "hover"})
+        check(f"набір «{label}» не вигадує ключів", not unknown, str(unknown))
+
+    # ⚠️ Порядок накладання: вбудована → набір → theme.json. Файл останній,
+    # бо це ручна правка: хто його написав, має бачити свій колір.
+    mixed = blended(DARK, {**preset("ocean"), **{"accent": "#000000"}})
+    check("файл перебиває набір", mixed["accent"] == "#000000")
+    check("решта кольорів набору лишається",
+          blended(DARK, preset("forest"))["accent"] == "#3fae6a")
+
+    # Експорт: щоб своя тема починалась не з порожнього аркуша.
+    with tempfile.TemporaryDirectory() as folder:
+        out = Path(folder) / "theme.json"
+        check("тему збережено", export_theme(out, DARK, {"card": "#101014"}))
+        saved = json.loads(out.read_text(encoding="utf-8"))
+        check("у файлі всі кольори палітри",
+              set(DARK) <= set(saved) and saved["card"] == "#101014")
+        check("збережене читається назад як тема",
+              read_overrides(out, frozenset(saved)) == {
+                  k: v.lower() for k, v in saved.items()})
 
 
 

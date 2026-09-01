@@ -310,5 +310,14 @@
   "about_releases": "Releases",
   "about_author": "Version {version} · Viktor Hartunh · MIT licence",
   "skip_hopeless": "Skip what can't be finished",
-  "skip_hopeless_hint": "Campaigns where no drop can be completed in time are skipped. Those with at least one reachable reward stay."
+  "skip_hopeless_hint": "Campaigns where no drop can be completed in time are skipped. Those with at least one reachable reward stay.",
+  "theme_builtin": "Theme: built-in",
+  "theme_ocean": "Theme: ocean",
+  "theme_forest": "Theme: forest",
+  "theme_ember": "Theme: ember",
+  "theme_grape": "Theme: grape",
+  "theme_mono": "Theme: mono",
+  "theme_export": "Save theme to file",
+  "theme_saved": "Theme saved:\n{path}\n\nOpen the file and edit the colours — they apply when you toggle the dark theme.",
+  "theme_save_failed": "Could not save the theme. Details in the log."
 }

@@ -66,7 +66,8 @@ from core.i18n import LANGS, NAMES, t
 from core.toolbox import human_size, plural
 from gui.celebrate import Confetti
 from gui.pulse import PulseDot, rainbow
-from gui.theme import blended, read_overrides
+from gui.theme import PRESETS, blended, preset, read_overrides
+from gui.theme import export as export_theme
 
 if TYPE_CHECKING:
     from core.miner import Miner as Twitch
@@ -220,7 +221,12 @@ class GUI:
         """
         base = DARK if dark else LIGHT
         cards = CARD_DARK if dark else CARD_LIGHT
-        custom = read_overrides(THEME_FILE, frozenset(base) | frozenset(cards))
+        allowed = frozenset(base) | frozenset(cards)
+        # Порядок навмисний: вбудована тема → обраний набір → theme.json.
+        # Файл останній, бо це ручна правка: людина, яка його написала, має
+        # бачити свій колір, а не колір набору.
+        chosen = preset(self._twitch.settings.theme_preset)
+        custom = {**chosen, **read_overrides(THEME_FILE, allowed)}
         self.palette = blended(base, custom)
         self.cards = blended(cards, custom)
 
@@ -1160,6 +1166,18 @@ class GUI:
         # Перелив — окремим тумблером, а не заміною: колір за станом несе зміст
         # (іде / стоїть / не зараховується), і хто цим користується, той не має
         # втратити його заради краси.
+        # Тема: набір зі списку плюс кнопка «зберегти у файл». Правити JSON
+        # руками більшість не буде — а обрати зі списку може кожен.
+        self.preset_var = tk.StringVar(value=t(f"theme_{settings.theme_preset or 'builtin'}"))
+        ctk.CTkOptionMenu(
+            misc, variable=self.preset_var, command=self._preset_changed,
+            values=[t(f"theme_{name or 'builtin'}") for name in PRESETS],
+            fg_color=self.cards["card"], button_color=p["accent"],
+            button_hover_color=p["accent"], text_color=p["fg"],
+        ).pack(anchor="w", pady=(6, 2))
+        self._button(misc, t("theme_export"), self._export_theme).pack(
+            anchor="w", pady=(0, 6))
+
         self.hopeless_var = tk.BooleanVar(value=settings.skip_hopeless)
         self._switch(misc, t("skip_hopeless"), self.hopeless_var,
                      self._misc_changed).pack(anchor="w", pady=3)
@@ -1263,6 +1281,25 @@ class GUI:
         self._twitch.settings.language = code
         self._twitch.settings.save()
         messagebox.showinfo(WINDOW_TITLE, t("language_restart"))
+
+    def _preset_changed(self, _chosen: object = None) -> None:
+        """Обраний набір кольорів. Застосовується одразу, без перезапуску."""
+        label = self.preset_var.get()
+        name = next(
+            (key for key in PRESETS if t(f"theme_{key or 'builtin'}") == label), "",
+        )
+        self._twitch.settings.theme_preset = name
+        self._twitch.settings.save()
+        self._load_palette(self._twitch.settings.dark_theme)
+        self._apply_theme()
+        self._apply_progress_style()
+
+    def _export_theme(self) -> None:
+        """Зберігає поточні кольори у theme.json — щоб було з чого починати."""
+        if export_theme(THEME_FILE, self.palette, self.cards):
+            messagebox.showinfo(WINDOW_TITLE, t("theme_saved", path=str(THEME_FILE)))
+        else:
+            messagebox.showwarning(WINDOW_TITLE, t("theme_save_failed"))
 
     def _mode_changed(self) -> None:
         self._twitch.settings.farm_mode = PriorityMode[self.mode_var.get()]

@@ -310,5 +310,14 @@
   "about_releases": "Versiones",
   "about_author": "Versión {version} · Viktor Hartunh · licencia MIT",
   "skip_hopeless": "Omitir lo que no da tiempo",
-  "skip_hopeless_hint": "Se omiten las campañas donde ningún drop llega a tiempo. Las que tienen al menos una recompensa alcanzable se mantienen."
+  "skip_hopeless_hint": "Se omiten las campañas donde ningún drop llega a tiempo. Las que tienen al menos una recompensa alcanzable se mantienen.",
+  "theme_builtin": "Tema: integrado",
+  "theme_ocean": "Tema: océano",
+  "theme_forest": "Tema: bosque",
+  "theme_ember": "Tema: brasa",
+  "theme_grape": "Tema: uva",
+  "theme_mono": "Tema: mono",
+  "theme_export": "Guardar tema en archivo",
+  "theme_saved": "Tema guardado:\n{path}\n\nAbra el archivo y edite los colores: se aplican al cambiar el tema oscuro.",
+  "theme_save_failed": "No se pudo guardar el tema. Detalles en el registro."
 }

@@ -31,6 +31,43 @@ log = logging.getLogger("TwitchDrops")
 # шансів помилитись, а різнобій у файлі читається гірше.
 COLOUR = re.compile(r"^#[0-9a-fA-F]{6}$")
 
+# Готові набори. Головний бар'єр був не у форматі, а в тому, що людина мусила
+# вигадати дванадцять кольорів із нуля; тут вона обирає зі списку, а хто хоче
+# своє — тисне «зберегти у файл» і править готове.
+#
+# Кожен набір задає лише те, що робить його собою: решта береться з вбудованої
+# теми, тож набори не ламаються, коли в палітру додається новий ключ.
+PRESETS: dict[str, dict[str, str]] = {
+    # порожній — вбудована тема, як була
+    "": {},
+    "ocean": {
+        "accent": "#4d7cff", "hover": "#1b2b52", "page": "#0a0f1a",
+        "card": "#141b2d", "line": "#1f2940", "bg": "#0d1220",
+    },
+    "forest": {
+        "accent": "#3fae6a", "hover": "#1c3a28", "page": "#0b120e",
+        "card": "#141d17", "line": "#1f2c24", "bg": "#101711",
+    },
+    "ember": {
+        "accent": "#ff7a33", "hover": "#43230f", "page": "#161010",
+        "card": "#211715", "line": "#30211d", "bg": "#1b1413",
+    },
+    "grape": {
+        "accent": "#c661e0", "hover": "#3d1c47", "page": "#140f17",
+        "card": "#1e1723", "line": "#2c2136", "bg": "#181320",
+    },
+    "mono": {
+        "accent": "#8a8a94", "hover": "#2f2f36", "page": "#121214",
+        "card": "#1b1b1f", "line": "#2a2a30", "bg": "#161618",
+    },
+}
+
+
+def preset(name: str) -> dict[str, str]:
+    """Кольори набору. Невідома назва — вбудована тема, без скарг у журнал:
+    у файлі налаштувань може лежати що завгодно, і це не привід шуміти."""
+    return dict(PRESETS.get(name, {}))
+
 
 def read_overrides(path: Path, allowed: frozenset[str]) -> dict[str, str]:
     """Читає тему з файлу. Повертає лише зрозумілі й дійсні кольори.
@@ -72,3 +109,25 @@ def read_overrides(path: Path, allowed: frozenset[str]) -> dict[str, str]:
 def blended(base: dict[str, str], overrides: dict[str, str]) -> dict[str, str]:
     """Вбудована палітра, поверх якої лягли кольори з теми."""
     return {**base, **{k: v for k, v in overrides.items() if k in base}}
+
+
+def export(path: Path, palette: dict[str, str], cards: dict[str, str]) -> bool:
+    """Записує поточні кольори у файл, щоб було з чого починати свою тему.
+
+    Головний бар'єр для «зроби свою тему» — не формат, а порожній аркуш:
+    дванадцять ключів треба звідкись узяти. Тут людина отримує їх усі, вже з
+    робочими значеннями, і править те, що хоче.
+    """
+    body = {**palette, **cards}
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(dict(sorted(body.items())), ensure_ascii=False, indent=2)
+            + "\n",
+            encoding="utf-8",
+        )
+    except OSError as error:
+        log.warning(f"Тему не збережено ({type(error).__name__}: {error})")
+        return False
+    log.info(f"Тему збережено: {path}")
+    return True
