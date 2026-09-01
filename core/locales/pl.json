@@ -310,5 +310,14 @@
   "about_releases": "Wydania",
   "about_author": "Wersja {version} · Viktor Hartunh · licencja MIT",
   "skip_hopeless": "Pomijaj beznadziejne",
-  "skip_hopeless_hint": "Kampanie, w których żaden drop nie zdąży się ukończyć, są pomijane. Te z choć jedną osiągalną nagrodą zostają."
+  "skip_hopeless_hint": "Kampanie, w których żaden drop nie zdąży się ukończyć, są pomijane. Te z choć jedną osiągalną nagrodą zostają.",
+  "theme_builtin": "Motyw: wbudowany",
+  "theme_ocean": "Motyw: ocean",
+  "theme_forest": "Motyw: las",
+  "theme_ember": "Motyw: żar",
+  "theme_grape": "Motyw: winogrono",
+  "theme_mono": "Motyw: mono",
+  "theme_export": "Zapisz motyw do pliku",
+  "theme_saved": "Motyw zapisano:\n{path}\n\nOtwórz plik i zmień kolory — zadziałają po przełączeniu ciemnego motywu.",
+  "theme_save_failed": "Nie udało się zapisać motywu. Szczegóły w dzienniku."
 }

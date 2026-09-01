@@ -310,5 +310,14 @@
   "about_releases": "Versions",
   "about_author": "Version {version} · Viktor Hartunh · licence MIT",
   "skip_hopeless": "Ignorer l'infaisable",
-  "skip_hopeless_hint": "Les campagnes où aucun drop ne peut être terminé à temps sont ignorées. Celles avec au moins une récompense atteignable restent."
+  "skip_hopeless_hint": "Les campagnes où aucun drop ne peut être terminé à temps sont ignorées. Celles avec au moins une récompense atteignable restent.",
+  "theme_builtin": "Thème : intégré",
+  "theme_ocean": "Thème : océan",
+  "theme_forest": "Thème : forêt",
+  "theme_ember": "Thème : braise",
+  "theme_grape": "Thème : raisin",
+  "theme_mono": "Thème : mono",
+  "theme_export": "Enregistrer le thème",
+  "theme_saved": "Thème enregistré :\n{path}\n\nOuvrez le fichier et modifiez les couleurs — elles s'appliquent en basculant le thème sombre.",
+  "theme_save_failed": "Impossible d'enregistrer le thème. Détails dans le journal."
 }

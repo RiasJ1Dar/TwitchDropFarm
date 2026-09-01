@@ -310,5 +310,14 @@
   "about_releases": "Releases",
   "about_author": "Version {version} · Viktor Hartunh · MIT-Lizenz",
   "skip_hopeless": "Aussichtsloses überspringen",
-  "skip_hopeless_hint": "Kampagnen, bei denen kein Drop mehr rechtzeitig fertig wird, werden übersprungen. Solche mit mindestens einer erreichbaren Belohnung bleiben."
+  "skip_hopeless_hint": "Kampagnen, bei denen kein Drop mehr rechtzeitig fertig wird, werden übersprungen. Solche mit mindestens einer erreichbaren Belohnung bleiben.",
+  "theme_builtin": "Thema: Standard",
+  "theme_ocean": "Thema: Ozean",
+  "theme_forest": "Thema: Wald",
+  "theme_ember": "Thema: Glut",
+  "theme_grape": "Thema: Traube",
+  "theme_mono": "Thema: Mono",
+  "theme_export": "Thema in Datei speichern",
+  "theme_saved": "Thema gespeichert:\n{path}\n\nDatei öffnen und Farben anpassen — sie greifen beim Umschalten des dunklen Themas.",
+  "theme_save_failed": "Thema konnte nicht gespeichert werden. Details im Protokoll."
 }
