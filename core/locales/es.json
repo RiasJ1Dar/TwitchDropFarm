@@ -322,5 +322,10 @@
   "theme_save_failed": "No se pudo guardar el tema. Detalles en el registro.",
   "about_open": "Acerca de…",
   "about_thanks": "La aplicación no envía sus datos a ninguna parte: todo lo que sabe está en la carpeta de estado de este equipo. El código es abierto.",
-  "close": "Cerrar"
+  "close": "Cerrar",
+  "wiz_no_chats": "Aún no hay chats",
+  "keep_log": "Guardar registro",
+  "log_open": "Abrir carpeta",
+  "log_hint": "Vacío significa Documentos\\TwitchDropFarm. El registro sirve cuando algo falla: muestra qué hacía la aplicación.",
+  "log_open_failed": "No se pudo abrir la carpeta del registro: {error}"
 }

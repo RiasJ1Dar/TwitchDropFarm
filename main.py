@@ -24,10 +24,10 @@ if __name__ == "__main__":
     from core.config import FILE_LOG_FORMAT as FILE_FORMATTER
     from core.config import LOCK_FILE as LOCK_PATH
     from core.config import LOG_BACKUPS, LOG_MAX_BYTES
-    from core.config import LOG_FILE as LOG_PATH
     from core.config import TRACE as CALL
     from core.config import VERBOSITY as LOGGING_LEVELS
     from core.config import VERSION as __version__
+    from core.config import log_path as log_file
     from core.events import (
         CampaignFinished,
         Command,
@@ -115,11 +115,22 @@ if __name__ == "__main__":
     console = logging.StreamHandler(sys.stdout)
     console.setFormatter(OUTPUT_FORMATTER)
     logger.addHandler(console)
-    if settings.log:
-        logger.addHandler(rotating_log_handler(
-            LOG_PATH, max_bytes=LOG_MAX_BYTES, backups=LOG_BACKUPS,
-            formatter=FILE_FORMATTER,
-        ))
+    # ⚠️ Журнал ведеться завжди, коли його не вимкнули. Раніше він вимагав
+    # `--log`, і програма, підняста автозапуском, працювала мовчки: на скаргу
+    # «нічого не фармиться» не було чого читати взагалі. Прапорець лишається —
+    # він вмикає журнал навіть тоді, коли в налаштуваннях його вимкнено.
+    if settings.log or settings.keep_log:
+        target = log_file(settings.log_dir)
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            logger.addHandler(rotating_log_handler(
+                target, max_bytes=LOG_MAX_BYTES, backups=LOG_BACKUPS,
+                formatter=FILE_FORMATTER,
+            ))
+        except OSError as error:
+            # Тека може бути недоступна: чужий диск, права, знімний носій.
+            # Це не привід не запускати фарм — але й мовчати не можна.
+            logger.warning(f"Журнал не ведеться: {target} — {error}")
     logging.getLogger("TwitchDrops.gql").setLevel(settings.debug_gql)
     logging.getLogger("TwitchDrops.websocket").setLevel(settings.debug_ws)
 

@@ -52,6 +52,11 @@ class ConfigShape(TypedDict):
     # Вбудований набір кольорів. Порожньо — вбудована тема. Перекривається
     # файлом theme.json, якщо він є.
     theme_preset: str
+    # Вести журнал у файл. Типово так: без нього скарга «щось не працює»
+    # не має жодного сліду, і причину доводиться шукати запитами до Twitch.
+    keep_log: bool
+    # Куди складати журнал. Порожньо — «Документи\TwitchDropFarm».
+    log_dir: str
     image_size: int
     inventory_view: str
     browser_path: str
@@ -100,6 +105,8 @@ DEFAULTS: ConfigShape = {
     # хоче не витрачати години на безнадійне — вмикає свідомо.
     "skip_hopeless": False,
     "theme_preset": "",
+    "keep_log": True,
+    "log_dir": "",
     # Розмір картинки в списку. Кеш на диску завжди більший, тож це число
     # можна міняти будь-коли — качати наново нічого не доведеться.
     "image_size": DEFAULT_IMAGE_SIZE,

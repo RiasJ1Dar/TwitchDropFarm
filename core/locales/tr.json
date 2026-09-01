@@ -322,5 +322,10 @@
   "theme_save_failed": "Tema kaydedilemedi. Ayrıntılar günlükte.",
   "about_open": "Hakkında…",
   "about_thanks": "Uygulama verilerinizi hiçbir yere göndermez: bildiği her şey bu bilgisayardaki durum klasöründedir. Kaynak kodu açıktır.",
-  "close": "Kapat"
+  "close": "Kapat",
+  "wiz_no_chats": "Henüz sohbet yok",
+  "keep_log": "Günlük tut",
+  "log_open": "Klasörü aç",
+  "log_hint": "Boş bırakılırsa Belgeler\\TwitchDropFarm. Bir şeyler ters gittiğinde günlük işe yarar: uygulamanın ne yaptığını gösterir.",
+  "log_open_failed": "Günlük klasörü açılamadı: {error}"
 }

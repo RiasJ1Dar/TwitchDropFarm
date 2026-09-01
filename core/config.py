@@ -56,6 +56,7 @@ TOKEN_FILE = STATE_DIR / "auth.json"
 COOKIE_FILE = STATE_DIR / "cookies.jar"
 CONFIG_FILE = STATE_DIR / "settings.json"
 LOG_FILE = STATE_DIR / "log.txt"
+
 # Історія нагород. Окремо від журналу: той ротується, а нагороди мають
 # лишатись назавжди — інакше сліду про них не буде взагалі.
 HISTORY_FILE = STATE_DIR / "history.jsonl"
@@ -108,6 +109,29 @@ def clamp_image_size(value: object) -> int:
     return max(MIN_IMAGE_SIZE, min(MAX_IMAGE_SIZE, wanted))
 LOCK_FILE = STATE_DIR / "lock.file"
 BROWSER_PROFILE = STATE_DIR / "browser_profile"
+def documents_dir() -> Path:
+    """Тека «Документи» користувача, якщо вона взагалі є.
+
+    Типове місце для журналу: людина має знайти його сама, не питаючи, де
+    ховається `%LOCALAPPDATA%`. ⚠️ Не завжди `~/Documents`: OneDrive часто
+    перенаправляє цю теку до себе, а на не-Windows її може не бути зовсім —
+    тому перевіряємо обидва варіанти й тихо відступаємо до теки стану.
+    """
+    for candidate in (
+        Path.home() / "Documents",
+        Path.home() / "OneDrive" / "Documents",
+        Path.home() / "OneDrive" / "Документи",
+    ):
+        if candidate.is_dir():
+            return candidate / "TwitchDropFarm"
+    return STATE_DIR
+
+
+def log_path(folder: str = "") -> Path:
+    """Куди писати журнал. Порожня тека — типове місце в «Документах»."""
+    if folder.strip():
+        return Path(folder.strip()) / "log.txt"
+    return documents_dir() / "log.txt"
 
 
 # ---------------------------------------------------------------- ритм роботи
