@@ -187,6 +187,10 @@ class GUI:
         self._apply_ui_fonts()
         # чи є куди ховатись; уточнюється, коли трей реально піднявся
         self._tray_available = False
+        # питання про оновлення чекає, поки вікно намальоване й видиме
+        self._pending_update: str | None = None
+        self._ui_ready = False
+        self._asking_update = False
         # стан кожного вебсокета окремо: індекс -> (статус, кількість топіків)
         self._ws_state: dict[int, tuple[str, int]] = {}
         self._images: dict[tuple[str, int], Any] = {}
@@ -1625,12 +1629,10 @@ class GUI:
                 t("update_ready_log", version=event.version, files=event.files,
                   unit=what, size=size), "ok",
             )
-            if messagebox.askyesno(
-                WINDOW_TITLE,
-                t("update_ask", version=event.version, files=event.files,
-                  unit=what, size=size),
-            ):
-                self._send(CommandType.APPLY_UPDATE)
+            self._pending_update = t(
+                "update_ask", version=event.version, files=event.files,
+                unit=what, size=size)
+            self._maybe_ask_update()
         elif isinstance(event, UpdateFailed):
             self._append_log(t("update_fail_log", reason=event.reason), "err")
         elif isinstance(event, ProgressStalled):
@@ -1955,10 +1957,47 @@ class GUI:
         ):
             self.request_close()
 
+    def _maybe_ask_update(self) -> None:
+        """Питає про оновлення тоді, коли є кому відповідати.
+
+        ⚠️ Раніше `askyesno` викликався прямо з обробника події. Перевірка
+        оновлень іде на старті майнера, тому питання виринало ПЕРЕД тим, як
+        з'явиться вікно: людина бачила голий діалог посеред екрана, ще не
+        побачивши самої програми. А коли програма піднімалась одразу в трей,
+        питання зависало поверх чужих вікон, і звідки воно — не зрозуміло.
+
+        Тому подію запам'ятовуємо, а питаємо, коли вікно намальоване й видиме.
+        Сховане в трей не чіпаємо: спитаємо, щойно його розгорнуть.
+        """
+        if self._pending_update is None or not self._ui_ready:
+            return
+        if self._asking_update:
+            return
+        try:
+            if not self.root.winfo_viewable():
+                return
+        except tk.TclError:
+            return
+        question = self._pending_update
+        self._pending_update = None
+        self._asking_update = True
+        try:
+            # `parent` обов'язковий: без нього діалог — окреме вікно верхнього
+            # рівня, яке Windows може підняти поперед програми й показати
+            # окремою кнопкою на панелі задач.
+            agreed = messagebox.askyesno(WINDOW_TITLE, question,
+                                         parent=self.root)
+        finally:
+            self._asking_update = False
+        if agreed:
+            self._send(CommandType.APPLY_UPDATE)
+
     def show_window(self) -> None:
         self.root.deiconify()
         self.root.lift()
         self.root.focus_force()
+        # людина щойно розгорнула вікно — саме час спитати те, що чекало
+        self._maybe_ask_update()
 
     def on_window_x(self) -> None:
         """Хрестик згортає в трей, а не вбиває майнер.
@@ -1991,6 +2030,9 @@ class GUI:
                 self.root.update()
             except tk.TclError:
                 break  # вікно закрили
+            # перший успішний `update()` означає, що вікно вже намальоване
+            self._ui_ready = True
+            self._maybe_ask_update()
             await asyncio.sleep(TK_TICK)
 
     async def wait_until_closed(self) -> None:

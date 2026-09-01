@@ -304,6 +304,10 @@ if __name__ == "__main__":
                 client.events.log(f"Оновлення встановлено, версія {__version__}.")
             if outcome != "none":
                 _update.forget_outcome()
+            # Програма піднялась — копія попередньої збірки більше не потрібна.
+            _update.drop_backup()
+            # І теки від запусків, які колись не завершились по-людськи.
+            _update.sweep_stale_bundles()
 
         debug_reboot_task = None
         if args.debug_reboot:
