@@ -297,5 +297,18 @@
   "ws_line": "{state} · {topics} tematów",
   "ws_some": "{ok}/{total} połączeń",
   "tg_description": "Steruje minerem Twitch Drop Farm: stan farmienia, ekwipunek, kampanie i raporty. Użyj przycisków poniżej lub /help.",
-  "progress_rainbow": "Tęczowy pasek postępu"
+  "progress_rainbow": "Tęczowy pasek postępu",
+  "soon_title": "Już prawie",
+  "ending_title": "Wkrótce koniec",
+  "soon_empty": "Na razie pusto",
+  "minutes_left_short": "{minutes} min",
+  "hours_left_short": "{hours} godz",
+  "about_title": "O programie",
+  "about_text": "Farmi timed dropy na Twitchu bez otwartej przeglądarki. Jeden plik, bez dodatkowych środowisk. Jak to działa i co robić przy problemach — na wiki.",
+  "about_wiki": "Wiki",
+  "about_repo": "Repozytorium",
+  "about_releases": "Wydania",
+  "about_author": "Wersja {version} · Viktor Hartunh · licencja MIT",
+  "skip_hopeless": "Pomijaj beznadziejne",
+  "skip_hopeless_hint": "Kampanie, w których żaden drop nie zdąży się ukończyć, są pomijane. Te z choć jedną osiągalną nagrodą zostają."
 }

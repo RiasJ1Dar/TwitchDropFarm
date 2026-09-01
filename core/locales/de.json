@@ -297,5 +297,18 @@
   "ws_line": "{state} · {topics} Themen",
   "ws_some": "{ok}/{total} Verbindungen",
   "tg_description": "Steuert den Twitch-Drop-Farm-Miner: Farm-Status, Inventar, Kampagnen und Berichte. Nutze die Buttons unten oder /help.",
-  "progress_rainbow": "Regenbogen-Fortschrittsbalken"
+  "progress_rainbow": "Regenbogen-Fortschrittsbalken",
+  "soon_title": "Fast fertig",
+  "ending_title": "Enden bald",
+  "soon_empty": "Noch nichts",
+  "minutes_left_short": "{minutes} Min",
+  "hours_left_short": "{hours} Std",
+  "about_title": "Über",
+  "about_text": "Farmt Twitch-Timed-Drops ohne offenen Browser. Eine Datei, keine zusätzlichen Laufzeiten. Wie es funktioniert und was bei Problemen zu tun ist — im Wiki.",
+  "about_wiki": "Wiki",
+  "about_repo": "Repository",
+  "about_releases": "Releases",
+  "about_author": "Version {version} · Viktor Hartunh · MIT-Lizenz",
+  "skip_hopeless": "Aussichtsloses überspringen",
+  "skip_hopeless_hint": "Kampagnen, bei denen kein Drop mehr rechtzeitig fertig wird, werden übersprungen. Solche mit mindestens einer erreichbaren Belohnung bleiben."
 }

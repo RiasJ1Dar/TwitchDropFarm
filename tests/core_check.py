@@ -1491,6 +1491,8 @@ def theme_checks() -> None:
     check("вбудована палітра не псується", DARK["accent"] == "#9147ff")
 
 
+
+
 # ------------------------------------------------------------------ побачене
 
 def seen_checks() -> None:
@@ -1625,6 +1627,36 @@ def model_cache_checks() -> None:
     fresh = Campaign(owner, payload("DIRECT_ENTITLEMENT"), {})
     check("нова кампанія рахує наново, а не з чужого кеша",
           fresh.has_real_item and not fresh.only_cosmetics)
+
+    # ⚠️ «Не братися за безнадійне». Критерій навмисно не `slack < 1`:
+    # `Campaign.slack` — це мінімум по дропах, тобто кампанія «не
+    # встигається» вже тоді, коли не закривається лише найдовший дроп. Для
+    # попередження це правильно, для пропуску фарму — згубно.
+    soon = (datetime.now(timezone.utc) + timedelta(minutes=30)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ")
+
+    def timed(*needs: int, ends: str = soon) -> dict:
+        body = payload(*["DIRECT_ENTITLEMENT"] * len(needs))
+        body["endAt"] = ends
+        for drop, minutes in zip(body["timeBasedDrops"], needs, strict=True):
+            drop["requiredMinutesWatched"] = minutes
+            drop["endAt"] = ends
+        return body
+
+    # до кінця пів години: 20 хв встигнути, 600 — ні
+    doomed = Campaign(owner, timed(600, 900), {})
+    partly = Campaign(owner, timed(600, 20), {})
+    check("жоден дроп не встигнути — безнадійна", doomed.hopeless)
+    check("є досяжна нагорода — не безнадійна", not partly.hopeless,
+          f"slack={partly.slack:.2f}")
+    check("а ось `slack` таку кампанію вже засуджує",
+          partly.slack < 1, str(partly.slack))
+
+    roomy = Campaign(owner, timed(600, 900,
+                                  ends="2099-01-01T00:00:00Z"), {})
+    check("часу вдосталь — не безнадійна", not roomy.hopeless)
+    check("порожня кампанія не вважається безнадійною",
+          not Campaign(owner, payload(), {}).hopeless)
 
     # ⚠️ Головне через кеш: `available_to_me` мусить лишитись живою. Вона
     # питає налаштування, і якби кеш заліз і сюди, галочка «фармити косметику»

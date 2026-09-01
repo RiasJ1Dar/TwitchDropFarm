@@ -297,5 +297,18 @@
   "ws_line": "{state} · {topics} sujets",
   "ws_some": "{ok}/{total} connexions",
   "tg_description": "Pilote le mineur Twitch Drop Farm : état du farm, inventaire, campagnes et rapports. Utilisez les boutons ci-dessous ou /help.",
-  "progress_rainbow": "Barre de progression arc-en-ciel"
+  "progress_rainbow": "Barre de progression arc-en-ciel",
+  "soon_title": "Bientôt prêts",
+  "ending_title": "Bientôt terminées",
+  "soon_empty": "Rien pour l'instant",
+  "minutes_left_short": "{minutes} min",
+  "hours_left_short": "{hours} h",
+  "about_title": "À propos",
+  "about_text": "Farme les timed drops Twitch sans navigateur ouvert. Un seul fichier, sans runtime supplémentaire. Fonctionnement et dépannage — dans le wiki.",
+  "about_wiki": "Wiki",
+  "about_repo": "Dépôt",
+  "about_releases": "Versions",
+  "about_author": "Version {version} · Viktor Hartunh · licence MIT",
+  "skip_hopeless": "Ignorer l'infaisable",
+  "skip_hopeless_hint": "Les campagnes où aucun drop ne peut être terminé à temps sont ignorées. Celles avec au moins une récompense atteignable restent."
 }

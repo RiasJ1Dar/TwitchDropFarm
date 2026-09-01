@@ -297,5 +297,18 @@
   "ws_line": "{state} · {topics} tópicos",
   "ws_some": "{ok}/{total} ligações",
   "tg_description": "Controla o minerador Twitch Drop Farm: estado do farm, inventário, campanhas e relatórios. Use os botões abaixo ou /help.",
-  "progress_rainbow": "Barra de progresso multicolor"
+  "progress_rainbow": "Barra de progresso multicolor",
+  "soon_title": "Quase prontos",
+  "ending_title": "Terminam em breve",
+  "soon_empty": "Ainda nada",
+  "minutes_left_short": "{minutes} min",
+  "hours_left_short": "{hours} h",
+  "about_title": "Sobre",
+  "about_text": "Faz farm de timed drops da Twitch sem browser aberto. Um único ficheiro, sem runtimes extra. Como funciona e o que fazer se falhar — na wiki.",
+  "about_wiki": "Wiki",
+  "about_repo": "Repositório",
+  "about_releases": "Versões",
+  "about_author": "Versão {version} · Viktor Hartunh · licença MIT",
+  "skip_hopeless": "Ignorar o que não dá tempo",
+  "skip_hopeless_hint": "Campanhas onde nenhum drop dá tempo são ignoradas. As que têm pelo menos uma recompensa alcançável ficam."
 }

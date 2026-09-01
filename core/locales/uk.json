@@ -297,5 +297,18 @@
   "ws_line": "{state} · {topics} топіків",
   "ws_some": "{ok}/{total} зʼєднань",
   "tg_description": "Керує майнером Twitch Drop Farm: стан фарму, інвентар, кампанії та звіти. Тисніть кнопки внизу або /help.",
-  "progress_rainbow": "Переливчаста смуга прогресу"
+  "progress_rainbow": "Переливчаста смуга прогресу",
+  "soon_title": "Ось-ось заберемо",
+  "ending_title": "Скоро завершаться",
+  "soon_empty": "Поки порожньо",
+  "minutes_left_short": "{minutes} хв",
+  "hours_left_short": "{hours} год",
+  "about_title": "Про програму",
+  "about_text": "Фарм timed drops на Twitch без відкритого браузера. Один файл, без сторонніх рантаймів. Як усе влаштовано й що робити, коли щось не так, — у вікі.",
+  "about_wiki": "Вікі",
+  "about_repo": "Репозиторій",
+  "about_releases": "Релізи",
+  "about_author": "Версія {version} · Viktor Hartunh · ліцензія MIT",
+  "skip_hopeless": "Не братися за безнадійне",
+  "skip_hopeless_hint": "Кампанії, де до кінця не встигнути жодного дропа, не фармляться. Ті, де досяжна хоч одна нагорода, лишаються."
 }

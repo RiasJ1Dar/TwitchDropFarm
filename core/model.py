@@ -467,6 +467,20 @@ class Campaign:
         return min((d.slack for d in self.all_drops), default=math.inf)
 
     @property
+    def hopeless(self) -> bool:
+        """Чи не встигаємо взагалі нічого — жодного дропа до кінця кампанії.
+
+        ⚠️ Це НЕ те саме, що `slack < 1`. `slack` бере мінімум по дропах, тож
+        кампанія «не встигається» вже тоді, коли не закривається лише
+        найдовший дроп, — і саме так її розуміє попередження `DeadlineRisk`
+        («не закриємо повністю»). Для рішення «не братися взагалі» такий
+        критерій був би згубним: кампанію з трьома дропами, де перші два
+        встигаються, ми б викинули цілком.
+        """
+        candidates = [d for d in self.all_drops if d.farmable()]
+        return bool(candidates) and all(d.slack < 1 for d in candidates)
+
+    @property
     def share(self) -> float:
         return sum(d.share for d in self.all_drops) / self.total if self.total else 0.0
 
