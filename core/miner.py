@@ -138,6 +138,8 @@ class Miner:
         self.wanted = []  # сеттер нижче будує ще й індекс пріоритетів
         self.channels: OrderedDict[int, Channel] = OrderedDict()
         self.watching: Slot[Channel] = Slot()
+        # топік «зміна гри» активного каналу; тримаємо ім'я, щоб відписати
+        self._settings_topic: str | None = None
 
         self._tasks = TaskKeeper()
         self._watch_task: asyncio.Task[None] | None = None
@@ -414,6 +416,7 @@ class Miner:
         return channel.from_allowlist_flag and not current.from_allowlist_flag
 
     def watch(self, channel: Channel, *, announce: bool = True) -> None:
+        self._follow_settings(channel)
         self.watching.put(channel)
         self._stall_since = None
         self._stall_alerted = False
@@ -427,7 +430,27 @@ class Miner:
             if (drop := campaign.next_drop) is not None:
                 drop.show()
 
+    def _follow_settings(self, channel: Channel | None) -> None:
+        """Слухати зміну гри — лише на каналі, який дивимось.
+
+        Масово цей топік не підписуємо: він з'їдав половину місткості PubSub,
+        роблячи по суті те саме, що й «стрім піднявся/впав». А от на активному
+        каналі він потрібен: стрімер може перемкнути гру, не перериваючи
+        трансляції, і тоді хвилини йдуть у порожнечу.
+        """
+        previous = self._settings_topic
+        if previous is not None:
+            self.topics.unsubscribe([previous])
+            self._settings_topic = None
+        if channel is None:
+            return
+        subscription = pubsub.channel_subscription(
+            "settings", channel.id, self.on_stream_settings)
+        self.topics.subscribe([subscription])
+        self._settings_topic = subscription.name
+
     def stop_watching(self) -> None:
+        self._follow_settings(None)
         self.watching.clear()
         self.events.emit(WatchingChanged(channel=None))
 
@@ -1517,13 +1540,12 @@ class Miner:
         for channel in keep:
             self.channels[channel.id] = channel
 
+        # Тільки «стрім піднявся/впав». Зміну гри слухаємо окремо й лише на
+        # тому каналі, який дивимось, — це вдвічі збільшує, скільки каналів
+        # узагалі влазить у поле зору.
         self.topics.subscribe([
-            sub
+            pubsub.channel_subscription("state", channel_id, self.on_stream_state)
             for channel_id in self.channels
-            for sub in (
-                pubsub.channel_subscription("state", channel_id, self.on_stream_state),
-                pubsub.channel_subscription("settings", channel_id, self.on_stream_settings),
-            )
         ])
         self._publish_channels()
 

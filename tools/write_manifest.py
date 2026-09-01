@@ -26,7 +26,12 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from core.toolbox import force_utf8_console  # noqa: E402
-from core.update import build_manifest, file_sha256, sign_manifest  # noqa: E402
+from core.update import (  # noqa: E402
+    build_manifest,
+    file_sha256,
+    sign_manifest,
+    verify_signature,
+)
 
 
 def main() -> int:
@@ -48,7 +53,24 @@ def main() -> int:
     secret = os.environ.get("MANIFEST_SIGNING_KEY", "").strip()
     if secret:
         payload = sign_manifest(payload, secret)
-        print("манифест підписано")
+        # ⚠️ ЗАПОБІЖНИК. Підписати мало — треба перевірити тим самим кодом,
+        # яким це робить програма в людини. Без цієї перевірки ключ у секреті
+        # GitHub розійшовся з публічним у `core/update.py`, і автооновлення
+        # мовчки не працювало ДВА ТИЖНІ: релізи виходили, підпис у манифесті
+        # був, програма його чесно відкидала, а виглядало це як «оновлення не
+        # приходить». Помилку неможливо помітити з боку CI — лише звідси.
+        try:
+            verify_signature(payload)
+        except Exception as error:
+            print(
+                "ПІДПИС НЕ СХОДИТЬСЯ з MANIFEST_PUBLIC_KEY у core/update.py: "
+                f"{error}. "
+                "Секрет MANIFEST_SIGNING_KEY не відповідає ключу в коді. "
+                "Реліз із таким манифестом не встановиться НІ В КОГО.",
+                file=sys.stderr,
+            )
+            return 3
+        print("манифест підписано, підпис перевірено")
     elif os.environ.get("REQUIRE_MANIFEST_SIGNATURE", "").strip().lower() in (
         "1", "true", "yes",
     ):

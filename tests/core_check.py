@@ -1429,6 +1429,21 @@ def update_checks() -> None:
         except ValueError:
             need = True
         check("без підпису відмова і з вихідників", need)
+
+        # ⚠️ Ключ у секреті GitHub може розійтися з публічним у коді, і
+        # тоді релізи виходять «підписані», а не встановлюються НІ В КОГО.
+        # Саме так автооновлення мовчки не працювало два тижні, з 1.0.6.
+        # Запобіжник живе у `tools/write_manifest.py`; тут перевіряємо те,
+        # на чому він стоїть: чужий ключ мусить давати відмову.
+        stranger = Ed25519PrivateKey.generate().private_bytes(
+            Encoding.Raw, PrivateFormat.Raw, NoEncryption()).hex()
+        foreign = update.sign_manifest(dict(payload), stranger)
+        try:
+            update.verify_signature(foreign)
+            caught = False
+        except ValueError:
+            caught = True
+        check("підпис чужим ключем не проходить", caught)
     finally:
         update.MANIFEST_PUBLIC_KEY = old_pub
 
