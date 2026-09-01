@@ -289,8 +289,9 @@ class GUI:
                               selectforeground="#ffffff", highlightthickness=0)
         if getattr(self, "tiles_canvas", None) is not None:
             self.tiles_canvas.configure(bg=p["alt"])
-        if getattr(self, "conn_label", None) is not None:
-            self.conn_label.configure(foreground=p["muted"])
+        # `conn_label` і `status_label` тут більше не згадані навмисно: вони
+        # стали `CTkLabel`, фарбуються разом з рештою через `_painted` нижче,
+        # а `foreground` цей віджет не знає взагалі.
         if getattr(self, "title_label", None) is not None:
             # CTkLabel: колір тексту зветься інакше, ніж у ttk
             self.title_label.configure(text_color=p["accent"])
@@ -313,13 +314,28 @@ class GUI:
     # ------------------------------------------------------------ розкладка
 
     def _build_layout(self) -> None:
-        top = ttk.Frame(self.root, padding=(10, 8))
-        top.pack(fill="x")
         pal = self.palette
+        # Шапка — така сама картка, як на вкладці «Майнінг»: заокруглена, з
+        # тонкою межею замість `ttk.Separator`. Роздільна лінія була єдиним, що
+        # відділяло шапку від вкладок, і саме вона виглядала найстарішою.
+        top = self._paint(
+            ctk.CTkFrame(self.root, corner_radius=12, border_width=1),
+            fg_color="card", border_color="line",
+        )
+        top.pack(fill="x", padx=PAD, pady=(8, 0))
+        row = ctk.CTkFrame(top, fg_color="transparent")
+        row.pack(fill="x", padx=PAD, pady=8)
         # Бейдж стану: жива крапка + підпис. Крапка дихає, поки фарм іде, і
         # завмирає в усіх інших станах — рух помітний боковим зором, тож не
         # доводиться вчитуватись у текст, щоб зрозуміти, чи є робота.
-        badge = tk.Frame(top, bg=pal["alt"])
+        #
+        # Бейдж свідомо лишається на `tk.Frame` і `tk.Label`. `PulseDot` — це
+        # `tk.Canvas`, який змішує колір ореолу з кольором тла й тому мусить
+        # знати тло точним рядком; `_set_farm_state` перефарбовує підпис через
+        # `bg`/`fg`, яких у `CTkLabel` немає взагалі. Переведення коштувало б
+        # переписування обох, а виграшу не дало б: плашка без заокруглень тут
+        # не видна — вона того самого кольору, що й картка навколо.
+        badge = tk.Frame(row, bg=pal["alt"])
         badge.pack(side="left")
         self.farm_dot = PulseDot(badge, background=pal["alt"], colour=pal["fg"])
         self.farm_dot.pack(side="left", padx=(6, 0))
@@ -330,17 +346,22 @@ class GUI:
         self.farm_label.pack(side="left")
         self._set_farm_state("idle")
         self.status_var = tk.StringVar(value=t("starting"))
-        self.status_label = ttk.Label(top, textvariable=self.status_var,
-                                      font=("Segoe UI", 11, "bold"))
+        self.status_label = self._paint(
+            ctk.CTkLabel(row, textvariable=self.status_var, anchor="w",
+                         font=("Segoe UI", 13, "bold")),
+            text_color="fg",
+        )
         self.status_label.pack(side="left", padx=(12, 0), fill="x", expand=True)
         self.conn_var = tk.StringVar(value="")
-        self.conn_label = ttk.Label(top, textvariable=self.conn_var,
-                                    foreground=pal["muted"])
+        self.conn_label = self._paint(
+            ctk.CTkLabel(row, textvariable=self.conn_var, anchor="e",
+                         font=("Segoe UI", 11)),
+            text_color="muted",
+        )
         self.conn_label.pack(side="right")
-        ttk.Separator(self.root, orient="horizontal").pack(fill="x")
 
         notebook = ttk.Notebook(self.root)
-        notebook.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        notebook.pack(fill="both", expand=True, padx=PAD, pady=(8, 8))
         self._build_mining_tab(notebook)
         self._build_channels_tab(notebook)
         self._build_inventory_tab(notebook)
