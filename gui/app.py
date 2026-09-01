@@ -263,11 +263,6 @@ class GUI:
         style.theme_use(with_theme)
         style.configure(".", background=p["bg"], foreground=p["fg"],
                         fieldbackground=p["alt"], borderwidth=0)
-        style.configure("TNotebook", background=p["bg"], borderwidth=0)
-        style.configure("TNotebook.Tab", background=p["alt"], foreground=p["fg"],
-                        padding=(14, 7))
-        style.map("TNotebook.Tab", background=[("selected", p["accent"])],
-                  foreground=[("selected", "#ffffff")])
         style.configure("TFrame", background=p["bg"])
         style.configure("TLabel", background=p["bg"], foreground=p["fg"])
         style.configure("TLabelframe", background=p["bg"], foreground=p["fg"])
@@ -449,12 +444,24 @@ class GUI:
         )
         self.conn_label.pack(side="right")
 
-        notebook = ttk.Notebook(self.root)
-        notebook.pack(fill="both", expand=True, padx=PAD, pady=(8, 8))
-        self._build_mining_tab(notebook)
-        self._build_channels_tab(notebook)
-        self._build_inventory_tab(notebook)
-        self._build_settings_tab(notebook)
+        # `CTkTabview` замість `ttk.Notebook`: заокруглена смуга замість
+        # прямокутних язичків. Перехід дешевий саме тому, що вкладки ніде не
+        # перемикаються з коду — жодного `.select()` у проєкті немає, тож
+        # прив'язки до їхніх назв (а вони перекладені дев'ятьма мовами) теж.
+        c = self.cards
+        tabs = ctk.CTkTabview(
+            self.root, corner_radius=12, fg_color=c["page"],
+            segmented_button_selected_color=self.palette["accent"],
+            segmented_button_selected_hover_color=self.palette["accent"],
+            segmented_button_unselected_color=c["card"],
+            segmented_button_unselected_hover_color=c["hover"],
+            text_color=self.palette["fg"],
+        )
+        tabs.pack(fill="both", expand=True, padx=PAD, pady=(8, 8))
+        self._build_mining_tab(tabs)
+        self._build_channels_tab(tabs)
+        self._build_inventory_tab(tabs)
+        self._build_settings_tab(tabs)
         # Смуга вже існує — можна вмикати перелив, якщо його обрали минулого разу
         self._apply_progress_style()
 
@@ -651,10 +658,9 @@ class GUI:
         self._progress_job = self.root.after(self.PROGRESS_FRAME_MS,
                                              self._progress_tick)
 
-    def _build_mining_tab(self, notebook: ttk.Notebook) -> None:
+    def _build_mining_tab(self, tabs: ctk.CTkTabview) -> None:
         p, c = self.palette, self.cards
-        tab = ctk.CTkFrame(notebook, corner_radius=0, fg_color=c["page"])
-        notebook.add(tab, text=t("tab_mining"))
+        tab = tabs.add(t("tab_mining"))
         body = ctk.CTkFrame(tab, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=PAD, pady=PAD)
 
@@ -731,9 +737,11 @@ class GUI:
         for tag, colour in (("ok", p["ok"]), ("warn", p["warn"]), ("err", p["err"])):
             self.log.tag_configure(tag, foreground=colour)
 
-    def _build_channels_tab(self, notebook: ttk.Notebook) -> None:
-        tab = ttk.Frame(notebook, padding=10)
-        notebook.add(tab, text=t("tab_channels"))
+    def _build_channels_tab(self, tabs: ctk.CTkTabview) -> None:
+        # Усередині лишається ttk: тут `Treeview`, який не переводимо (замір —
+        # 3026 мс проти 53 мс на 198 рядках).
+        tab = ttk.Frame(tabs.add(t("tab_channels")), padding=10)
+        tab.pack(fill="both", expand=True)
         ttk.Label(
             tab, text=t("channels_hint")
         ).pack(anchor="w", pady=(0, 6))
@@ -766,9 +774,9 @@ class GUI:
         # а не як окрема сіра колонка збоку
         scroll.pack(side="right", fill="y", padx=(2, 0))
 
-    def _build_inventory_tab(self, notebook: ttk.Notebook) -> None:
-        tab = ttk.Frame(notebook, padding=10)
-        notebook.add(tab, text=t("tab_inventory"))
+    def _build_inventory_tab(self, tabs: ctk.CTkTabview) -> None:
+        tab = ttk.Frame(tabs.add(t("tab_inventory")), padding=10)
+        tab.pack(fill="both", expand=True)
 
         bar = ttk.Frame(tab)
         bar.pack(fill="x", pady=(0, 6))
@@ -913,11 +921,10 @@ class GUI:
             if tiles and not self._twitch.settings.drop_images else ""
         )
 
-    def _build_settings_tab(self, notebook: ttk.Notebook) -> None:
+    def _build_settings_tab(self, tabs: ctk.CTkTabview) -> None:
         settings = self._twitch.settings
-        p, c = self.palette, self.cards
-        tab = ctk.CTkFrame(notebook, corner_radius=0, fg_color=c["page"])
-        notebook.add(tab, text=t("tab_settings"))
+        p = self.palette
+        tab = tabs.add(t("tab_settings"))
         body = ctk.CTkFrame(tab, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=PAD, pady=PAD)
         left = ctk.CTkFrame(body, fg_color="transparent")
