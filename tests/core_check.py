@@ -56,6 +56,7 @@ from core.events import (
     RiskSnapshot,
     StatusChanged,
     UpdateAvailable,
+    UpdateFailed,
     WatchingChanged,
     WatchUncounted,
     WindowVisibility,
@@ -1449,6 +1450,38 @@ def update_checks() -> None:
 
     check("інтервал перевірки — 12 годин", UPDATE_CHECK_EVERY == 12 * 60 * 60)
 
+    # Прибирання тек `_MEI*`: воно ВИДАЛЯЄ теки, тому помилка тут дорога.
+    # Перевіряємо обидві обережності — чужу не чіпати, живу не чіпати.
+    with tempfile.TemporaryDirectory() as fake_temp:
+        room = Path(fake_temp)
+        for name in ("_MEI111111", "_MEI333333"):
+            (room / name / "core" / "locales").mkdir(parents=True)
+            (room / name / "core" / "locales" / "uk.json").write_text(
+                "{}", encoding="utf-8")
+        stranger = room / "_MEI222222"
+        (stranger / "core").mkdir(parents=True)
+        (stranger / "core" / "other.txt").write_text("x", encoding="utf-8")
+        orphan, current = room / "_MEI111111", room / "_MEI333333"
+
+        was_frozen, was_temp = update.FROZEN, tempfile.gettempdir
+        had_mei = getattr(sys, "_MEIPASS", None)
+        update.FROZEN = True
+        tempfile.gettempdir = lambda: str(room)
+        sys._MEIPASS = str(current)
+        try:
+            gone = update.sweep_stale_bundles()
+        finally:
+            update.FROZEN = was_frozen
+            tempfile.gettempdir = was_temp
+            if had_mei is None:
+                del sys._MEIPASS
+            else:
+                sys._MEIPASS = had_mei
+
+        check("чужу теку не чіпає", stranger.exists())
+        check("теку поточного запуску не чіпає", current.exists())
+        check("осиротілу нашу теку прибрано", gone == 1 and not orphan.exists())
+
     fake = types.SimpleNamespace(
         _update_plan=None, update_postponed=False, events=Bus(),
         say=lambda text: None,
@@ -1465,6 +1498,23 @@ def update_checks() -> None:
     Miner._offer_update(fake, types.SimpleNamespace(version="1.0.8"), [blob])
     later = [e for e in fake.events.sent if isinstance(e, UpdateAvailable)]
     check("відкладене не нагадує до перезапуску", len(later) == 1)
+
+    # ⚠️ Провал перевірки мусить бути ЧУТНИМ. Зламаний підпис манифесту два
+    # тижні не давав оновитись, і про це не знав ніхто: у вікні порожньо, у
+    # Telegram порожньо, а журнал тоді вівся лише з `--log`.
+    quiet = types.SimpleNamespace(events=Bus(), _update_problem=None)
+    Miner._update_check_failed(quiet, ValueError("підпис манифесту недійсний"))
+    said = [e for e in quiet.events.sent if isinstance(e, UpdateFailed)]
+    check("зламаний підпис — подія, а не тільки журнал", len(said) == 1)
+    Miner._update_check_failed(quiet, ValueError("підпис манифесту недійсний"))
+    check("та сама причина вдруге не повторюється",
+          len([e for e in quiet.events.sent if isinstance(e, UpdateFailed)]) == 1)
+    Miner._update_check_failed(quiet, OSError("мережа впала"))
+    check("обірвана мережа людину не смикає",
+          len([e for e in quiet.events.sent if isinstance(e, UpdateFailed)]) == 1)
+    Miner._update_check_failed(quiet, ValueError("манифест 404 з https://…"))
+    check("404 — це «релізу ще немає», не поломка",
+          len([e for e in quiet.events.sent if isinstance(e, UpdateFailed)]) == 1)
 
 
 # ------------------------------------------------------------------ тема
