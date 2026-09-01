@@ -310,5 +310,14 @@
   "about_releases": "Sürümler",
   "about_author": "Sürüm {version} · Viktor Hartunh · MIT lisansı",
   "skip_hopeless": "Yetişilmeyecekleri atla",
-  "skip_hopeless_hint": "Hiçbir drop'un zamanında tamamlanamayacağı kampanyalar atlanır. En az bir ödüle ulaşılabilenler kalır."
+  "skip_hopeless_hint": "Hiçbir drop'un zamanında tamamlanamayacağı kampanyalar atlanır. En az bir ödüle ulaşılabilenler kalır.",
+  "theme_builtin": "Tema: yerleşik",
+  "theme_ocean": "Tema: okyanus",
+  "theme_forest": "Tema: orman",
+  "theme_ember": "Tema: kor",
+  "theme_grape": "Tema: üzüm",
+  "theme_mono": "Tema: mono",
+  "theme_export": "Temayı dosyaya kaydet",
+  "theme_saved": "Tema kaydedildi:\n{path}\n\nDosyayı açıp renkleri düzenleyin — koyu temayı değiştirince uygulanır.",
+  "theme_save_failed": "Tema kaydedilemedi. Ayrıntılar günlükte."
 }

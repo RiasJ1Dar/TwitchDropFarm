@@ -310,5 +310,14 @@
   "about_releases": "发布",
   "about_author": "版本 {version} · Viktor Hartunh · MIT 许可证",
   "skip_hopeless": "跳过来不及的",
-  "skip_hopeless_hint": "没有任何掉落能按时完成的活动会被跳过；至少还有一个可达奖励的活动会保留。"
+  "skip_hopeless_hint": "没有任何掉落能按时完成的活动会被跳过；至少还有一个可达奖励的活动会保留。",
+  "theme_builtin": "主题：内置",
+  "theme_ocean": "主题：海洋",
+  "theme_forest": "主题：森林",
+  "theme_ember": "主题：余烬",
+  "theme_grape": "主题：葡萄",
+  "theme_mono": "主题：单色",
+  "theme_export": "将主题保存到文件",
+  "theme_saved": "主题已保存：\n{path}\n\n打开文件编辑颜色，切换深色主题后生效。",
+  "theme_save_failed": "无法保存主题，详情见日志。"
 }
