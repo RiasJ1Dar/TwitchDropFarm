@@ -276,12 +276,6 @@ class GUI:
         style.map("TButton",
                   background=[("active", p["accent"]), ("pressed", p["accent"])],
                   foreground=[("active", "#ffffff"), ("pressed", "#ffffff")])
-        style.configure("Accent.TButton", background=p["accent"],
-                        foreground="#ffffff", padding=6)
-        style.map("Accent.TButton",
-                  background=[("active", "#772ce8"), ("pressed", "#5c16c5")],
-                  foreground=[("active", "#ffffff"), ("pressed", "#ffffff")])
-        style.configure("TCheckbutton", background=p["bg"], foreground=p["fg"])
         style.configure("TRadiobutton", background=p["bg"], foreground=p["fg"])
         style.configure("TCombobox", fieldbackground=p["alt"], background=p["alt"],
                         foreground=p["fg"], arrowcolor=p["fg"])
@@ -289,21 +283,73 @@ class GUI:
                   fieldbackground=[("readonly", p["alt"])],
                   foreground=[("readonly", p["fg"])],
                   background=[("readonly", p["alt"])])
-        style.configure("TScrollbar", background=p["alt"], troughcolor=p["bg"],
-                        arrowcolor=p["fg"])
-        style.configure("Horizontal.TScale", background=p["bg"], troughcolor=p["alt"])
-        # рядок трохи вищий за картинку, інакше вона обрізається зверху й знизу;
-        # без картинок висота лишається звичайною, щоб список не був розрідженим
-        row = self._image_size + 4 if self._twitch.settings.drop_images else 24
-        style.configure("Treeview", background=p["alt"], fieldbackground=p["alt"],
-                        foreground=p["fg"], rowheight=row, borderwidth=0)
-        style.configure("Treeview.Heading", background=p["bg"], foreground=p["fg"],
-                        font=("Segoe UI", 9, "bold"))
-        style.map("Treeview", background=[("selected", p["accent"])],
-                  foreground=[("selected", "#ffffff")])
+        # `TScrollbar`, `Horizontal.TScale`, `TCheckbutton` і `Accent.TButton`
+        # звідси прибрані: віджетів, які вони фарбували, у проєкті вже немає
+        # жодного. Мертвий стиль гірший за відсутній — його бачать при читанні
+        # й вирішують, що місце десь оформлене, хоч насправді ні.
+        self._style_tables(style)
         style.configure("TProgressbar", background=p["accent"], troughcolor=p["alt"],
                         thickness=8)
         self._restyle_widgets()
+
+    # Наскільки рядок таблиці вищий за свій вміст. Щільні рядки видають вік
+    # інтерфейсу сильніше за форму: у сучасних списках між рядками є повітря.
+    ROW_PADDING = 14
+    # Висота рядка без картинок. Було 24 — рівно висота тексту, тобто впритул.
+    ROW_PLAIN = 32
+
+    def _style_tables(self, style: ttk.Style) -> None:
+        """Оформлення обох `Treeview`. Віджет лишається ttk — і це навмисно.
+
+        На 198 каналах (`MAX_CHANNELS`) CustomTkinter дає 3026 мс на побудову
+        списку проти 53 мс і 74 мс на оновлення однієї цифри глядачів проти
+        7 мс, тримаючи 990 віджетів замість одного. Вікно крутиться в тому
+        самому потоці, що й asyncio, тож це була б затримка не малювання, а
+        самого фарму. Тому таблиці причісуємо стилем, а не переписуємо.
+
+        Лишається чесний залишок: рядки прямокутні, і заокруглити їх у Tk
+        неможливо. Зменшуємо контраст із рештою вікна, а не ховаємо це.
+        """
+        p, c = self.palette, self.cards
+        # рядок трохи вищий за картинку, інакше вона обрізається зверху й знизу
+        row = (self._image_size + self.ROW_PADDING
+               if self._twitch.settings.drop_images else self.ROW_PLAIN)
+        # Розкладки, а не кольори. Рамку поля й «підняття» заголовка малює сам
+        # елемент розкладки, тож ні `borderwidth`, ні `relief` їх не прибирають:
+        # по краю таблиці лишалась сіра канавка, а заголовки виглядали
+        # натиснутими кнопками з дев'яностих. Прибираємо самі елементи.
+        # Тип розкладки рекурсивний (елемент може мати `children` з такого ж
+        # списку), і в стабах tkinter він не виражений — звідси `Any`.
+        layouts: dict[str, list[tuple[str, Any]]] = {
+            "Table.Treeview": [("Treeview.treearea", {"sticky": "nswe"})],
+            # `cell` лишаємо — саме він малює тло заголовка; викидаємо `border`
+            "Table.Treeview.Heading": [
+                ("Treeheading.cell", {"sticky": "nswe"}),
+                ("Treeheading.padding", {"sticky": "nswe", "children": [
+                    ("Treeheading.text", {"sticky": "we"}),
+                ]}),
+            ],
+        }
+        for name, layout in layouts.items():
+            try:
+                style.layout(name, layout)
+            except tk.TclError as error:
+                # У чужій темі ttk потрібних елементів може не бути — тоді
+                # лишається типова розкладка, з рамкою. Не падаємо, але й не
+                # мовчимо: інакше «звідки канавка» довелось би шукати наосліп.
+                logger.debug(f"Розкладку {name} не замінено: {error}")
+        style.configure("Table.Treeview", background=c["card"],
+                        fieldbackground=c["card"], foreground=p["fg"],
+                        rowheight=row, borderwidth=0, relief="flat")
+        style.configure("Table.Treeview.Heading", background=c["card"],
+                        foreground=p["muted"], font=("Segoe UI", 9, "bold"),
+                        relief="flat", borderwidth=0, padding=(8, 8))
+        style.map("Table.Treeview.Heading",
+                  background=[("active", c["hover"])],
+                  foreground=[("active", p["fg"])],
+                  relief=[("active", "flat"), ("pressed", "flat")])
+        style.map("Table.Treeview", background=[("selected", p["accent"])],
+                  foreground=[("selected", "#ffffff")])
 
     def _restyle_widgets(self) -> None:
         """Те, що ttk не фарбує сам: журнал, списки, шапка."""
@@ -692,7 +738,8 @@ class GUI:
             tab, text=t("channels_hint")
         ).pack(anchor="w", pady=(0, 6))
         columns = ("name", "game", "viewers", "status")
-        self.channel_tree = ttk.Treeview(tab, columns=columns, show="headings")
+        self.channel_tree = ttk.Treeview(tab, columns=columns, show="headings",
+                                         style="Table.Treeview")
         for column, title, width in (
             ("name", t("col_channel"), 200), ("game", t("col_game"), 260),
             ("viewers", t("col_viewers"), 90), ("status", t("col_status"), 140),
@@ -702,10 +749,22 @@ class GUI:
                 column, width=width, anchor="e" if column == "viewers" else "w",
             )
         self.channel_tree.bind("<Double-1>", self._on_channel_activate)
-        scroll = ttk.Scrollbar(tab, command=self.channel_tree.yview)
-        self.channel_tree.configure(yscrollcommand=scroll.set)
-        scroll.pack(side="right", fill="y")
+        self._table_scrollbar(tab, self.channel_tree)
         self.channel_tree.pack(fill="both", expand=True)
+
+    def _table_scrollbar(self, parent: tk.Misc, table: ttk.Treeview) -> None:
+        """`CTkScrollbar` замість `ttk.Scrollbar` — перевірено, з `Treeview`
+        працює: той самий протокол `yview` / `yscrollcommand`, що й у журналі
+        вкладки «Майнінг». Стара смуга зі стрілками й канавкою була найпомітнішим
+        старим елементом на обох вкладках зі списками."""
+        scroll = self._paint(
+            ctk.CTkScrollbar(parent, command=table.yview, width=12),
+            button_color="line", button_hover_color="accent", fg_color="card",
+        )
+        table.configure(yscrollcommand=scroll.set)
+        # канавка того ж кольору, що й таблиця: смуга читається як її частина,
+        # а не як окрема сіра колонка збоку
+        scroll.pack(side="right", fill="y", padx=(2, 0))
 
     def _build_inventory_tab(self, notebook: ttk.Notebook) -> None:
         tab = ttk.Frame(notebook, padding=10)
@@ -730,19 +789,18 @@ class GUI:
         self._build_inventory_tiles(self.inv_body)
         self._show_inventory_view()
 
-    def _build_inventory_list(self, parent: ttk.Frame) -> None:
+    def _build_inventory_list(self, parent: tk.Misc) -> None:
         tab = ttk.Frame(parent)
         self.inv_list = tab
-        self.inv_tree = ttk.Treeview(tab, columns=("progress", "state"), show="tree headings")
+        self.inv_tree = ttk.Treeview(tab, columns=("progress", "state"),
+                                     show="tree headings", style="Table.Treeview")
         self.inv_tree.heading("#0", text=t("col_campaign"))
         self.inv_tree.heading("progress", text=t("col_progress"))
         self.inv_tree.heading("state", text=t("col_status"))
         self.inv_tree.column("#0", width=420)
         self.inv_tree.column("progress", width=120, anchor="center")
         self.inv_tree.column("state", width=160, anchor="w")
-        scroll = ttk.Scrollbar(tab, command=self.inv_tree.yview)
-        self.inv_tree.configure(yscrollcommand=scroll.set)
-        scroll.pack(side="right", fill="y")
+        self._table_scrollbar(tab, self.inv_tree)
         self.inv_tree.pack(fill="both", expand=True)
 
     def _build_inventory_tiles(self, parent: tk.Misc) -> None:
