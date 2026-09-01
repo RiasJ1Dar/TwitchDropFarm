@@ -322,5 +322,10 @@
   "theme_save_failed": "Impossible d'enregistrer le thème. Détails dans le journal.",
   "about_open": "À propos…",
   "about_thanks": "L'application n'envoie vos données nulle part : tout ce qu'elle sait se trouve dans le dossier d'état de cet ordinateur. Le code est ouvert.",
-  "close": "Fermer"
+  "close": "Fermer",
+  "wiz_no_chats": "Aucun chat pour l'instant",
+  "keep_log": "Tenir un journal",
+  "log_open": "Ouvrir le dossier",
+  "log_hint": "Vide signifie Documents\\TwitchDropFarm. Le journal sert quand quelque chose ne va pas : il montre ce que faisait l'application.",
+  "log_open_failed": "Impossible d'ouvrir le dossier du journal : {error}"
 }

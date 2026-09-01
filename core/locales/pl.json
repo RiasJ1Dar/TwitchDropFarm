@@ -322,5 +322,10 @@
   "theme_save_failed": "Nie udało się zapisać motywu. Szczegóły w dzienniku.",
   "about_open": "O programie…",
   "about_thanks": "Program nie wysyła twoich danych nigdzie: wszystko, co wie, leży w folderze stanu na tym komputerze. Kod jest otwarty.",
-  "close": "Zamknij"
+  "close": "Zamknij",
+  "wiz_no_chats": "Brak czatów",
+  "keep_log": "Prowadź dziennik",
+  "log_open": "Otwórz folder",
+  "log_hint": "Puste oznacza Dokumenty\\TwitchDropFarm. Dziennik przydaje się, gdy coś pójdzie nie tak: pokazuje, co program robił.",
+  "log_open_failed": "Nie udało się otworzyć folderu dziennika: {error}"
 }

@@ -34,6 +34,8 @@ from core.config import (
     STALL_LIMIT,
     UPDATE_CHECK_EVERY,
     clamp_image_size,
+    documents_dir,
+    log_path,
 )
 from core.events import (
     CampaignAppeared,
@@ -1459,6 +1461,18 @@ def theme_checks() -> None:
     with tempfile.TemporaryDirectory() as folder:
         path = Path(folder) / "theme.json"
         check("теми немає — і не треба", read_overrides(path, allowed) == {})
+
+        # Журнал: типово в «Документах», щоб людина знайшла його сама, не
+        # питаючи, де ховається %LOCALAPPDATA%.
+        check("порожня тека — типове місце",
+              log_path().name == "log.txt"
+              and log_path().parent == documents_dir())
+        check("своя тека береться як є",
+              log_path(str(Path(folder))) == Path(folder) / "log.txt")
+        check("пробіли навколо шляху не ламають",
+              log_path(f"  {folder}  ") == Path(folder) / "log.txt")
+        check("типова тека завжди існує або відступає до стану",
+              documents_dir().is_absolute())
 
         path.write_text(json.dumps({"accent": "#FF8800", "card": "#101014"}),
                         encoding="utf-8")

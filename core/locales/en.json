@@ -322,5 +322,10 @@
   "theme_save_failed": "Could not save the theme. Details in the log.",
   "about_open": "About…",
   "about_thanks": "The app sends your data nowhere: everything it knows sits in the state folder on this computer. The source is open — you can see exactly what it does.",
-  "close": "Close"
+  "close": "Close",
+  "wiz_no_chats": "No chats yet",
+  "keep_log": "Keep a log",
+  "log_open": "Open folder",
+  "log_hint": "Empty means Documents\\TwitchDropFarm. The log matters when something goes wrong: it shows what the app was actually doing.",
+  "log_open_failed": "Could not open the log folder: {error}"
 }

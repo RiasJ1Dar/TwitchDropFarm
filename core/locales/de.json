@@ -322,5 +322,10 @@
   "theme_save_failed": "Thema konnte nicht gespeichert werden. Details im Protokoll.",
   "about_open": "Über…",
   "about_thanks": "Die App sendet deine Daten nirgendwohin: Alles, was sie weiß, liegt im Zustandsordner auf diesem Rechner. Der Quellcode ist offen.",
-  "close": "Schließen"
+  "close": "Schließen",
+  "wiz_no_chats": "Noch keine Chats",
+  "keep_log": "Protokoll führen",
+  "log_open": "Ordner öffnen",
+  "log_hint": "Leer bedeutet Dokumente\\TwitchDropFarm. Das Protokoll hilft, wenn etwas schiefgeht: Es zeigt, was die App tatsächlich tat.",
+  "log_open_failed": "Protokollordner konnte nicht geöffnet werden: {error}"
 }
