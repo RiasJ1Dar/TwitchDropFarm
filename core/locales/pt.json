@@ -322,5 +322,10 @@
   "theme_save_failed": "Não foi possível guardar o tema. Detalhes no registo.",
   "about_open": "Sobre…",
   "about_thanks": "A aplicação não envia os seus dados para lado nenhum: tudo o que sabe está na pasta de estado deste computador. O código é aberto.",
-  "close": "Fechar"
+  "close": "Fechar",
+  "wiz_no_chats": "Ainda sem chats",
+  "keep_log": "Manter registo",
+  "log_open": "Abrir pasta",
+  "log_hint": "Vazio significa Documentos\\TwitchDropFarm. O registo serve quando algo corre mal: mostra o que a aplicação fazia.",
+  "log_open_failed": "Não foi possível abrir a pasta do registo: {error}"
 }

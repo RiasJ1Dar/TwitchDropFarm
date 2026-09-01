@@ -35,9 +35,11 @@ from core.config import (
     THEME_FILE,
     TILE_SIZE,
     clamp_image_size,
+    documents_dir,
 )
 from core.config import VERSION as __version__
 from core.config import FarmMode as PriorityMode
+from core.config import log_path as log_file
 from core.events import (
     CampaignAppeared,
     ChannelsUpdated,
@@ -566,10 +568,18 @@ class GUI:
             button_hover_color="fg", text_color="fg",
         )
 
-    def _entry(self, parent: tk.Misc) -> ctk.CTkEntry:
+    def _entry(self, parent: tk.Misc, variable: tk.StringVar | None = None,
+               *, placeholder: str = "") -> ctk.CTkEntry:
+        extra: dict[str, Any] = {}
+        if variable is not None:
+            extra["textvariable"] = variable
+        if placeholder:
+            # підказка сірим, поки поле порожнє: інакше незрозуміло, що буде,
+            # якщо нічого не вписати
+            extra["placeholder_text"] = placeholder
         return self._paint(
             ctk.CTkEntry(parent, corner_radius=8, height=30,
-                         font=("Segoe UI", 12)),
+                         font=("Segoe UI", 12), **extra),
             fg_color="alt", border_color="line", text_color="fg",
         )
 
@@ -1170,6 +1180,21 @@ class GUI:
         # Перелив — окремим тумблером, а не заміною: колір за станом несе зміст
         # (іде / стоїть / не зараховується), і хто цим користується, той не має
         # втратити його заради краси.
+        # Журнал: вести чи ні, куди складати, і кнопка «відкрити теку».
+        # Без нього скарга «щось не працює» не має жодного сліду.
+        self.keeplog_var = tk.BooleanVar(value=settings.keep_log)
+        self._switch(misc, t("keep_log"), self.keeplog_var,
+                     self._misc_changed).pack(anchor="w", pady=3)
+        self.logdir_var = tk.StringVar(value=settings.log_dir)
+        log_row = ctk.CTkFrame(misc, fg_color="transparent")
+        log_row.pack(fill="x", pady=(2, 0))
+        self._entry(log_row, self.logdir_var,
+                    placeholder=str(documents_dir())).pack(
+            side="left", fill="x", expand=True)
+        self._button(log_row, t("log_open"), self._open_log_dir,
+                     width=110).pack(side="left", padx=(8, 0))
+        self._hint(misc, t("log_hint")).pack(anchor="w", fill="x", pady=(2, 6))
+
         # Тема: набір зі списку плюс кнопка «зберегти у файл». Правити JSON
         # руками більшість не буде — а обрати зі списку може кожен.
         self.preset_var = tk.StringVar(value=t(f"theme_{settings.theme_preset or 'builtin'}"))
@@ -1275,6 +1300,20 @@ class GUI:
         self._twitch.settings.language = code
         self._twitch.settings.save()
         messagebox.showinfo(WINDOW_TITLE, t("language_restart"))
+
+    def _open_log_dir(self) -> None:
+        """Відкриває теку журналу в провіднику — і створює її, якщо треба.
+
+        Кнопка потрібніша за поле вводу: людина, яка прийшла по журнал, хоче
+        його побачити, а не дізнатись шлях.
+        """
+        folder = log_file(self._twitch.settings.log_dir).parent
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            webbrowser.open(folder.as_uri())
+        except OSError as error:
+            messagebox.showwarning(
+                WINDOW_TITLE, t("log_open_failed", error=str(error)))
 
     def _open_about(self) -> None:
         """Окреме вікно «Про програму»: опис, посилання, версія, автор."""
@@ -1388,6 +1427,8 @@ class GUI:
         settings.check_updates = self.updates_var.get()
         settings.progress_style = "rainbow" if self.rainbow_var.get() else "state"
         settings.skip_hopeless = self.hopeless_var.get()
+        settings.keep_log = self.keeplog_var.get()
+        settings.log_dir = self.logdir_var.get().strip()
         settings.save()
         # CustomTkinter тримає власне поняття теми, і без цього рядка його
         # віджети лишались би світлими в темному вікні (й навпаки)
@@ -1477,7 +1518,8 @@ class GUI:
     def _open_telegram_setup(self) -> None:
         from gui.telegram_setup import TelegramSetup
 
-        window = TelegramSetup(self.root, self._twitch.settings)
+        window = TelegramSetup(self.root, self._twitch.settings,
+                               self.palette, self.cards)
         # підказка й галочка мають наздогнати те, що майстер зберіг
         window.bind("<Destroy>", lambda _event: self._telegram_saved(), add=True)
 
