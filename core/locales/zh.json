@@ -319,5 +319,8 @@
   "theme_mono": "主题：单色",
   "theme_export": "将主题保存到文件",
   "theme_saved": "主题已保存：\n{path}\n\n打开文件编辑颜色，切换深色主题后生效。",
-  "theme_save_failed": "无法保存主题，详情见日志。"
+  "theme_save_failed": "无法保存主题，详情见日志。",
+  "about_open": "关于…",
+  "about_thanks": "程序不会把你的数据发往任何地方：它知道的一切都存在本机的状态目录中。源码开放，可自行查看。",
+  "close": "关闭"
 }

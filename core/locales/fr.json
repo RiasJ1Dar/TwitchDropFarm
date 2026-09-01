@@ -319,5 +319,8 @@
   "theme_mono": "Thème : mono",
   "theme_export": "Enregistrer le thème",
   "theme_saved": "Thème enregistré :\n{path}\n\nOuvrez le fichier et modifiez les couleurs — elles s'appliquent en basculant le thème sombre.",
-  "theme_save_failed": "Impossible d'enregistrer le thème. Détails dans le journal."
+  "theme_save_failed": "Impossible d'enregistrer le thème. Détails dans le journal.",
+  "about_open": "À propos…",
+  "about_thanks": "L'application n'envoie vos données nulle part : tout ce qu'elle sait se trouve dans le dossier d'état de cet ordinateur. Le code est ouvert.",
+  "close": "Fermer"
 }

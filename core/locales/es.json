@@ -319,5 +319,8 @@
   "theme_mono": "Tema: mono",
   "theme_export": "Guardar tema en archivo",
   "theme_saved": "Tema guardado:\n{path}\n\nAbra el archivo y edite los colores: se aplican al cambiar el tema oscuro.",
-  "theme_save_failed": "No se pudo guardar el tema. Detalles en el registro."
+  "theme_save_failed": "No se pudo guardar el tema. Detalles en el registro.",
+  "about_open": "Acerca de…",
+  "about_thanks": "La aplicación no envía sus datos a ninguna parte: todo lo que sabe está en la carpeta de estado de este equipo. El código es abierto.",
+  "close": "Cerrar"
 }
