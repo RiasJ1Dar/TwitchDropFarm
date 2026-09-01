@@ -319,5 +319,8 @@
   "theme_mono": "Tema: mono",
   "theme_export": "Temayı dosyaya kaydet",
   "theme_saved": "Tema kaydedildi:\n{path}\n\nDosyayı açıp renkleri düzenleyin — koyu temayı değiştirince uygulanır.",
-  "theme_save_failed": "Tema kaydedilemedi. Ayrıntılar günlükte."
+  "theme_save_failed": "Tema kaydedilemedi. Ayrıntılar günlükte.",
+  "about_open": "Hakkında…",
+  "about_thanks": "Uygulama verilerinizi hiçbir yere göndermez: bildiği her şey bu bilgisayardaki durum klasöründedir. Kaynak kodu açıktır.",
+  "close": "Kapat"
 }

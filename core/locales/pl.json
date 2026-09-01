@@ -319,5 +319,8 @@
   "theme_mono": "Motyw: mono",
   "theme_export": "Zapisz motyw do pliku",
   "theme_saved": "Motyw zapisano:\n{path}\n\nOtwórz plik i zmień kolory — zadziałają po przełączeniu ciemnego motywu.",
-  "theme_save_failed": "Nie udało się zapisać motywu. Szczegóły w dzienniku."
+  "theme_save_failed": "Nie udało się zapisać motywu. Szczegóły w dzienniku.",
+  "about_open": "O programie…",
+  "about_thanks": "Program nie wysyła twoich danych nigdzie: wszystko, co wie, leży w folderze stanu na tym komputerze. Kod jest otwarty.",
+  "close": "Zamknij"
 }

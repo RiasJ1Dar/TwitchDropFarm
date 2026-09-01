@@ -1047,7 +1047,11 @@ class GUI:
         settings = self._twitch.settings
         p = self.palette
         tab = tabs.add(t("tab_settings"))
-        body = ctk.CTkFrame(tab, fg_color="transparent")
+        # ⚠️ Прокрутка обов'язкова: на зменшеному вікні (а програма живе в
+        # треї й часто відкривається невеликою) нижні пункти — тема, «не
+        # братися за безнадійне», Telegram, «Про програму» — просто
+        # обрізались, і дістатись до них було нічим.
+        body = ctk.CTkScrollableFrame(tab, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=PAD, pady=PAD)
         left = ctk.CTkFrame(body, fg_color="transparent")
         left.pack(side="left", fill="both", expand=True, padx=(0, PAD))
@@ -1198,20 +1202,10 @@ class GUI:
         self.tg_hint.pack(anchor="w", fill="x", pady=(6, 0))
 
         about = self._block(right, t("about_title"), top=PAD)
-        self._hint(about, t("about_text")).pack(anchor="w", fill="x")
-        links = ctk.CTkFrame(about, fg_color="transparent")
-        links.pack(anchor="w", fill="x", pady=(8, 0))
-        # Вікі першою: там пояснено, як усе працює, і саме туди має піти
-        # людина, а не в код.
-        for label, url in (
-            (t("about_wiki"), f"https://github.com/{GITHUB_REPO}/wiki"),
-            (t("about_repo"), f"https://github.com/{GITHUB_REPO}"),
-            (t("about_releases"), f"https://github.com/{GITHUB_REPO}/releases"),
-        ):
-            self._button(links, label, lambda link=url: webbrowser.open(link),
-                         width=150).pack(side="left", padx=(0, 8))
-        self._hint(about, t("about_author", version=__version__)).pack(
-            anchor="w", fill="x", pady=(8, 0))
+        # Окремою кнопкою, а не текстом у картці: у вузькій колонці опис
+        # обрізався на півслові й читати його було нічим.
+        self._button(about, t("about_open"), self._open_about).pack(
+            anchor="w", pady=(2, 0))
 
     # ------------------------------------------------------------ дії користувача
 
@@ -1281,6 +1275,47 @@ class GUI:
         self._twitch.settings.language = code
         self._twitch.settings.save()
         messagebox.showinfo(WINDOW_TITLE, t("language_restart"))
+
+    def _open_about(self) -> None:
+        """Окреме вікно «Про програму»: опис, посилання, версія, автор."""
+        p, c = self.palette, self.cards
+        window = ctk.CTkToplevel(self.root, fg_color=c["page"])
+        window.title(t("about_title"))
+        window.geometry("520x360")
+        window.resizable(False, False)
+        window.transient(self.root)
+        # ⚠️ Без цього вікно з'являється ЗА головним: CustomTkinter створює
+        # Toplevel і піднімає його не одразу, тож `lift` мусить пройти після
+        # того, як Tk намалює вікно.
+        window.after(200, lambda: window.lift())
+
+        body = ctk.CTkFrame(window, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=PAD * 2, pady=PAD * 2)
+        ctk.CTkLabel(body, text=WINDOW_TITLE, anchor="w",
+                     font=("Segoe UI", 18, "bold"),
+                     text_color=p["fg"]).pack(anchor="w")
+        ctk.CTkLabel(body, text=t("about_text"), anchor="w", justify="left",
+                     wraplength=440, text_color=p["muted"]).pack(
+            anchor="w", fill="x", pady=(8, 0))
+
+        links = ctk.CTkFrame(body, fg_color="transparent")
+        links.pack(anchor="w", fill="x", pady=(PAD, 0))
+        # Вікі першою: там пояснено, як усе працює, і саме туди має піти
+        # людина, а не в код.
+        for label, url in (
+            (t("about_wiki"), f"https://github.com/{GITHUB_REPO}/wiki"),
+            (t("about_repo"), f"https://github.com/{GITHUB_REPO}"),
+            (t("about_releases"), f"https://github.com/{GITHUB_REPO}/releases"),
+        ):
+            self._button(links, label, lambda link=url: webbrowser.open(link),
+                         width=140).pack(side="left", padx=(0, 8))
+
+        ctk.CTkLabel(body, text=t("about_author", version=__version__), anchor="w",
+                     text_color=p["muted"]).pack(anchor="w", fill="x", pady=(PAD, 0))
+        ctk.CTkLabel(body, text=t("about_thanks"), anchor="w", justify="left",
+                     wraplength=440, text_color=p["muted"]).pack(
+            anchor="w", fill="x", pady=(6, 0))
+        self._button(body, t("close"), window.destroy).pack(anchor="e", pady=(PAD, 0))
 
     def _preset_changed(self, _chosen: object = None) -> None:
         """Обраний набір кольорів. Застосовується одразу, без перезапуску."""
