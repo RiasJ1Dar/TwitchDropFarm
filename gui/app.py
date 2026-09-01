@@ -143,6 +143,9 @@ class GUI:
         # стан кожного вебсокета окремо: індекс -> (статус, кількість топіків)
         self._ws_state: dict[int, tuple[str, int]] = {}
         self._images: dict[tuple[str, int], Any] = {}
+        # CTk-віджети та ключі палітри, якими їх пофарбували: `_restyle_widgets`
+        # проганяє список заново, коли міняється тема
+        self._painted: list[tuple[Any, dict[str, str]]] = []
         self._last_inventory: InventoryUpdated | None = None
         # дропи, які просуваються просто зараз: назва -> (коли, гра, є, треба).
         # Турнірний канал роздає кілька кампаній одночасно, і Twitch зараховує
@@ -293,6 +296,15 @@ class GUI:
             self.title_label.configure(text_color=p["accent"])
         if getattr(self, "root", None) is not None:
             self.root.configure(bg=p["bg"])
+        # CustomTkinter про нашу палітру не знає: віджети лишились би в тих
+        # кольорах, з якими їх створили, і вкладка «Налаштування» після
+        # перемикання теми була б чужого кольору до перезапуску
+        for widget, options in getattr(self, "_painted", []):
+            try:
+                widget.configure(**{name: self._colour(key)
+                                    for name, key in options.items()})
+            except tk.TclError:
+                pass  # віджет уже знищили — фарбувати нема що
 
     # ------------------------------------------------------------ розкладка
 
@@ -348,18 +360,96 @@ class GUI:
         card.pack(fill="x")
         return card
 
+    def _block(self, parent: tk.Misc, title: str, *, top: int = 0,
+               grow: bool = False) -> ctk.CTkFrame:
+        """Картка з відступом зверху; повертає її нутрощі.
+
+        `_card` пакує підпис і рамку одне за одним, тож відступ між сусідніми
+        картками ставиться на обгортці — інакше підпис наступної прилипає до
+        попередньої. Вміст лягає в прозорий фрейм із полями, щоб кожен рядок
+        не носив власний `padx`.
+        """
+        wrap = ctk.CTkFrame(parent, fg_color="transparent")
+        wrap.pack(fill="both" if grow else "x", expand=grow, pady=(top, 0))
+        card = self._card(wrap, title)
+        if grow:
+            card.pack(fill="both", expand=True)
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.pack(fill="both" if grow else "x", expand=grow, padx=PAD, pady=PAD)
+        return inner
+
+    def _colour(self, key: str) -> str:
+        """Ключ палітри → колір. Імена в `palette` і `cards` не перетинаються."""
+        return self.palette.get(key) or self.cards[key]
+
+    def _paint(self, widget: Any, **options: str) -> Any:
+        """Пофарбувати CTk-віджет і запам'ятати, чим саме.
+
+        Значення тут — не кольори, а ключі палітри: саме тому те саме
+        оформлення вдається накласти вдруге, коли людина перемикає тему.
+        """
+        self._painted.append((widget, options))
+        widget.configure(**{name: self._colour(key)
+                            for name, key in options.items()})
+        return widget
+
     def _button(self, parent: tk.Misc, text: str, command: Any,
-                *, accent: bool = False) -> ctk.CTkButton:
+                *, accent: bool = False, width: int = 140) -> ctk.CTkButton:
         """Кнопка вкладки. Акцентна — та, яку натискають найчастіше."""
         p, c = self.palette, self.cards
         return ctk.CTkButton(
             parent, text=text, command=command, corner_radius=8, height=32,
+            width=width,
             font=("Segoe UI", 12, "bold" if accent else "normal"),
             fg_color=p["accent"] if accent else c["card"],
             hover_color=p["accent"] if accent else c["hover"],
             text_color="#ffffff" if accent else p["fg"],
             border_width=0 if accent else 1, border_color=c["line"],
         )
+
+    def _switch(self, parent: tk.Misc, text: str, variable: tk.Variable,
+                command: Any) -> ctk.CTkSwitch:
+        """Тумблер замість галочки: увімкнено це чи ні, видно без вчитування.
+
+        `onvalue`/`offvalue` задані явно: типово CustomTkinter пише в змінну
+        одиницю й нуль, а тут скрізь `tk.BooleanVar` — і саме її читає
+        `_misc_changed`.
+        """
+        return self._paint(
+            ctk.CTkSwitch(
+                parent, text=text, variable=variable, command=command,
+                onvalue=True, offvalue=False, switch_width=40, switch_height=20,
+                font=("Segoe UI", 12),
+            ),
+            fg_color="line", progress_color="accent", button_color="muted",
+            button_hover_color="fg", text_color="fg",
+        )
+
+    def _entry(self, parent: tk.Misc) -> ctk.CTkEntry:
+        return self._paint(
+            ctk.CTkEntry(parent, corner_radius=8, height=30,
+                         font=("Segoe UI", 12)),
+            fg_color="alt", border_color="line", text_color="fg",
+        )
+
+    def _hint(self, parent: tk.Misc, text: str, *, colour: str = "muted",
+              wrap: int = 320) -> ctk.CTkLabel:
+        """Мітка-пояснення. `wrap=0` — короткий підпис, який не переносять."""
+        return self._paint(
+            ctk.CTkLabel(parent, text=text, wraplength=wrap, justify="left",
+                         anchor="w", font=("Segoe UI", 12)),
+            text_color=colour,
+        )
+
+    def _list_row(self, parent: tk.Misc, add: Any, remove: Any) -> ctk.CTkEntry:
+        """Поле вводу з «+» і «−» — однаковий рядок під обома списками ігор."""
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", pady=(8, 0))
+        entry = self._entry(row)
+        entry.pack(side="left", fill="x", expand=True)
+        self._button(row, "+", add, width=34).pack(side="left", padx=(6, 0))
+        self._button(row, "−", remove, width=34).pack(side="left", padx=(4, 0))
+        return entry
 
     # Яку частку шляху до цілі проходимо за кадр. 0.25 дає рух, який око
     # встигає простежити, але який не тягнеться: смуга доїжджає за ~10 кадрів.
@@ -681,58 +771,48 @@ class GUI:
 
     def _build_settings_tab(self, notebook: ttk.Notebook) -> None:
         settings = self._twitch.settings
-        tab = ttk.Frame(notebook, padding=10)
+        p, c = self.palette, self.cards
+        tab = ctk.CTkFrame(notebook, corner_radius=0, fg_color=c["page"])
         notebook.add(tab, text=t("tab_settings"))
+        body = ctk.CTkFrame(tab, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=PAD, pady=PAD)
+        left = ctk.CTkFrame(body, fg_color="transparent")
+        left.pack(side="left", fill="both", expand=True, padx=(0, PAD))
+        right = ctk.CTkFrame(body, fg_color="transparent")
+        right.pack(side="left", fill="both", expand=True)
 
-        prio_box = ttk.LabelFrame(tab, text=t("priority"), padding=8)
-        prio_box.pack(fill="both", expand=True, side="left", padx=(0, 8))
-        self.prio_list = tk.Listbox(prio_box, bg=self.palette["alt"],
-                                    fg=self.palette["fg"], relief="flat",
-                                    highlightthickness=0, activestyle="none",
-                                    selectbackground=self.palette["accent"],
+        prio_box = self._block(left, t("priority"), grow=True)
+        # Списки лишаються `tk.Listbox`: рівноцінного віджета в CustomTkinter
+        # немає, а фарбує його `_restyle_widgets` поіменно.
+        self.prio_list = tk.Listbox(prio_box, bg=p["alt"], fg=p["fg"],
+                                    relief="flat", highlightthickness=0,
+                                    activestyle="none",
+                                    selectbackground=p["accent"],
                                     selectforeground="#ffffff")
         self.prio_list.pack(fill="both", expand=True)
         for game in settings.priority:
             self.prio_list.insert("end", game)
-        entry_row = ttk.Frame(prio_box)
-        entry_row.pack(fill="x", pady=(6, 0))
-        self.prio_entry = ttk.Entry(entry_row)
-        self.prio_entry.pack(side="left", fill="x", expand=True)
-        ttk.Button(entry_row, text="+", width=3,
-                   command=self._priority_add).pack(side="left", padx=(4, 0))
-        ttk.Button(entry_row, text="−", width=3,
-                   command=self._priority_remove).pack(side="left", padx=(2, 0))
+        self.prio_entry = self._list_row(prio_box, self._priority_add,
+                                         self._priority_remove)
 
         # Спостереження — окремо від пріоритету: пріоритет міняє, що фармити
         # зараз, а це лише новини про нові кампанії. Можна хотіти знати про
         # Rocket League, не перериваючи фарм WoT.
-        watch_box = ttk.LabelFrame(prio_box, text=t("watch_games"),
-                                   padding=8)
-        watch_box.pack(fill="both", expand=True, pady=(10, 0))
-        ttk.Label(watch_box, wraplength=240, foreground=self.palette["accent"],
-                  text=t("watch_hint")).pack(anchor="w")
-        self.watch_list = tk.Listbox(watch_box, height=4, bg=self.palette["alt"],
-                                     fg=self.palette["fg"], relief="flat",
-                                     highlightthickness=0, activestyle="none",
-                                     selectbackground=self.palette["accent"],
+        watch_box = self._block(left, t("watch_games"), top=PAD, grow=True)
+        self._hint(watch_box, t("watch_hint"), colour="accent", wrap=240).pack(
+            anchor="w", fill="x")
+        self.watch_list = tk.Listbox(watch_box, height=4, bg=p["alt"], fg=p["fg"],
+                                     relief="flat", highlightthickness=0,
+                                     activestyle="none",
+                                     selectbackground=p["accent"],
                                      selectforeground="#ffffff")
         self.watch_list.pack(fill="both", expand=True, pady=(6, 0))
         for game in settings.watch_games:
             self.watch_list.insert("end", game)
-        watch_row = ttk.Frame(watch_box)
-        watch_row.pack(fill="x", pady=(6, 0))
-        self.watch_entry = ttk.Entry(watch_row)
-        self.watch_entry.pack(side="left", fill="x", expand=True)
-        ttk.Button(watch_row, text="+", width=3,
-                   command=self._watch_add).pack(side="left", padx=(4, 0))
-        ttk.Button(watch_row, text="−", width=3,
-                   command=self._watch_remove).pack(side="left", padx=(2, 0))
+        self.watch_entry = self._list_row(watch_box, self._watch_add,
+                                          self._watch_remove)
 
-        right = ttk.Frame(tab)
-        right.pack(fill="both", expand=True, side="left")
-
-        mode_box = ttk.LabelFrame(right, text=t("farm_mode"), padding=8)
-        mode_box.pack(fill="x")
+        mode_box = self._block(right, t("farm_mode"))
         self.mode_var = tk.StringVar(value=settings.farm_mode.name)
         for mode, label in (
             (PriorityMode.LINKED_ONLY, t("mode_linked")),
@@ -740,13 +820,17 @@ class GUI:
             (PriorityMode.TIGHTEST_FIT, t("mode_tightest")),
             (PriorityMode.PRIORITY_LIST, t("mode_priority")),
         ):
-            ttk.Radiobutton(
-                mode_box, text=label, value=mode.name, variable=self.mode_var,
-                command=self._mode_changed,
-            ).pack(anchor="w")
+            self._paint(
+                ctk.CTkRadioButton(
+                    mode_box, text=label, value=mode.name, variable=self.mode_var,
+                    command=self._mode_changed, radiobutton_width=18,
+                    radiobutton_height=18, font=("Segoe UI", 12),
+                ),
+                fg_color="accent", hover_color="accent", border_color="line",
+                text_color="fg",
+            ).pack(anchor="w", pady=3)
 
-        lang_box = ttk.LabelFrame(right, text=t("language"), padding=8)
-        lang_box.pack(fill="x")
+        lang_box = self._block(right, t("language"), top=PAD)
         self._lang_codes = ["auto", *LANGS]
         labels = [t("language_auto"), *[NAMES[code] for code in LANGS]]
         stored = settings.language or "uk"
@@ -754,82 +838,74 @@ class GUI:
             value=t("language_auto") if stored == "auto"
             else NAMES.get(stored, NAMES["uk"])
         )
-        combo = ttk.Combobox(
-            lang_box, textvariable=self.lang_var, values=labels, state="readonly",
-        )
-        combo.pack(fill="x")
-        combo.bind("<<ComboboxSelected>>", self._language_changed)
+        # `CTkOptionMenu` сам віддає обрану назву в `command` — окремої
+        # прив'язки до події, як у `ttk.Combobox`, тут не треба.
+        self._paint(
+            ctk.CTkOptionMenu(
+                lang_box, values=labels, variable=self.lang_var,
+                command=self._language_changed, corner_radius=8, height=30,
+                font=("Segoe UI", 12),
+            ),
+            fg_color="alt", button_color="accent", button_hover_color="hover",
+            text_color="fg", dropdown_fg_color="card", dropdown_text_color="fg",
+            dropdown_hover_color="hover",
+        ).pack(fill="x")
 
-        misc = ttk.LabelFrame(right, text=t("other"), padding=8)
-        misc.pack(fill="x", pady=(8, 0))
+        misc = self._block(right, t("other"), top=PAD)
         self.badges_var = tk.BooleanVar(value=settings.farm_cosmetics)
-        ttk.Checkbutton(
-            misc, text=t("farm_cosmetics"), variable=self.badges_var,
-            command=self._misc_changed,
-        ).pack(anchor="w")
+        self._switch(misc, t("farm_cosmetics"), self.badges_var,
+                     self._misc_changed).pack(anchor="w", pady=3)
         self.autostart_var = tk.BooleanVar(value=settings.start_in_tray)
-        ttk.Checkbutton(
-            misc, text=t("start_tray"),
-            variable=self.autostart_var, command=self._misc_changed,
-        ).pack(anchor="w")
+        self._switch(misc, t("start_tray"), self.autostart_var,
+                     self._misc_changed).pack(anchor="w", pady=3)
         # Стан читаємо з реєстру, а не з налаштувань: запис могли зняти ззовні —
         # диспетчером завдань, чистилкою автозавантаження чи іншою збіркою.
         self.boot_var = tk.BooleanVar(value=autostart.is_enabled())
-        ttk.Checkbutton(
-            misc, text=t("autostart"),
-            variable=self.boot_var, command=self._autostart_changed,
-        ).pack(anchor="w")
+        self._switch(misc, t("autostart"), self.boot_var,
+                     self._autostart_changed).pack(anchor="w", pady=3)
         self.images_var = tk.BooleanVar(value=settings.drop_images)
-        ttk.Checkbutton(
-            misc, text=t("drop_images"),
-            variable=self.images_var, command=self._misc_changed,
-        ).pack(anchor="w")
+        self._switch(misc, t("drop_images"), self.images_var,
+                     self._misc_changed).pack(anchor="w", pady=3)
         self.updates_var = tk.BooleanVar(value=settings.check_updates)
-        ttk.Checkbutton(
-            misc, text=t("check_updates"),
-            variable=self.updates_var, command=self._misc_changed,
-        ).pack(anchor="w")
-        size_row = ttk.Frame(misc)
-        size_row.pack(fill="x", pady=(2, 0))
-        ttk.Label(size_row, text=t("image_size_label")).pack(side="left")
+        self._switch(misc, t("check_updates"), self.updates_var,
+                     self._misc_changed).pack(anchor="w", pady=3)
+        size_row = ctk.CTkFrame(misc, fg_color="transparent")
+        size_row.pack(fill="x", pady=(8, 0))
+        self._hint(size_row, t("image_size_label"), colour="fg", wrap=0).pack(
+            side="left")
         self.size_var = tk.IntVar(value=self._image_size)
-        self.size_label = ttk.Label(size_row, text=f"{self._image_size} px", width=7)
+        self.size_label = self._hint(size_row, f"{self._image_size} px", wrap=0)
         self.size_label.pack(side="right")
-        ttk.Scale(
-            size_row, from_=MIN_IMAGE_SIZE, to=MAX_IMAGE_SIZE, orient="horizontal",
-            variable=self.size_var, command=self._image_size_changed,
-        ).pack(side="left", fill="x", expand=True, padx=6)
-        ttk.Label(
-            misc, text=t("image_cache_hint"),
-            wraplength=320, justify="left",
-        ).pack(anchor="w", pady=(0, 4))
+        self._paint(
+            ctk.CTkSlider(
+                size_row, from_=MIN_IMAGE_SIZE, to=MAX_IMAGE_SIZE,
+                variable=self.size_var, command=self._image_size_changed,
+                height=16, button_length=10,
+            ),
+            fg_color="line", progress_color="accent", button_color="accent",
+            button_hover_color="fg",
+        ).pack(side="left", fill="x", expand=True, padx=8)
+        self._hint(misc, t("image_cache_hint")).pack(anchor="w", fill="x",
+                                                     pady=(4, 4))
         self.dark_var = tk.BooleanVar(value=settings.dark_theme)
-        ttk.Checkbutton(
-            misc, text=t("dark_theme"),
-            variable=self.dark_var, command=self._misc_changed,
-        ).pack(anchor="w")
-        # Перелив — окремою галочкою, а не заміною: колір за станом несе зміст
+        self._switch(misc, t("dark_theme"), self.dark_var,
+                     self._misc_changed).pack(anchor="w", pady=3)
+        # Перелив — окремим тумблером, а не заміною: колір за станом несе зміст
         # (іде / стоїть / не зараховується), і хто цим користується, той не має
         # втратити його заради краси.
         self.rainbow_var = tk.BooleanVar(
             value=settings.progress_style == "rainbow")
-        ttk.Checkbutton(
-            misc, text=t("progress_rainbow"),
-            variable=self.rainbow_var, command=self._misc_changed,
-        ).pack(anchor="w")
+        self._switch(misc, t("progress_rainbow"), self.rainbow_var,
+                     self._misc_changed).pack(anchor="w", pady=3)
 
-        tg = ttk.LabelFrame(right, text=t("telegram"), padding=8)
-        tg.pack(fill="x", pady=(8, 0))
+        tg = self._block(right, t("telegram"), top=PAD)
         self.tg_var = tk.BooleanVar(value=settings.telegram["enabled"])
-        ttk.Checkbutton(
-            tg, text=t("telegram_on"), variable=self.tg_var,
-            command=self._telegram_changed,
-        ).pack(anchor="w")
-        ttk.Button(
-            tg, text=t("connect_bot"), command=self._open_telegram_setup,
-        ).pack(anchor="w", pady=(6, 0))
-        self.tg_hint = ttk.Label(tg, text=self._telegram_hint(), wraplength=320)
-        self.tg_hint.pack(anchor="w", pady=(4, 0))
+        self._switch(tg, t("telegram_on"), self.tg_var,
+                     self._telegram_changed).pack(anchor="w", pady=3)
+        self._button(tg, t("connect_bot"), self._open_telegram_setup).pack(
+            anchor="w", pady=(8, 0))
+        self.tg_hint = self._hint(tg, self._telegram_hint())
+        self.tg_hint.pack(anchor="w", fill="x", pady=(6, 0))
 
     # ------------------------------------------------------------ дії користувача
 
@@ -890,7 +966,7 @@ class GUI:
         settings.touch()
         settings.save()
 
-    def _language_changed(self, _event: object = None) -> None:
+    def _language_changed(self, _chosen: object = None) -> None:
         label = self.lang_var.get()
         if label == t("language_auto"):
             code = "auto"
@@ -918,8 +994,13 @@ class GUI:
             "ok" if got == self.boot_var.get() else "warn",
         )
 
-    def _image_size_changed(self, _value: str = "") -> None:
-        """Новий розмір застосовується одразу, без перезапуску й без мережі."""
+    def _image_size_changed(self, _value: object = None) -> None:
+        """Новий розмір застосовується одразу, без перезапуску й без мережі.
+
+        Значення беремо зі змінної, а не з аргументу: `CTkSlider` подає туди
+        дробове число, а розмір картинки цілий — і в `size_var` воно вже
+        округлене.
+        """
         size = self.size_var.get()
         if size == self._twitch.settings.image_size:
             return
@@ -941,6 +1022,9 @@ class GUI:
         settings.check_updates = self.updates_var.get()
         settings.progress_style = "rainbow" if self.rainbow_var.get() else "state"
         settings.save()
+        # CustomTkinter тримає власне поняття теми, і без цього рядка його
+        # віджети лишались би світлими в темному вікні (й навпаки)
+        ctk.set_appearance_mode("dark" if settings.dark_theme else "light")
         self._load_palette(settings.dark_theme)
         self._apply_theme()
         self._apply_progress_style()
@@ -1006,7 +1090,9 @@ class GUI:
     def _telegram_changed(self) -> None:
         self._twitch.settings.telegram["enabled"] = self.tg_var.get()
         self._twitch.settings.touch()
-        self.tg_hint["text"] = self._telegram_hint()
+        # CTkLabel — не ttk.Label: у нього немає доступу за ключем, лише
+        # `configure`, і синтаксис `hint["text"] = …` тут падає в рантаймі
+        self.tg_hint.configure(text=self._telegram_hint())
 
     def _telegram_hint(self) -> str:
         """Одним рядком: чи бот узагалі готовий працювати.
@@ -1032,7 +1118,7 @@ class GUI:
         try:
             telegram = self._twitch.settings.telegram
             self.tg_var.set(telegram["enabled"])
-            self.tg_hint["text"] = self._telegram_hint()
+            self.tg_hint.configure(text=self._telegram_hint())
         except tk.TclError:
             pass  # вікно вже закривають
 
