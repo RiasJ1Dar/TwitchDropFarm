@@ -34,6 +34,8 @@ from core.config import (
     STALL_LIMIT,
     UPDATE_CHECK_EVERY,
     clamp_image_size,
+    documents_dir,
+    log_path,
 )
 from core.events import (
     CampaignAppeared,
@@ -75,8 +77,11 @@ from core.toolbox import (
     plural,
     rotating_log_handler,
 )
-from gui.app import DARK, GUI
+from gui.app import DARK, GUI, rounded_points
 from gui.icon import profile_photo_jpeg
+from gui.pulse import rainbow
+from gui.theme import COLOUR, PRESETS, blended, preset, read_overrides
+from gui.theme import export as export_theme
 from gui.tray import Tray
 
 ok = 0
@@ -601,7 +606,8 @@ def farm_indicator_checks() -> None:
     )
     box._set_farm_state = lambda state: GUI._set_farm_state(box, state)
     GUI._set_farm_state(box, "going")
-    check("іде", box.farm_label.text == "● Іде" and box.farm_label.fg == DARK["ok"],
+    # Кружечок більше не в тексті: його малює PulseDot поруч із підписом.
+    check("іде", box.farm_label.text == "Іде" and box.farm_label.fg == DARK["ok"],
           box.farm_label.text)
     GUI._set_farm_state(box, "stalled")
     check("стоїть червоним",
@@ -638,11 +644,26 @@ def growing_checks() -> None:
         def set(self, text: str) -> None:
             self.value = text
 
+    class FakeBar:
+        """CTkProgressBar рахує 0..1. Тест дивиться соті, як раніше ttk."""
+
+        def __init__(self) -> None:
+            self.value = 0.0
+
+        def set(self, fraction: float) -> None:
+            self.value = fraction * 100
+
+        def __getitem__(self, key: str) -> float:
+            if key == "value":
+                return self.value
+            raise KeyError(key)
+
     box = types.SimpleNamespace(
         _growing={}, _watching_name="berbatow",
-        drop_var=FakeVar(), progress={},
+        drop_var=FakeVar(), progress=FakeBar(),
         GROWING_WINDOW=GUI.GROWING_WINDOW, GROWING_LINES=GUI.GROWING_LINES,
     )
+    box._set_progress = lambda percent: GUI._set_progress(box, percent)
     now = 1000.0
     box._growing = {
         "EWC Platinum": (now, "EWC 2026 · Special Events", 298, 360),
@@ -671,6 +692,96 @@ def growing_checks() -> None:
     GUI._render_growing(box, now=now)
     check("нічого не росте — так і кажемо",
           box.drop_var.value == "Дроп не визначено", box.drop_var.value)
+
+    # Смуга їде до цілі плавно. Крок винесено окремою функцією саме заради
+    # перевірки: сама анімація живе на `after`, якого в заглушці немає, тож
+    # інакше вона лишилась би непокритою зовсім.
+    step = GUI._advance(0.0, 1.0)
+    check("крок іде в бік цілі", 0.0 < step < 1.0, str(step))
+    check("крок не перестрибує ціль", GUI._advance(0.99, 1.0) <= 1.0)
+    value = 0.0
+    for _ in range(60):
+        value = GUI._advance(value, 1.0)
+    check("смуга доїжджає до цілі", value == 1.0, str(value))
+    check("на цілі стоїть на місці", GUI._advance(1.0, 1.0) == 1.0)
+    down = GUI._advance(1.0, 0.0)
+    check("назад рухається так само", 0.0 < down < 1.0, str(down))
+
+    # Колір смуги повторює мітку в шапці: око ловить його швидше, ніж читає
+    # слово. Раніше вона була фіолетова завжди.
+    tinted = types.SimpleNamespace(palette=DARK)
+    shades = {}
+    for state in ("going", "stalled", "uncounted", "paused", "idle"):
+        tinted._farm_state = state
+        shades[state] = GUI._progress_colour(tinted)
+    check("фарм іде — смуга зелена", shades["going"] == DARK["ok"])
+    check("застій і незарахований перегляд — червона",
+          shades["stalled"] == DARK["err"] and shades["uncounted"] == DARK["err"])
+    check("пауза — жовта", shades["paused"] == DARK["warn"])
+    check("очікування — звичайний акцент", shades["idle"] == DARK["accent"])
+
+    # Перелив — окремий стиль, який вмикається галочкою. Колір рахує чиста
+    # функція, тож її можна перевірити без вікна.
+    check("веселка дає правильний формат кольору",
+          len(rainbow(0.0)) == 7 and rainbow(0.0).startswith("#"), rainbow(0.0))
+    check("різні фази — різні кольори", rainbow(0.0) != rainbow(0.33))
+    check("коло замикається", rainbow(0.0) == rainbow(1.0))
+    check("фаза поза межами не ламає", rainbow(2.25) == rainbow(0.25))
+
+    class FakeRoot:
+        def __init__(self) -> None:
+            self.cancelled: list[str] = []
+            self.planned = 0
+
+        def after(self, _ms: int, _fn: object) -> str:
+            self.planned += 1
+            return f"job{self.planned}"
+
+        def after_cancel(self, job: str) -> None:
+            self.cancelled.append(job)
+
+    class FakeColourBar:
+        def __init__(self) -> None:
+            self.colour = ""
+
+        def configure(self, **kwargs: str) -> None:
+            self.colour = kwargs.get("progress_color", self.colour)
+
+    def styled(style: str, job: str | None) -> types.SimpleNamespace:
+        fake = types.SimpleNamespace(
+            palette=DARK, progress=FakeColourBar(), root=FakeRoot(),
+            _farm_state="going", _rainbow_job=job,
+            RAINBOW_FRAME_MS=GUI.RAINBOW_FRAME_MS,
+            RAINBOW_PERIOD_MS=GUI.RAINBOW_PERIOD_MS,
+            _rainbow_tick=lambda: None,
+            _twitch=types.SimpleNamespace(
+                settings=types.SimpleNamespace(progress_style=style)),
+        )
+        # Прив'язуємо справжній метод, а не додаємо чергове поле в заглушку:
+        # інакше кожна нова дрібниця всередині коду вимагає латати цей об'єкт
+        # ще раз — так уже сталось тричі поспіль, поки писались ці перевірки.
+        fake._progress_colour = lambda: GUI._progress_colour(fake)
+        return fake
+
+    on = styled("rainbow", None)
+    GUI._apply_progress_style(on)
+    check("перелив увімкнувся", on._rainbow_job is not None)
+
+    off = styled("state", "job1")
+    GUI._apply_progress_style(off)
+    check("перелив вимкнувся", off._rainbow_job is None)
+    check("вимкнення повертає колір стану",
+          off.progress.colour == DARK["ok"], off.progress.colour)
+    check("зупинений цикл справді скасовано", off.root.cancelled == ["job1"])
+
+    # ⚠️ Поки смуга переливається, стан її не перефарбовує: інакше два
+    # правила фарбували б по черзі й вона мигтіла б.
+    busy = styled("rainbow", "job1")
+    busy.farm_label = types.SimpleNamespace(configure=lambda **_: None)
+    busy._farm_state = ""
+    GUI._set_farm_state(busy, "stalled")
+    check("під час переливу стан кольором не втручається",
+          busy.progress.colour == "", busy.progress.colour)
 
 
 # ------------------------------------------------------ чужий перегляд
@@ -1119,6 +1230,27 @@ def image_cache_checks() -> None:
         got = clamp_image_size(value)
         check(f"  {value!r} → {wanted}", got == wanted, str(got))
 
+    # Заокруглена підкладка плитки. Малюється руками, бо Canvas заокруглень не
+    # вміє, а помилка тут на око не видна: крива на пару пікселів кривіша —
+    # і ніхто не помітить, поки картка не почне вилазити за власне полотно.
+    print("      заокруглення плитки:")
+    points = rounded_points(0, 0, 100, 60, 12)
+    check("  парна кількість координат", len(points) % 2 == 0, str(len(points)))
+    xs, ys = points[0::2], points[1::2]
+    check("  не виходить за межі",
+          min(xs) == 0 and max(xs) == 100 and min(ys) == 0 and max(ys) == 60,
+          f"x {min(xs)}..{max(xs)}, y {min(ys)}..{max(ys)}")
+    check("  кути зрізані на радіус", 12 in xs and 88 in xs and 12 in ys)
+    # Радіус більший за півсторони зрізав би кути один в одного: вийшла б
+    # не картка, а пісочний годинник.
+    narrow = rounded_points(0, 0, 20, 200, 50)
+    check("  радіус обмежений півшириною", max(narrow[0::2]) == 20
+          and sorted(set(narrow[0::2])) == [0, 10, 20],
+          str(sorted(set(narrow[0::2]))))
+    flat = rounded_points(0, 0, 40, 40, 0)
+    check("  нульовий радіус — прямокутник",
+          sorted(set(flat[0::2])) == [0, 40], str(sorted(set(flat[0::2]))))
+
 
 # ------------------------------------------------------------------ автозапуск
 
@@ -1320,10 +1452,97 @@ def update_checks() -> None:
     check("відкладене не нагадує до перезапуску", len(later) == 1)
 
 
+# ------------------------------------------------------------------ тема
+
+def theme_checks() -> None:
+    print("\n[12] Своя тема оформлення")
+
+    allowed = frozenset(DARK) | frozenset({"page", "card", "line", "hover"})
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "theme.json"
+        check("теми немає — і не треба", read_overrides(path, allowed) == {})
+
+        # Журнал: типово в «Документах», щоб людина знайшла його сама, не
+        # питаючи, де ховається %LOCALAPPDATA%.
+        check("порожня тека — типове місце",
+              log_path().name == "log.txt"
+              and log_path().parent == documents_dir())
+        check("своя тека береться як є",
+              log_path(str(Path(folder))) == Path(folder) / "log.txt")
+        check("пробіли навколо шляху не ламають",
+              log_path(f"  {folder}  ") == Path(folder) / "log.txt")
+        check("типова тека завжди існує або відступає до стану",
+              documents_dir().is_absolute())
+
+        path.write_text(json.dumps({"accent": "#FF8800", "card": "#101014"}),
+                        encoding="utf-8")
+        good = read_overrides(path, allowed)
+        check("свої кольори прийнято",
+              good == {"accent": "#ff8800", "card": "#101014"}, str(good))
+
+        # Одруківка в назві не має виглядати як «тема не працює» — такий
+        # ключ відкидається окремо й гучно, а решта файлу лишається чинною.
+        path.write_text(json.dumps({"акцент": "#ff8800", "ok": "#00ff00"}),
+                        encoding="utf-8")
+        check("невідомий ключ пропускається, решта діє",
+              read_overrides(path, allowed) == {"ok": "#00ff00"})
+
+        path.write_text(json.dumps({"accent": "червоний", "ok": "#fff",
+                                    "err": 16711680, "warn": "#ffb020"}),
+                        encoding="utf-8")
+        check("кольори не виду #rrggbb відкинуто",
+              read_overrides(path, allowed) == {"warn": "#ffb020"})
+
+        path.write_text("{зламаний", encoding="utf-8")
+        check("побитий файл не валить вікно", read_overrides(path, allowed) == {})
+        path.write_text(json.dumps(["#ff8800"]), encoding="utf-8")
+        check("список замість об'єкта — теж не валить",
+              read_overrides(path, allowed) == {})
+
+    mixed = blended(DARK, {"accent": "#ff8800", "невідоме": "#000000"})
+    check("накладається лише відоме",
+          mixed["accent"] == "#ff8800" and "невідоме" not in mixed)
+    check("решта кольорів лишається вбудованою", mixed["ok"] == DARK["ok"])
+    check("вбудована палітра не псується", DARK["accent"] == "#9147ff")
+
+    # Набори: обирають зі списку ті, хто не хоче писати JSON руками.
+    check("порожня назва — вбудована тема", preset("") == {})
+    check("невідомий набір не валить вікно", preset("бла-бла") == {})
+    check("набір дає кольори", preset("ocean").get("accent") == "#4d7cff")
+    for name, colours in PRESETS.items():
+        # окремою змінною: вкладені лапки в f-рядку з'явились аж у 3.12, а
+        # проєкт обіцяє працювати з 3.10
+        label = name or "вбудований"
+        wrong = [k for k, v in colours.items() if not COLOUR.match(v)]
+        check(f"набір «{label}» має лише коректні кольори", not wrong, str(wrong))
+        unknown = set(colours) - (set(DARK) | {"page", "card", "line", "hover"})
+        check(f"набір «{label}» не вигадує ключів", not unknown, str(unknown))
+
+    # ⚠️ Порядок накладання: вбудована → набір → theme.json. Файл останній,
+    # бо це ручна правка: хто його написав, має бачити свій колір.
+    mixed = blended(DARK, {**preset("ocean"), **{"accent": "#000000"}})
+    check("файл перебиває набір", mixed["accent"] == "#000000")
+    check("решта кольорів набору лишається",
+          blended(DARK, preset("forest"))["accent"] == "#3fae6a")
+
+    # Експорт: щоб своя тема починалась не з порожнього аркуша.
+    with tempfile.TemporaryDirectory() as folder:
+        out = Path(folder) / "theme.json"
+        check("тему збережено", export_theme(out, DARK, {"card": "#101014"}))
+        saved = json.loads(out.read_text(encoding="utf-8"))
+        check("у файлі всі кольори палітри",
+              set(DARK) <= set(saved) and saved["card"] == "#101014")
+        check("збережене читається назад як тема",
+              read_overrides(out, frozenset(saved)) == {
+                  k: v.lower() for k, v in saved.items()})
+
+
+
+
 # ------------------------------------------------------------------ побачене
 
 def seen_checks() -> None:
-    print("\n[12] Побачені кампанії")
+    print("\n[13] Побачені кампанії")
 
     with tempfile.TemporaryDirectory() as folder:
         path = Path(folder) / "seen.json"
@@ -1368,7 +1587,7 @@ def seen_checks() -> None:
 # ------------------------------------------------------------------ особа
 
 def identity_checks() -> None:
-    print("\n[13] Готовність особи")
+    print("\n[14] Готовність особи")
 
     person = Identity(types.SimpleNamespace())
     person.token = "oauth"
@@ -1413,7 +1632,7 @@ def identity_checks() -> None:
 # ------------------------------------------------------------------ модель
 
 def model_cache_checks() -> None:
-    print("\n[14] Кеш моделі та пріоритети")
+    print("\n[15] Кеш моделі та пріоритети")
 
     def payload(*kinds: str, cid: str = "c1") -> dict:
         return {
@@ -1454,6 +1673,36 @@ def model_cache_checks() -> None:
     fresh = Campaign(owner, payload("DIRECT_ENTITLEMENT"), {})
     check("нова кампанія рахує наново, а не з чужого кеша",
           fresh.has_real_item and not fresh.only_cosmetics)
+
+    # ⚠️ «Не братися за безнадійне». Критерій навмисно не `slack < 1`:
+    # `Campaign.slack` — це мінімум по дропах, тобто кампанія «не
+    # встигається» вже тоді, коли не закривається лише найдовший дроп. Для
+    # попередження це правильно, для пропуску фарму — згубно.
+    soon = (datetime.now(timezone.utc) + timedelta(minutes=30)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ")
+
+    def timed(*needs: int, ends: str = soon) -> dict:
+        body = payload(*["DIRECT_ENTITLEMENT"] * len(needs))
+        body["endAt"] = ends
+        for drop, minutes in zip(body["timeBasedDrops"], needs, strict=True):
+            drop["requiredMinutesWatched"] = minutes
+            drop["endAt"] = ends
+        return body
+
+    # до кінця пів години: 20 хв встигнути, 600 — ні
+    doomed = Campaign(owner, timed(600, 900), {})
+    partly = Campaign(owner, timed(600, 20), {})
+    check("жоден дроп не встигнути — безнадійна", doomed.hopeless)
+    check("є досяжна нагорода — не безнадійна", not partly.hopeless,
+          f"slack={partly.slack:.2f}")
+    check("а ось `slack` таку кампанію вже засуджує",
+          partly.slack < 1, str(partly.slack))
+
+    roomy = Campaign(owner, timed(600, 900,
+                                  ends="2099-01-01T00:00:00Z"), {})
+    check("часу вдосталь — не безнадійна", not roomy.hopeless)
+    check("порожня кампанія не вважається безнадійною",
+          not Campaign(owner, payload(), {}).hopeless)
 
     # ⚠️ Головне через кеш: `available_to_me` мусить лишитись живою. Вона
     # питає налаштування, і якби кеш заліз і сюди, галочка «фармити косметику»
@@ -1729,6 +1978,7 @@ def main() -> int:
     image_cache_checks()
     autostart_checks()
     update_checks()
+    theme_checks()
     seen_checks()
     identity_checks()
     model_cache_checks()

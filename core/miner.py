@@ -1320,6 +1320,15 @@ class Miner:
                 campaign.linked and campaign.has_real_item
             ):
                 continue
+            # «Не братися за безнадійне»: кампанія, де жоден дроп уже не
+            # встигнути. Саме жоден — інакше ми викидали б і ті, де половина
+            # нагород ще досяжна.
+            if self.settings.skip_hopeless and campaign.hopeless:
+                log.info(
+                    f"Пропускаю «{campaign.name}» ({campaign.game.name}): "
+                    f"жоден дроп не встигнути до кінця кампанії"
+                )
+                continue
             if campaign.farmable_before(soon):
                 chosen.append(game)
 

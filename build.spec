@@ -11,11 +11,20 @@
 # встановленні, — і якщо venv колись копіювали з іншої теки, вони мовчки
 # запускають чужий Python із чужими бібліотеками. `python -m` бере інтерпретатор
 # за розташуванням і такої підміни не допускає.
+from PyInstaller.utils.hooks import collect_data_files
+
+# CustomTkinter тримає теми й описи віджетів у JSON поруч із пакетом і читає їх
+# під час запуску. PyInstaller бачить лише імпорти, тому сам їх не візьме:
+# локально все працює, а зібраний .exe падає на старті, не знайшовши
+# themes/blue.json. Рівно той клас дефекту, який ловиться тільки живим запуском
+# збірки, — тому крок «перевірити .exe» у релізному CI обов'язковий.
+CTK_DATA = collect_data_files("customtkinter")
+
 a = Analysis(
     ["main.py"],
     pathex=[],
     binaries=[],
-    datas=[("core/locales", "core/locales")],
+    datas=[("core/locales", "core/locales"), *CTK_DATA],
     hiddenimports=[
         # підтягуються динамічно, тому PyInstaller їх сам не бачить
         "gui.app",
@@ -34,13 +43,20 @@ a = Analysis(
         "numpy", "scipy", "pandas", "matplotlib",
         "PIL.ImageQt", "PyQt5", "PySide2", "tkinter.test",
         "test", "unittest", "pydoc_data",
-        # Плагіни Pillow, яких проєкт не торкається. З PIL використовуються
-        # рівно три речі: `Image`, `ImageTk` і `ImageDraw` (значок у
-        # gui/icon.py). Нагороди Twitch віддає в PNG/JPEG.
-        #   _avif.pyd       7,5 МБ — найбільший файл у всій збірці
-        #   _imagingft.pyd  2,1 МБ — шрифти; `draw.text` не викликається ніде
-        #   _imagingcms.pyd 0,3 МБ — керування кольором
-        "PIL.AvifImagePlugin", "PIL.ImageFont", "PIL.ImageCms",
+        # AVIF: найбільший файл у всій збірці (_avif.pyd, 7,5 МБ), а Twitch
+        # віддає нагороди в PNG/JPEG. Це окремий плагін формату — його
+        # відсутність не ламає імпорт, лише знімає вміння читати AVIF.
+        "PIL.AvifImagePlugin",
+        # ⚠️ `PIL.ImageFont` і `PIL.ImageCms` тут БУЛИ — і це коштувало
+        # зламаної збірки. Греп показував, що `draw.text` не викликається
+        # ніде, і виглядало, ніби шрифти не потрібні. Але `ImageDraw`
+        # імпортує `ImageFont` САМ, на рівні модуля
+        # (`from . import Image, ImageColor, ImageFont, ImageText`), тож
+        # `from PIL import ImageDraw` у gui/icon.py падав з
+        # «cannot import name 'ImageFont'» — і не в тестах, а в зібраному
+        # .exe при живому запуску. Тодішня перевірка через `--version` цього
+        # не ловила: вона не доходить до gui/tray.py.
+        # Не виключати. Два мегабайти не варті зламаного релізу.
     ],
     noarchive=False,
 )
