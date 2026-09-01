@@ -82,6 +82,42 @@ def _shorten(text: str, limit: int = 34) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+# Наскільки заокруглені кути плитки. Той самий радіус, що в `_card`, — інакше
+# картки інвентаря й картки «Майнінгу» виглядали б із різних вікон.
+TILE_RADIUS = 12
+
+
+def rounded_points(x1: float, y1: float, x2: float, y2: float,
+                   radius: float) -> list[float]:
+    """Координати заокругленого прямокутника для `create_polygon(smooth=True)`.
+
+    Заокруглень `Canvas` не вміє: `create_rectangle` дає гострі кути, а
+    CustomTkinter, який малює їх сам, коштує на плитках усемеро дорожче
+    (заміряно: 120 карток — 1400 мс проти 179 мс). Тому малюємо самі.
+
+    Точки на прямих ділянках здубльовані навмисно. Tk згладжує полігон
+    квадратичними Безьє, де кожна точка тягне криву до себе; без дубля пряма
+    сторона вигиналась би всередину, і замість картки виходила б подушка.
+    Кути ж, навпаки, задані однією точкою — саме вона й округлює ріг.
+
+    Чиста функція, щоб перевірятись без вікна: рахунок тут легко зіпсувати
+    непомітно, а на око крива різниця в пару пікселів не видна.
+    """
+    # Радіус більший за половину сторони дав би кути, що налазять один на
+    # одного, — обмежуємо, а не покладаємось на те, що плитка завжди велика.
+    radius = max(0.0, min(radius, (x2 - x1) / 2, (y2 - y1) / 2))
+    return [
+        x1 + radius, y1, x1 + radius, y1, x2 - radius, y1, x2 - radius, y1,
+        x2, y1,
+        x2, y1 + radius, x2, y1 + radius, x2, y2 - radius, x2, y2 - radius,
+        x2, y2,
+        x2 - radius, y2, x2 - radius, y2, x1 + radius, y2, x1 + radius, y2,
+        x1, y2,
+        x1, y2 - radius, x1, y2 - radius, x1, y1 + radius, x1, y1 + radius,
+        x1, y1,
+    ]
+
+
 # Індикатор у шапці: чи фарм насправді крутиться, а не лише «Дивимось».
 FARM_BADGE = {
     "going": ("farm_going", "ok"),
@@ -288,7 +324,14 @@ class GUI:
                 box.configure(bg=p["alt"], fg=p["fg"], selectbackground=p["accent"],
                               selectforeground="#ffffff", highlightthickness=0)
         if getattr(self, "tiles_canvas", None) is not None:
-            self.tiles_canvas.configure(bg=p["alt"])
+            self.tiles_canvas.configure(bg=self.cards["page"])
+            self.tiles_holder.configure(bg=self.cards["page"])
+            # Плитки — не віджети, а намальовані фігури: `configure` до них не
+            # дістанеться, тож при зміні теми їх треба покласти заново. Без
+            # цього інвентар лишався б у кольорах попередньої теми до
+            # наступного читання, тобто до години.
+            if self._last_inventory is not None:
+                self._render_tiles(self._last_inventory)
         # `conn_label` і `status_label` тут більше не згадані навмисно: вони
         # стали `CTkLabel`, фарбуються разом з рештою через `_painted` нижче,
         # а `foreground` цей віджет не знає взагалі.
@@ -702,18 +745,36 @@ class GUI:
         scroll.pack(side="right", fill="y")
         self.inv_tree.pack(fill="both", expand=True)
 
-    def _build_inventory_tiles(self, parent: ttk.Frame) -> None:
+    def _build_inventory_tiles(self, parent: tk.Misc) -> None:
         """Сітка карток. Tk не має готового такого віджета, тож збираємо з
-        полотна й фрейма всередині: інакше вміст не прокручується."""
-        wrap = ttk.Frame(parent)
+        полотна й фрейма всередині: інакше вміст не прокручується.
+
+        Полотно лишається `tk.Canvas` свідомо. `CTkScrollableFrame` із картками
+        коштує на тих самих 120 плитках 1400 мс проти 179 мс і тримає втричі
+        більше віджетів; заокруглення, заради яких його брали б, тут дешевше
+        намалювати руками — цим займається `_tile`.
+        """
+        c = self.cards
+        # Колір заданий явно, а не `transparent`: батько тут — `ttk.Frame`, у
+        # якого CustomTkinter не може спитати тло (в ttk його тримає стиль, а
+        # не сам віджет), і прозорий фрейм узяв би колір навмання.
+        wrap = self._paint(ctk.CTkFrame(parent, corner_radius=0),
+                           fg_color="page")
         self.inv_tiles = wrap
-        canvas = tk.Canvas(wrap, bg=self.palette["alt"], highlightthickness=0)
-        scroll = ttk.Scrollbar(wrap, command=canvas.yview)
+        canvas = tk.Canvas(wrap, bg=c["page"], highlightthickness=0,
+                           borderwidth=0)
+        scroll = self._paint(
+            ctk.CTkScrollbar(wrap, command=canvas.yview, width=12),
+            button_color="line", button_hover_color="accent",
+            fg_color="page",
+        )
         canvas.configure(yscrollcommand=scroll.set)
         scroll.pack(side="right", fill="y")
         canvas.pack(side="left", fill="both", expand=True)
 
-        holder = ttk.Frame(canvas)
+        # `tk.Frame`, а не `ttk.Frame`: тло має точно збігатися з полотном, а
+        # ttk фарбується стилем `TFrame`, тобто кольором вікна, не сторінки.
+        holder = tk.Frame(canvas, bg=c["page"])
         window = canvas.create_window((0, 0), window=holder, anchor="nw")
         holder.bind(
             "<Configure>",
@@ -1422,7 +1483,7 @@ class GUI:
         """
         for child in self.tiles_holder.winfo_children():
             child.destroy()
-        p = self.palette
+        c, p = self.cards, self.palette
         columns = self._columns_for(self.tiles_canvas.winfo_width())
         self._tiles_columns = columns
         # рівні колонки: інакше картки з довгими назвами розтягують сусідів
@@ -1435,24 +1496,80 @@ class GUI:
             for drop in campaign.drops:
                 if drop.claimed or shown >= TILE_LIMIT:
                     continue
-                card = ttk.Frame(self.tiles_holder, padding=6)
+                card = self._tile(
+                    picture=self._thumbnail(drop.image or campaign.image, TILE_SIZE),
+                    name=_shorten(drop.name),
+                    minutes=t("inv_min", have=drop.current_minutes,
+                              need=drop.required_minutes),
+                    game=_shorten(campaign.game, 22),
+                )
                 card.grid(row=shown // columns, column=shown % columns,
                           sticky="n", padx=4, pady=4)
-                picture = self._thumbnail(drop.image or campaign.image, TILE_SIZE)
-                if picture:
-                    ttk.Label(card, image=picture).pack()
-                ttk.Label(card, text=_shorten(drop.name), wraplength=TILE_SIZE + 20,
-                          justify="center").pack(pady=(4, 0))
-                ttk.Label(card, text=t("inv_min", have=drop.current_minutes,
-                                       need=drop.required_minutes),
-                          foreground=p["accent"]).pack()
-                ttk.Label(card, text=_shorten(campaign.game, 22),
-                          foreground=p["fg"]).pack()
                 shown += 1
         if not shown:
-            ttk.Label(self.tiles_holder,
-                      text=t("tiles_empty")).pack(pady=20)
+            tk.Label(self.tiles_holder, text=t("tiles_empty"), bg=c["page"],
+                     fg=p["muted"], font=("Segoe UI", 10)).pack(pady=20)
         self.tiles_canvas.yview_moveto(0)
+
+    # Поле навколо вмісту картки. Менше — і текст притискається до межі,
+    # більше — у рядок влазить менше карток.
+    TILE_PAD = 10
+
+    def _tile(self, *, picture: Any, name: str, minutes: str,
+              game: str) -> tk.Canvas:
+        """Одна картка інвентаря: заокруглена підкладка й вміст на ній.
+
+        Уся картка — одне полотно, а не фрейм із чотирма мітками. Так виходить
+        і заокруглення, якого Tk не дає жодному віджету, і вчетверо менше
+        віджетів на сітку: на межі в 120 плиток це різниця між помітним
+        підвисанням вікна й непомітним.
+
+        Висота рахується по ходу малювання: назва нагороди переноситься на
+        другий рядок, і наперед її висоту не знати. Тому спершу кладемо вміст,
+        а підкладку домальовуємо в кінці й опускаємо під нього.
+        """
+        c, p = self.cards, self.palette
+        pad = self.TILE_PAD
+        width = TILE_SIZE + pad * 2
+        canvas = tk.Canvas(self.tiles_holder, width=width, height=1,
+                           bg=c["page"], highlightthickness=0, borderwidth=0)
+        middle = width / 2
+        y: float = pad
+        if picture:
+            canvas.create_image(middle, y, anchor="n", image=picture)
+            # `thumbnail` зберігає пропорції, тож висота буває меншою за бік:
+            # брати TILE_SIZE наосліп означало б порожню смугу під широкими
+            # картинками
+            y += picture.height() + 8
+        for text, colour, font in (
+            (name, p["fg"], ("Segoe UI", 10, "bold")),
+            (minutes, p["accent"], ("Segoe UI", 9, "bold")),
+            (game, p["muted"], ("Segoe UI", 9)),
+        ):
+            item = canvas.create_text(middle, y, text=text, width=TILE_SIZE,
+                                      anchor="n", justify="center", fill=colour,
+                                      font=font)
+            y = canvas.bbox(item)[3] + 3
+        height = int(y + pad)
+        canvas.configure(height=height)
+        # межа малюється по центру лінії, тож півпікселя з кожного боку
+        # лишаємо, інакше вона зрізається краєм полотна
+        background = canvas.create_polygon(
+            rounded_points(1, 1, width - 1, height - 1, TILE_RADIUS),
+            smooth=True, splinesteps=16, fill=c["card"], outline=c["line"],
+            width=1,
+        )
+        canvas.tag_lower(background)
+        canvas.bind("<MouseWheel>", self._tiles_scroll)
+        # межа світлішає під курсором: єдиний спосіб показати, що плитка — це
+        # предмет, а не намальований фон, бо натискати тут нема на що
+        canvas.bind("<Enter>",
+                    lambda _e: canvas.itemconfigure(background,
+                                                    outline=p["accent"]))
+        canvas.bind("<Leave>",
+                    lambda _e: canvas.itemconfigure(background,
+                                                    outline=c["line"]))
+        return canvas
 
     def _thumbnail(self, url: str, size: int | None = None) -> Any:
         """Мініатюра з кешу або порожньо, якщо картинки немає.

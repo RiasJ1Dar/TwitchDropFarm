@@ -75,7 +75,7 @@ from core.toolbox import (
     plural,
     rotating_log_handler,
 )
-from gui.app import DARK, GUI
+from gui.app import DARK, GUI, rounded_points
 from gui.icon import profile_photo_jpeg
 from gui.pulse import rainbow
 from gui.theme import blended, read_overrides
@@ -1226,6 +1226,27 @@ def image_cache_checks() -> None:
                           (None, DEFAULT_IMAGE_SIZE), ("64", 64)):
         got = clamp_image_size(value)
         check(f"  {value!r} → {wanted}", got == wanted, str(got))
+
+    # Заокруглена підкладка плитки. Малюється руками, бо Canvas заокруглень не
+    # вміє, а помилка тут на око не видна: крива на пару пікселів кривіша —
+    # і ніхто не помітить, поки картка не почне вилазити за власне полотно.
+    print("      заокруглення плитки:")
+    points = rounded_points(0, 0, 100, 60, 12)
+    check("  парна кількість координат", len(points) % 2 == 0, str(len(points)))
+    xs, ys = points[0::2], points[1::2]
+    check("  не виходить за межі",
+          min(xs) == 0 and max(xs) == 100 and min(ys) == 0 and max(ys) == 60,
+          f"x {min(xs)}..{max(xs)}, y {min(ys)}..{max(ys)}")
+    check("  кути зрізані на радіус", 12 in xs and 88 in xs and 12 in ys)
+    # Радіус більший за півсторони зрізав би кути один в одного: вийшла б
+    # не картка, а пісочний годинник.
+    narrow = rounded_points(0, 0, 20, 200, 50)
+    check("  радіус обмежений півшириною", max(narrow[0::2]) == 20
+          and sorted(set(narrow[0::2])) == [0, 10, 20],
+          str(sorted(set(narrow[0::2]))))
+    flat = rounded_points(0, 0, 40, 40, 0)
+    check("  нульовий радіус — прямокутник",
+          sorted(set(flat[0::2])) == [0, 40], str(sorted(set(flat[0::2]))))
 
 
 # ------------------------------------------------------------------ автозапуск
