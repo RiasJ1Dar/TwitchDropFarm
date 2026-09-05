@@ -1450,6 +1450,25 @@ def update_checks() -> None:
 
     check("інтервал перевірки — 12 годин", UPDATE_CHECK_EVERY == 12 * 60 * 60)
 
+    # Провал підміни мусить називати ПРИЧИНУ. 05.09 у програмі стояло
+    # «не вдалося замінити файли», і далі йти було нікуди, хоч `xcopy` писав
+    # причину в той самий журнал.
+    NL = chr(10)
+    why = update._why_copy_failed
+    check("зайнятий файл названо своїм імʼям",
+          why("copying" + NL + "Sharing violation" + NL + "XCOPY FAILED")
+          == "файл був зайнятий іншим процесом")
+    check("брак прав названо своїм імʼям",
+          why("copying" + NL + "Access is denied" + NL + "XCOPY FAILED")
+          == "немає прав на теку програми")
+    unknown = why("all processes gone, copying" + NL
+                  + "0 File(s) copied" + NL + "XCOPY FAILED after 5 tries")
+    check("незнайому причину віддано як є, а не проковтнуто",
+          "0 File(s) copied" in unknown)
+    check("порожній журнал не вигадує причини",
+          why("waiting for pid 1" + NL + "XCOPY FAILED")
+          == "не вдалося замінити файли")
+
     # Прибирання тек `_MEI*`: воно ВИДАЛЯЄ теки, тому помилка тут дорога.
     # Перевіряємо обидві обережності — чужу не чіпати, живу не чіпати.
     with tempfile.TemporaryDirectory() as fake_temp:
@@ -1515,6 +1534,60 @@ def update_checks() -> None:
     Miner._update_check_failed(quiet, ValueError("манифест 404 з https://…"))
     check("404 — це «релізу ще немає», не поломка",
           len([e for e in quiet.events.sent if isinstance(e, UpdateFailed)]) == 1)
+
+
+# ------------------------------------------------------ святкування дропа
+
+def celebrate_checks() -> None:
+    """Конфеті мусить не лише з'явитись, а й ЗНИКНУТИ.
+
+    ⚠️ Цей блок написано за дефектом, який прожив два релізи. `Canvas.lift`
+    у tkinter — не «підняти віджет над сусідами», а псевдонім `tag_raise`, і
+    без аргументу він кидає TclError. Виняток летів після `place()`, але до
+    першого `after()`: накладка з частинками вже лежала поверх картки, а
+    анімація не стартувала жодного разу. Конфеті застигало назавжди й
+    перекривало назву каналу. Ззовні це виглядало як «артефакти малювання».
+
+    Тому перевіряємо саме те, чого бракувало: що анімація СТАРТУВАЛА
+    (`_job` не порожній), і що після неї нічого не лишилось.
+    """
+    import time
+
+    print("\n[29] Святкування дропа")
+    try:
+        import tkinter as tk
+        root = tk.Tk()
+    except Exception as error:  # немає дисплея — не привід валити весь набір
+        print(f"  --   Tk недоступний, пропускаю: {error}")
+        return
+    try:
+        root.withdraw()
+        from gui.celebrate import LIFETIME_MS, Confetti
+
+        frame = tk.Frame(root, width=400, height=120)
+        frame.pack()
+        spark = Confetti(frame, background="#1e1d24",
+                         colours=("#ff0000", "#00ff00", "#0000ff"))
+        root.update()
+
+        spark.burst()
+        check("святкування почалось — частинки намальовані",
+              len(spark.find_all()) > 0)
+        check("анімація справді запустилась", spark._job is not None)
+
+        deadline = monotonic() + LIFETIME_MS / 1000 + 3
+        while spark._job is not None and monotonic() < deadline:
+            root.update()
+            time.sleep(0.005)
+
+        check("частинки прибрано після свята", spark.find_all() == ())
+        check("накладку знято з картки", not spark.winfo_ismapped())
+    finally:
+        try:
+            root.destroy()
+        except tk.TclError:
+            pass
+
 
 
 # ------------------------------------------------------------------ тема
@@ -2043,6 +2116,7 @@ def main() -> int:
     image_cache_checks()
     autostart_checks()
     update_checks()
+    celebrate_checks()
     theme_checks()
     seen_checks()
     identity_checks()
