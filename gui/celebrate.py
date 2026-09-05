@@ -15,8 +15,11 @@
 """
 from __future__ import annotations
 
+import logging
 import random
 import tkinter as tk
+
+log = logging.getLogger("TwitchDrops")
 
 # Кадр анімації. 25 к/с — рух плавний, а перемальовування двох десятків
 # дрібних овалів раз на 40 мс не помітне навіть на слабкій машині.
@@ -54,6 +57,16 @@ class Confetti(tk.Canvas):
 
     def burst(self) -> None:
         """Запускає святкування. Повторний виклик під час нього — не заважає."""
+        try:
+            self._burst()
+        except Exception:
+            # Свято, яке не вдалося, мусить зникнути без сліду: інакше
+            # напівстворена накладка лишається поверх картки й перекриває
+            # текст. Саме так і виглядав дефект, який це навчило.
+            log.exception("Святкування не вдалося показати")
+            self._stop()
+
+    def _burst(self) -> None:
         if self._job is not None:
             self._stop()
         width = max(self.winfo_width(), 200)
@@ -70,15 +83,30 @@ class Confetti(tk.Canvas):
                                  random.uniform(-1.8, 1.8),
                                  random.uniform(-5.5, -3.0)))
         self.place(relx=0, rely=0, relwidth=1.0)
-        # У справжньому tkinter це `Misc.lift(aboveThis=None)` — «підняти над
-        # усіма сусідами», аргумент необов'язковий. Стаби для `Canvas` цього не
-        # знають і вимагають `str | int`, тому тут глушимо саме їх, а не
-        # переписуємо робочий виклик під неточний опис.
-        self.lift()  # type: ignore[call-arg]
+        # ⚠️ `tk.Misc.lift(self)`, а НЕ `self.lift()`. У `Canvas` метод `lift`
+        # перевизначений як псевдонім `tag_raise` — підняти намальований
+        # елемент над іншими, — і без аргументу він падає з
+        # «wrong # args: should be ".!confetti raise tagOrId ?aboveThis?"».
+        # Тут потрібне зовсім інше: підняти сам віджет над сусідами.
+        #
+        # Ціна помилки була саме такою, якою буває в анімаціях: виняток летів
+        # ПІСЛЯ `place()`, але ДО першого `after()`. Накладка з частинками вже
+        # лежала поверх картки, а анімація не стартувала жодного разу — тобто
+        # `_stop()` не викликався ніколи, і конфеті лишалось на екрані
+        # назавжди, перекриваючи назву каналу. Виглядало як «артефакти
+        # малювання», хоча малювання тут ні до чого.
+        tk.Misc.lift(self)
         self._left = LIFETIME_MS // FRAME_MS
         self._job = self.after(FRAME_MS, self._tick)
 
     def _tick(self) -> None:
+        try:
+            self._frame()
+        except Exception:
+            log.exception("Кадр святкування не намалювався")
+            self._stop()
+
+    def _frame(self) -> None:
         self._left -= 1
         moved: list[tuple[int, float, float, float, float]] = []
         for item, x, y, dx, dy in self._pieces:

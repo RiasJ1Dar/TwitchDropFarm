@@ -335,15 +335,51 @@ def apply_outcome() -> tuple[str, str]:
     except OSError:
         return "none", ""
     if "XCOPY FAILED" in body:
-        reason = "не вдалося замінити файли"
-        if "Sharing violation" in body:
-            reason = "файл був зайнятий іншим процесом"
-        elif "Access is denied" in body:
-            reason = "немає прав на теку програми"
-        return "failed", reason
+        return "failed", _why_copy_failed(body)
     if "done" in body:
         return "ok", ""
     return "none", ""
+
+
+# Рядки, які пише сам скрипт підміни. Усе інше в журналі — голос `xcopy`,
+# і саме він знає, чому копіювання не вдалось.
+OUR_LINES = (
+    "===", "стейдж:", "тека:", "запуск:", "waiting for", "image still",
+    "all processes gone", "copy attempt", "XCOPY FAILED", "starting",
+    "copied", "removing stage", "done", "NEW BUILD", "ROLLED BACK",
+    "NO BACKUP",
+)
+
+# Що `xcopy` каже і що це означає людською.
+COPY_REASONS = (
+    ("Sharing violation", "файл був зайнятий іншим процесом"),
+    ("Access is denied", "немає прав на теку програми"),
+    ("Insufficient disk space", "на диску не лишилось місця"),
+    ("File not found", "файли оновлення зникли до копіювання"),
+    ("Invalid drive", "теку програми не знайдено"),
+    ("cannot be copied onto itself", "копіювання саме в себе"),
+)
+
+
+def _why_copy_failed(body: str) -> str:
+    """Причина провалу підміни — словами, а не «не вдалося замінити файли».
+
+    ⚠️ Так виглядав глухий кут 05.09: у програмі стояло «Оновлення не встало:
+    не вдалося замінити файли», і далі йти було нікуди. А `xcopy` у цей самий
+    журнал писав, що саме сталось — просто ніхто того рядка не читав. Тепер
+    відомі причини перекладаємо, а незнайомий рядок віддаємо як є: краще
+    показати сире повідомлення, ніж проковтнути його заради охайного тексту.
+    """
+    for marker, human in COPY_REASONS:
+        if marker in body:
+            return human
+    unknown = [
+        line.strip() for line in body.splitlines()
+        if line.strip() and not line.strip().startswith(OUR_LINES)
+    ]
+    if unknown:
+        return f"не вдалося замінити файли: {unknown[-1][:160]}"
+    return "не вдалося замінити файли"
 
 
 def drop_backup() -> None:
