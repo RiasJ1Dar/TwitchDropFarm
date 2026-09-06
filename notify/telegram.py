@@ -37,6 +37,7 @@ from core.events import (
     MinerStopped,
     ProgressStalled,
     ProtocolStale,
+    Router,
     StatusChanged,
     StreamOffline,
     UpdateAvailable,
@@ -227,6 +228,13 @@ def _file_bytes(path: Path) -> bytes:
         return path.read_bytes()
     except OSError:
         return b""
+
+
+# Маршрути «подія → текст у Telegram». Оголошено до класу, бо декоратори в
+# тілі класу виконуються під час його створення.
+SAY = Router()
+# Той самий прийом для короткого рядка в профілі бота.
+BIO = Router()
 
 
 class TelegramNotifier:
@@ -423,26 +431,47 @@ class TelegramNotifier:
         практична: з каналом у рядку біо перемальовувалось на кожному
         перемиканні й дарма молотило Bot API, хоча стан лишався тим самим.
         """
-        if isinstance(event, WatchingChanged):
-            return t("farm_idle") if event.channel is None else t("farm_going")
-        if isinstance(event, ProgressStalled):
-            return t("tg_bio_stalled", minutes=event.minutes_without_progress)
-        if isinstance(event, WatchUncounted):
+        return BIO.dispatch(event, owner=self)
+
+    # ⚠️ Ці маршрути свідомо НЕ входять у перевірку повноти показу подій. Біо —
+    # допоміжний канал: його бачить лише той, хто відкриє профіль бота. Подія,
+    # яка більше ніде не показується, лишається загубленою, навіть якщо вона є
+    # тут, — тож зараховувати біо за «показали» означало б послабити перевірку
+    # рівно там, де вона потрібна.
+
+    @BIO.on(WatchingChanged)
+    def _bio_watching(self, event: WatchingChanged) -> str:
+        return t("farm_idle") if event.channel is None else t("farm_going")
+
+    @BIO.on(ProgressStalled)
+    def _bio_stalled(self, event: ProgressStalled) -> str:
+        return t("tg_bio_stalled", minutes=event.minutes_without_progress)
+
+    @BIO.on(WatchUncounted)
+    def _bio_uncounted(self, event: WatchUncounted) -> str:
+        return t("farm_uncounted")
+
+    @BIO.on(StatusChanged)
+    def _bio_status(self, event: StatusChanged) -> str | None:
+        if event.text == t("status_paused"):
+            return t("farm_paused")
+        if event.text.startswith(t("status_stalled", minutes="").rstrip()):
+            return t("farm_stalled")
+        if event.text == t("status_uncounted"):
             return t("farm_uncounted")
-        if isinstance(event, StatusChanged):
-            if event.text == t("status_paused"):
-                return t("farm_paused")
-            if event.text.startswith(t("status_stalled", minutes="").rstrip()):
-                return t("farm_stalled")
-            if event.text == t("status_uncounted"):
-                return t("farm_uncounted")
-        if isinstance(event, ConnectionLost):
-            return t("tg_bio_offline")
-        if isinstance(event, MinerStopped):
-            return t("tg_bio_stopped")
-        if isinstance(event, MinerStarted):
-            return t("farm_idle")
         return None
+
+    @BIO.on(ConnectionLost)
+    def _bio_offline(self, event: ConnectionLost) -> str:
+        return t("tg_bio_offline")
+
+    @BIO.on(MinerStopped)
+    def _bio_stopped(self, event: MinerStopped) -> str:
+        return t("tg_bio_stopped")
+
+    @BIO.on(MinerStarted)
+    def _bio_started(self, event: MinerStarted) -> str:
+        return t("farm_idle")
 
     async def _set_bio(self, text: str) -> None:
         # Кружечок ставимо тут, а не в перекладах: це оформлення, однакове для
@@ -482,97 +511,144 @@ class TelegramNotifier:
         return True
 
     def _format(self, event: Event) -> str | None:
-        cfg = self._config
-        esc = html.escape
+        """Текст повідомлення для події — або `None`, якщо показувати нічого.
 
-        if cfg["notify_critical"]:
-            if isinstance(event, MinerStarted):
-                where = t("tg_in_tray") if event.tray else t("tg_in_window")
-                return t("tg_started", where=where, version=esc(event.version))
-            if isinstance(event, LoginRequired):
-                return t("tg_login", code=esc(event.user_code),
-                         uri=esc(str(event.verification_uri)))
-            if isinstance(event, ProgressStalled):
-                why = (
-                    t("tg_stalled_else", name=esc(event.counted_elsewhere))
-                    if event.counted_elsewhere
-                    else t("tg_stalled_manual")
-                )
-                return t("tg_stalled", minutes=event.minutes_without_progress,
-                         channel=esc(event.channel_name), why=why)
-            if isinstance(event, WatchUncounted):
-                return t("tg_uncounted", channel=esc(event.channel_name))
-            if isinstance(event, UpdateAvailable) and event.files:
-                return t("tg_update", version=esc(event.version),
-                         files=event.files, kb=event.bytes_to_fetch // 1024)
-            if isinstance(event, UpdateFailed):
-                return t("tg_update_fail", reason=esc(event.reason))
-            if isinstance(event, ProtocolStale):
-                if event.storm:
-                    return t("tg_protocol_storm")
-                names = ", ".join(esc(name) for name in event.operations)
-                return t("tg_protocol_stale", names=names)
-            if isinstance(event, CampaignAppeared):
-                # свої імена: нижче той самий блок для DeadlineRisk працює з
-                # іншим типом знімка, і спільна змінна плутала і читача, і mypy
-                news = [t("tg_new_campaign_title", count=len(event.campaigns))]
-                for fresh in event.campaigns[:5]:
-                    ends = fresh.ends_at.astimezone().strftime("%d.%m %H:%M")
-                    news.append(t(
-                        "tg_new_campaign_item",
-                        name=esc(fresh.name.strip()),
-                        game=esc(fresh.game),
-                        drops=fresh.total_drops,
-                        unit=plural(
-                            fresh.total_drops,
-                            t("tg_drop_one"), t("tg_drop_few"), t("tg_drop_many"),
-                        ),
-                        ends=ends,
-                    ))
-                if len(event.campaigns) > 5:
-                    news.append(t("tg_new_campaign_more", n=len(event.campaigns) - 5))
-                news.append(t("tg_new_campaign_hint"))
-                return "\n".join(news)
-            if isinstance(event, DeadlineRisk):
-                lines = [t("tg_deadline_title", count=len(event.campaigns))]
-                for item in event.campaigns[:5]:
-                    lines.append(t(
-                        "tg_deadline_item",
-                        name=esc(item.name),
-                        game=esc(item.game),
-                        needed=item.minutes_needed,
-                        available=item.minutes_available,
-                    ))
-                if len(event.campaigns) > 5:
-                    lines.append(t("tg_deadline_more", n=len(event.campaigns) - 5))
-                return "\n".join(lines)
-            if isinstance(event, ConnectionLost):
-                return t("tg_conn_lost", reason=esc(event.reason))
-            if isinstance(event, ConnectionRestored):
-                return t("tg_conn_ok", seconds=round(event.downtime_seconds))
-            if isinstance(event, MinerError):
-                return t("tg_error", message=esc(event.message))
-            if isinstance(event, MinerStopped):
-                return t("tg_stopped", reason=esc(event.reason))
+        Маршрути нижче. Раніше тут стояла драбина з двадцяти шести
+        `isinstance`, згрупована трьома `if cfg[...]`, і кожен новий тип події
+        доводилось вписувати в потрібне місце драбини — а таких драбин у
+        програмі було три, у вікні, журналі й тут.
+        """
+        return SAY.dispatch(event, owner=self, allow=self._group_wanted)
 
-        if cfg["notify_rewards"]:
-            if isinstance(event, DropClaimed):
-                return t("tg_claimed", rewards=esc(event.rewards),
-                         game=esc(event.game))
-            if isinstance(event, CampaignFinished):
-                return t("tg_campaign_done", name=esc(event.campaign_name),
-                         game=esc(event.game))
+    def _group_wanted(self, group: str) -> bool:
+        """Чи показує людина цю групу сповіщень."""
+        return bool(self._config[f"notify_{group}"])
 
-        if cfg["notify_routine"]:
-            if isinstance(event, WatchingChanged) and event.channel is not None:
-                if self._routine_allowed("watching"):
-                    game = esc(event.channel.game or "—")
-                    return t("tg_switched", channel=esc(event.channel.name),
-                             game=game)
-            if isinstance(event, StreamOffline):
-                if self._routine_allowed("offline"):
-                    return t("tg_offline", channel=esc(event.channel_name))
-        return None
+    # ------------------------------------------------------- важливе
+
+    @SAY.on(MinerStarted, group="critical")
+    def _say_started(self, event: MinerStarted) -> str:
+        where = t("tg_in_tray") if event.tray else t("tg_in_window")
+        return t("tg_started", where=where, version=html.escape(event.version))
+
+    @SAY.on(LoginRequired, group="critical")
+    def _say_login(self, event: LoginRequired) -> str:
+        return t("tg_login", code=html.escape(event.user_code),
+                 uri=html.escape(str(event.verification_uri)))
+
+    @SAY.on(ProgressStalled, group="critical")
+    def _say_stalled(self, event: ProgressStalled) -> str:
+        why = (
+            t("tg_stalled_else", name=html.escape(event.counted_elsewhere))
+            if event.counted_elsewhere
+            else t("tg_stalled_manual")
+        )
+        return t("tg_stalled", minutes=event.minutes_without_progress,
+                 channel=html.escape(event.channel_name), why=why)
+
+    @SAY.on(WatchUncounted, group="critical")
+    def _say_uncounted(self, event: WatchUncounted) -> str:
+        return t("tg_uncounted", channel=html.escape(event.channel_name))
+
+    @SAY.on(UpdateAvailable, group="critical")
+    def _say_update(self, event: UpdateAvailable) -> str | None:
+        # files == 0 означає «та сама версія, качати нічого» — про це в бот не
+        # пишемо, інакше кожна перевірка оновлень була б повідомленням
+        if not event.files:
+            return None
+        return t("tg_update", version=html.escape(event.version),
+                 files=event.files, kb=event.bytes_to_fetch // 1024)
+
+    @SAY.on(UpdateFailed, group="critical")
+    def _say_update_fail(self, event: UpdateFailed) -> str:
+        return t("tg_update_fail", reason=html.escape(event.reason))
+
+    @SAY.on(ProtocolStale, group="critical")
+    def _say_protocol(self, event: ProtocolStale) -> str:
+        if event.storm:
+            return t("tg_protocol_storm")
+        names = ", ".join(html.escape(name) for name in event.operations)
+        return t("tg_protocol_stale", names=names)
+
+    @SAY.on(CampaignAppeared, group="critical")
+    def _say_new_campaigns(self, event: CampaignAppeared) -> str:
+        news = [t("tg_new_campaign_title", count=len(event.campaigns))]
+        for fresh in event.campaigns[:5]:
+            ends = fresh.ends_at.astimezone().strftime("%d.%m %H:%M")
+            news.append(t(
+                "tg_new_campaign_item",
+                name=html.escape(fresh.name.strip()),
+                game=html.escape(fresh.game),
+                drops=fresh.total_drops,
+                unit=plural(
+                    fresh.total_drops,
+                    t("tg_drop_one"), t("tg_drop_few"), t("tg_drop_many"),
+                ),
+                ends=ends,
+            ))
+        if len(event.campaigns) > 5:
+            news.append(t("tg_new_campaign_more", n=len(event.campaigns) - 5))
+        news.append(t("tg_new_campaign_hint"))
+        return "\n".join(news)
+
+    @SAY.on(DeadlineRisk, group="critical")
+    def _say_deadline(self, event: DeadlineRisk) -> str:
+        lines = [t("tg_deadline_title", count=len(event.campaigns))]
+        for item in event.campaigns[:5]:
+            lines.append(t(
+                "tg_deadline_item",
+                name=html.escape(item.name),
+                game=html.escape(item.game),
+                needed=item.minutes_needed,
+                available=item.minutes_available,
+            ))
+        if len(event.campaigns) > 5:
+            lines.append(t("tg_deadline_more", n=len(event.campaigns) - 5))
+        return "\n".join(lines)
+
+    @SAY.on(ConnectionLost, group="critical")
+    def _say_conn_lost(self, event: ConnectionLost) -> str:
+        return t("tg_conn_lost", reason=html.escape(event.reason))
+
+    @SAY.on(ConnectionRestored, group="critical")
+    def _say_conn_ok(self, event: ConnectionRestored) -> str:
+        return t("tg_conn_ok", seconds=round(event.downtime_seconds))
+
+    @SAY.on(MinerError, group="critical")
+    def _say_error(self, event: MinerError) -> str:
+        return t("tg_error", message=html.escape(event.message))
+
+    @SAY.on(MinerStopped, group="critical")
+    def _say_stopped(self, event: MinerStopped) -> str:
+        return t("tg_stopped", reason=html.escape(event.reason))
+
+    # ------------------------------------------------------- нагороди
+
+    @SAY.on(DropClaimed, group="rewards")
+    def _say_claimed(self, event: DropClaimed) -> str:
+        return t("tg_claimed", rewards=html.escape(event.rewards),
+                 game=html.escape(event.game))
+
+    @SAY.on(CampaignFinished, group="rewards")
+    def _say_campaign_done(self, event: CampaignFinished) -> str:
+        return t("tg_campaign_done", name=html.escape(event.campaign_name),
+                 game=html.escape(event.game))
+
+    # ------------------------------------------------------- рутина
+
+    @SAY.on(WatchingChanged, group="routine")
+    def _say_switched(self, event: WatchingChanged) -> str | None:
+        if event.channel is None or not self._routine_allowed("watching"):
+            return None
+        game = html.escape(event.channel.game or "—")
+        return t("tg_switched", channel=html.escape(event.channel.name),
+                 game=game)
+
+    @SAY.on(StreamOffline, group="routine")
+    def _say_offline(self, event: StreamOffline) -> str | None:
+        if not self._routine_allowed("offline"):
+            return None
+        return t("tg_offline", channel=html.escape(event.channel_name))
 
     # ------------------------------------------------------------ періодичний звіт
 

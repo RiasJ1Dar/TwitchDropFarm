@@ -56,6 +56,7 @@ from core.events import (
     LogLine,
     ProgressStalled,
     ProtocolStale,
+    Router,
     StatusChanged,
     UpdateAvailable,
     UpdateFailed,
@@ -161,6 +162,11 @@ SIDE_WIDTH = 330
 # Скільки рядків показуємо в «Ось-ось заберемо». Більше не має сенсу: це не
 # інвентар, а підказка «що трапиться найближчим часом».
 SOON_LIMIT = 8
+
+
+# Маршрути «подія → що показати у вікні». Оголошено до класу, бо декоратори в
+# тілі класу виконуються під час його створення.
+SHOW = Router()
 
 
 class GUI:
@@ -1547,128 +1553,170 @@ class GUI:
             pass  # вікно вже знищене
 
     def _render(self, event: Event) -> None:
-        if isinstance(event, WindowVisibility):
-            # Ховати нема куди, поки трей не піднявся: вікно зникло б, а
-            # повернути його не було б чим.
-            if event.visible:
-                self.show_window()
-            elif self._tray_available:
-                self.hide_to_tray()
-        elif isinstance(event, StatusChanged):
-            self.status_var.set(event.text)
-            self._farm_from_status(event.text)
-        elif isinstance(event, LogLine):
-            self._append_log(event.text)
-        elif isinstance(event, LoginRequired):
-            self._append_log(t("login_needed", code=event.user_code), "warn")
-        elif isinstance(event, LoggedIn):
-            self._append_log(t("logged_in", user_id=event.user_id), "ok")
-        elif isinstance(event, WatchingChanged):
-            if event.channel is None:
-                self.channel_var.set("—")
-                self.title_var.set("")
-                self._growing.clear()
-                self.drop_var.set(t("drop_unknown"))
-                self._set_progress(0)
-                self._set_farm_state("idle")
-            else:
-                if event.channel.name != self._watching_name:
-                    # інший канал — інші дропи; старі рядки більше не про це
-                    self._growing.clear()
-                    self._watching_name = event.channel.name
-                self.channel_var.set(
-                    f"{event.channel.name}  ·  {event.channel.game or t('no_game')}"
-                )
-                # Категорія «Special Events» не каже, у що грають, — гра названа
-                # в заголовку трансляції. Ріжемо довгий: у турнірних заголовках
-                # після назви йде перелік команд і хештеги.
-                title = " ".join(event.channel.stream_title.split())
-                self.title_var.set(
-                    title if len(title) <= 90 else title[:87] + "…"
-                )
-                if not self._twitch._paused:
-                    self._set_farm_state("going")
-        elif isinstance(event, DropProgress):
-            # Кампанія попереду гри: «EWC 2026» каже, за що дроп, а «Special
-            # Events» — лише те, що це подієва категорія Twitch.
-            where = event.campaign or event.game
-            if event.campaign and event.campaign != event.game:
-                where = f"{event.campaign} · {event.game}"
-            self._growing[event.drop_name] = (
-                monotonic(), where,
-                event.current_minutes, event.required_minutes,
-            )
-            self._render_growing()
+        """Показує подію у вікні. Маршрути — нижче, по одному методу на подію.
+
+        Раніше тут стояла драбина з дев'ятнадцяти `elif isinstance`, і такі
+        самі драбини були в журналі та в Telegram. Нову подію доводилось
+        вписувати в три місця; забути одне не заважало нічому, крім людини,
+        яка так і не бачила того, про що програма хотіла сказати.
+        """
+        SHOW.dispatch(event, owner=self)
+
+    @SHOW.on(WindowVisibility)
+    def _show_visibility(self, event: WindowVisibility) -> None:
+        # Ховати нема куди, поки трей не піднявся: вікно зникло б, а
+        # повернути його не було б чим.
+        if event.visible:
+            self.show_window()
+        elif self._tray_available:
+            self.hide_to_tray()
+
+    @SHOW.on(StatusChanged)
+    def _show_status(self, event: StatusChanged) -> None:
+        self.status_var.set(event.text)
+        self._farm_from_status(event.text)
+
+    @SHOW.on(LogLine)
+    def _show_line(self, event: LogLine) -> None:
+        self._append_log(event.text)
+
+    @SHOW.on(LoginRequired)
+    def _show_login(self, event: LoginRequired) -> None:
+        self._append_log(t("login_needed", code=event.user_code), "warn")
+
+    @SHOW.on(LoggedIn)
+    def _show_logged_in(self, event: LoggedIn) -> None:
+        self._append_log(t("logged_in", user_id=event.user_id), "ok")
+
+    @SHOW.on(WatchingChanged)
+    def _show_watching(self, event: WatchingChanged) -> None:
+        if event.channel is None:
+            self.channel_var.set("—")
+            self.title_var.set("")
+            self._growing.clear()
+            self.drop_var.set(t("drop_unknown"))
+            self._set_progress(0)
+            self._set_farm_state("idle")
+            return
+        if event.channel.name != self._watching_name:
+            # інший канал — інші дропи; старі рядки більше не про це
+            self._growing.clear()
+            self._watching_name = event.channel.name
+        self.channel_var.set(
+            f"{event.channel.name}  ·  {event.channel.game or t('no_game')}"
+        )
+        # Категорія «Special Events» не каже, у що грають, — гра названа
+        # в заголовку трансляції. Ріжемо довгий: у турнірних заголовках
+        # після назви йде перелік команд і хештеги.
+        title = " ".join(event.channel.stream_title.split())
+        self.title_var.set(title if len(title) <= 90 else title[:87] + "…")
+        if not self._twitch._paused:
             self._set_farm_state("going")
-        elif isinstance(event, DropClaimed):
-            self._append_log(t("claimed_log", rewards=event.rewards, game=event.game), "ok")
-            party = getattr(self, "confetti", None)
-            if party is not None:
-                party.burst()
-        elif isinstance(event, ProtocolStale):
-            if event.storm:
-                self._append_log(t("protocol_storm_log"), "warn")
-            else:
-                self._append_log(
-                    t("protocol_stale_log", names=", ".join(event.operations)), "err",
-                )
-        elif isinstance(event, CampaignAppeared):
-            for item in event.campaigns:
-                self._append_log(
-                    t("new_campaign_log",
-                      name=item.name.strip(), game=item.game,
-                      drops=item.total_drops,
-                      unit=plural(item.total_drops,
-                                  t("tg_drop_one"), t("tg_drop_few"), t("tg_drop_many"))),
-                    "ok",
-                )
-        elif isinstance(event, UpdateAvailable):
-            if event.files == 0:
-                self._append_log(t("update_hashes", version=event.version), "ok")
-                return
-            what = plural(event.files, t("file_one"), t("file_few"), t("file_many"))
-            size = human_size(event.bytes_to_fetch)
+
+    @SHOW.on(DropProgress)
+    def _show_progress(self, event: DropProgress) -> None:
+        # Кампанія попереду гри: «EWC 2026» каже, за що дроп, а «Special
+        # Events» — лише те, що це подієва категорія Twitch.
+        where = event.campaign or event.game
+        if event.campaign and event.campaign != event.game:
+            where = f"{event.campaign} · {event.game}"
+        self._growing[event.drop_name] = (
+            monotonic(), where,
+            event.current_minutes, event.required_minutes,
+        )
+        self._render_growing()
+        self._set_farm_state("going")
+
+    @SHOW.on(DropClaimed)
+    def _show_claimed(self, event: DropClaimed) -> None:
+        self._append_log(
+            t("claimed_log", rewards=event.rewards, game=event.game), "ok")
+        party = getattr(self, "confetti", None)
+        if party is not None:
+            party.burst()
+
+    @SHOW.on(ProtocolStale)
+    def _show_protocol(self, event: ProtocolStale) -> None:
+        if event.storm:
+            self._append_log(t("protocol_storm_log"), "warn")
+        else:
             self._append_log(
-                t("update_ready_log", version=event.version, files=event.files,
-                  unit=what, size=size), "ok",
+                t("protocol_stale_log", names=", ".join(event.operations)), "err",
             )
-            self._pending_update = t(
-                "update_ask", version=event.version, files=event.files,
-                unit=what, size=size)
-            self._maybe_ask_update()
-        elif isinstance(event, UpdateFailed):
-            self._append_log(t("update_fail_log", reason=event.reason), "err")
-        elif isinstance(event, ProgressStalled):
-            why = (
-                t("stall_else", name=event.counted_elsewhere)
-                if event.counted_elsewhere
-                else t("stall_manual")
-            )
+
+    @SHOW.on(CampaignAppeared)
+    def _show_new_campaigns(self, event: CampaignAppeared) -> None:
+        for item in event.campaigns:
             self._append_log(
-                t("stall_log", minutes=event.minutes_without_progress,
-                  channel=event.channel_name, why=why), "err"
+                t("new_campaign_log",
+                  name=item.name.strip(), game=item.game,
+                  drops=item.total_drops,
+                  unit=plural(item.total_drops,
+                              t("tg_drop_one"), t("tg_drop_few"), t("tg_drop_many"))),
+                "ok",
             )
-            self._set_farm_state("stalled")
-        elif isinstance(event, WatchUncounted):
-            self._append_log(
-                t("uncounted_log", channel=event.channel_name),
-                "err",
-            )
-            self._set_farm_state("uncounted")
-        elif isinstance(event, ConnectionLost):
-            self.conn_var.set(t("conn_lost_badge"))
-            self._append_log(t("conn_lost_log", reason=event.reason), "err")
-        elif isinstance(event, ConnectionRestored):
-            self.conn_var.set("")
-            self._append_log(
-                t("conn_ok_log", seconds=round(event.downtime_seconds)), "ok"
-            )
-        elif isinstance(event, WebsocketStatus):
-            self._render_websockets(event)
-        elif isinstance(event, ChannelsUpdated):
-            self._render_channels(event)
-        elif isinstance(event, InventoryUpdated):
-            self._render_inventory(event)
+
+    @SHOW.on(UpdateAvailable)
+    def _show_update(self, event: UpdateAvailable) -> None:
+        if event.files == 0:
+            self._append_log(t("update_hashes", version=event.version), "ok")
+            return
+        what = plural(event.files, t("file_one"), t("file_few"), t("file_many"))
+        size = human_size(event.bytes_to_fetch)
+        self._append_log(
+            t("update_ready_log", version=event.version, files=event.files,
+              unit=what, size=size), "ok",
+        )
+        self._pending_update = t(
+            "update_ask", version=event.version, files=event.files,
+            unit=what, size=size)
+        self._maybe_ask_update()
+
+    @SHOW.on(UpdateFailed)
+    def _show_update_failed(self, event: UpdateFailed) -> None:
+        self._append_log(t("update_fail_log", reason=event.reason), "err")
+
+    @SHOW.on(ProgressStalled)
+    def _show_stalled(self, event: ProgressStalled) -> None:
+        why = (
+            t("stall_else", name=event.counted_elsewhere)
+            if event.counted_elsewhere
+            else t("stall_manual")
+        )
+        self._append_log(
+            t("stall_log", minutes=event.minutes_without_progress,
+              channel=event.channel_name, why=why), "err"
+        )
+        self._set_farm_state("stalled")
+
+    @SHOW.on(WatchUncounted)
+    def _show_uncounted(self, event: WatchUncounted) -> None:
+        self._append_log(t("uncounted_log", channel=event.channel_name), "err")
+        self._set_farm_state("uncounted")
+
+    @SHOW.on(ConnectionLost)
+    def _show_conn_lost(self, event: ConnectionLost) -> None:
+        self.conn_var.set(t("conn_lost_badge"))
+        self._append_log(t("conn_lost_log", reason=event.reason), "err")
+
+    @SHOW.on(ConnectionRestored)
+    def _show_conn_ok(self, event: ConnectionRestored) -> None:
+        self.conn_var.set("")
+        self._append_log(
+            t("conn_ok_log", seconds=round(event.downtime_seconds)), "ok"
+        )
+
+    @SHOW.on(WebsocketStatus)
+    def _show_websockets(self, event: WebsocketStatus) -> None:
+        self._render_websockets(event)
+
+    @SHOW.on(ChannelsUpdated)
+    def _show_channels(self, event: ChannelsUpdated) -> None:
+        self._render_channels(event)
+
+    @SHOW.on(InventoryUpdated)
+    def _show_inventory(self, event: InventoryUpdated) -> None:
+        self._render_inventory(event)
 
     def _set_farm_state(self, state: str) -> None:
         """Кольорова мітка в шапці: іде / стоїть / чекає.
