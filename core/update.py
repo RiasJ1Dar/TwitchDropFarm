@@ -29,6 +29,9 @@ APPLY_BAT = STATE_DIR / "apply-update.cmd"
 # Журнал самої підміни: скрипт працює після виходу програми, і без цього файлу
 # збій у ньому не лишав жодного слова ніде.
 APPLY_LOG = STATE_DIR / "update-apply.log"
+# Програма створює цей файл, коли справді піднялась. Скрипт підміни чекає на
+# нього, щоб відрізнити «оновлення встало» від «нова збірка не запускається».
+STARTED_FLAG = STATE_DIR / "started.flag"
 CHUNK = 256 * 1024
 # 2.0.0 вийшла раніше за 1.0.x — порівнюємо лише всередині тієї ж мажорної лінії
 USER_AGENT = f"TwitchDropFarm/{VERSION}"
@@ -222,6 +225,7 @@ def write_apply_script() -> Path:
         # Так файл лишається читабельним цілком.
         "set NAME=%~6\r\n"
         "set ARGS=%~7\r\n"
+        "set FLAG=%~8\r\n"
         "echo waiting for pid %PID% and image %NAME% >> \"%LOG%\"\r\n"
         ":wait\r\n"
         # `ping`, а не `timeout`: скрипт запускається відв'язаним, без консолі,
@@ -284,7 +288,47 @@ def write_apply_script() -> Path:
         "echo starting app >> \"%LOG%\"\r\n"
         # З тими самими аргументами: інакше після оновлення програма підіймалась
         # без `--log`, і журнал мовчки переставав вестися.
+        # ⚠️ Запуск — ще не успіх, і перевіряти живий процес тут МАЛО:
+        # коли бутлоадер не знаходить python DLL, він показує вікно
+        # помилки, і процес при цьому цілком живий. Тому чекаємо на
+        # маркер, який пише сама програма, піднявшись.
+        #
+        # 01–06.09 нова збірка на чужому ПК тричі показала «Failed to
+        # load Python DLL … python314.dll» — і щоразу піднімалась із
+        # ДРУГОЇ спроби, коли людина тиснула OK і запускала ще раз.
+        # Причина не знайдена: пауза перед запуском її не прибрала.
+        # Але робити цю роботу руками людина не мусить — повторний
+        # запуск тут рівно те саме, що вона й робила.
+        "del /F /Q \"%FLAG%\" >nul 2>&1\r\n"
+        "set TRY=0\r\n"
+        ":launch\r\n"
+        "set /a TRY+=1\r\n"
+        "echo start attempt %TRY% >> \"%LOG%\"\r\n"
         "start \"\" \"%EXE%\" %ARGS%\r\n"
+        "set W=0\r\n"
+        ":waitflag\r\n"
+        "if exist \"%FLAG%\" goto confirmed\r\n"
+        "set /a W+=1\r\n"
+        "if %W% GEQ 25 goto retry\r\n"
+        "ping -n 2 127.0.0.1 >nul\r\n"
+        "goto waitflag\r\n"
+        ":retry\r\n"
+        "echo attempt %TRY% did not confirm start >> \"%LOG%\"\r\n"
+        # Друга спроба — остання. Далі не вбиваємо: якщо маркера немає
+        # не через збій старту, а тому що програмі нікуди його писати,
+        # нескінченні перезапуски були б гіршими за саму помилку.
+        "if %TRY% GEQ 2 (\r\n"
+        "  echo GAVE UP WAITING FOR START >> \"%LOG%\"\r\n"
+        "  goto finish\r\n"
+        ")\r\n"
+        # Знімаємо те, що зависло: вікно помилки бутлоадера тримає
+        # процес живим, і без цього друга спроба стала б другою копією.
+        "taskkill /F /IM \"%NAME%\" >> \"%LOG%\" 2>&1\r\n"
+        "ping -n 3 127.0.0.1 >nul\r\n"
+        "goto launch\r\n"
+        ":confirmed\r\n"
+        "echo app confirmed start on attempt %TRY% >> \"%LOG%\"\r\n"
+        ":finish\r\n"
         "echo done >> \"%LOG%\"\r\n"
     )
     APPLY_BAT.write_text(body, encoding="ascii")
@@ -315,7 +359,7 @@ def launch_apply(script: Path, *, exe: Path, dest: Path, pid: int,
         [
             os.environ.get("COMSPEC", "cmd.exe"), "/c", str(script),
             str(STAGE_DIR), str(dest), str(pid), str(exe), str(APPLY_LOG),
-            exe.name, args,
+            exe.name, args, str(STARTED_FLAG),
         ],
         creationflags=detached,
         close_fds=True,
@@ -380,6 +424,21 @@ def _why_copy_failed(body: str) -> str:
     if unknown:
         return f"не вдалося замінити файли: {unknown[-1][:160]}"
     return "не вдалося замінити файли"
+
+
+def confirm_started() -> None:
+    """Каже скриптові підміни, що програма справді піднялась.
+
+    Без цього маркера скрипт не відрізнить «оновлення встало» від «нова збірка
+    показує вікно помилки»: у другому випадку процес теж живий, бо діалог
+    бутлоадера тримає його.
+    """
+    try:
+        STARTED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        STARTED_FLAG.write_text(VERSION, encoding="utf-8")
+    except OSError as error:
+        # не привід валити запуск: скрипт зробить другу спробу й здасться
+        log.debug(f"Не вдалось позначити старт: {error}")
 
 
 def drop_backup() -> None:
