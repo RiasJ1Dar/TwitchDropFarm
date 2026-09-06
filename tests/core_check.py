@@ -1560,6 +1560,67 @@ def update_checks() -> None:
           len([e for e in quiet.events.sent if isinstance(e, UpdateFailed)]) == 1)
 
 
+# --------------------------------------------------- маршрути показу подій
+
+# Події, які свідомо нікому не показуються. Порожній список — і добре; кожен
+# запис тут має бути пояснений, інакше він перетворюється на смітник, куди
+# зручно ховати забуте.
+SILENT_EVENTS: frozenset[str] = frozenset()
+
+
+def routing_checks() -> None:
+    """Жодна подія не має загубитись дорогою до людини.
+
+    ⚠️ Заради цієї перевірки й затівався весь маршрутизатор. Показ подій жив у
+    трьох незалежних драбинах `elif isinstance(...)` — вікно, журнал, Telegram.
+    Нову подію треба було вписати в три місця, і забути одне не заважало
+    НІЧОМУ: код працює, лінтер чистий, тести зелені. Помічала це лише людина,
+    яка так і не побачила того, про що програма хотіла сказати.
+
+    Тепер маршрути — таблиці, тож у них можна спитати, що вони вміють. Ця
+    перевірка й питає: кожен клас події або показується десь, або свідомо
+    записаний у `SILENT_EVENTS`.
+    """
+    import inspect
+
+    from core import events as events_module
+    from core.reporters import TO_CONSOLE, TO_LOG
+    from gui.app import SHOW
+    from notify.telegram import SAY
+
+    print("\n[30] Маршрути показу подій")
+
+    every = {
+        cls for _name, cls in inspect.getmembers(events_module, inspect.isclass)
+        if issubclass(cls, events_module.Event) and cls is not events_module.Event
+    }
+    covered = SHOW.covered() | SAY.covered() | TO_LOG.covered() | TO_CONSOLE.covered()
+    lost = {c.__name__ for c in every - covered} - SILENT_EVENTS
+
+    check(f"усі {len(every)} подій кудись показуються", not lost)
+    if lost:
+        for name in sorted(lost):
+            print(f"       загублено: {name}")
+
+    # Список мовчазних гниє швидше за код: подію починають показувати, а запис
+    # лишається й тихо дозволяє загубити її знову.
+    stale = SILENT_EVENTS & {c.__name__ for c in covered}
+    check("список мовчазних подій не застарів", not stale)
+
+    # Кожен маршрутизатор мусить щось уміти: порожній — ознака того, що
+    # споживача переписали, а маршрути забули перенести.
+    for label, table in (("вікно", SHOW), ("бот", SAY),
+                         ("журнал", TO_LOG), ("консоль", TO_CONSOLE)):
+        check(f"{label}: маршрути на місці", len(table.covered()) > 0)
+
+    # Обробник повертає None для типу без маршруту — на цьому стоїть уся
+    # тиша споживачів, і зламати її означало б сипати винятками на кожній події.
+    spare = events_module.Router()
+    check("подія без маршруту не падає",
+          spare.dispatch(events_module.LogLine(text="x")) is None)
+
+
+
 # ------------------------------------------------------ святкування дропа
 
 def celebrate_checks() -> None:
@@ -2140,6 +2201,7 @@ def main() -> int:
     image_cache_checks()
     autostart_checks()
     update_checks()
+    routing_checks()
     celebrate_checks()
     theme_checks()
     seen_checks()

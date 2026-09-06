@@ -30,25 +30,11 @@ if __name__ == "__main__":
     from core.config import VERSION as __version__
     from core.config import log_path as log_file
     from core.events import (
-        CampaignFinished,
         Command,
         CommandType,
-        ConnectionLost,
-        ConnectionRestored,
-        DropClaimed,
-        DropProgress,
         Event,
-        LoggedIn,
-        LoginRequired,
-        LogLine,
         MinerStarted,
-        MinerStopped,
-        ProgressStalled,
-        StatusChanged,
-        UpdateAvailable,
         UpdateFailed,
-        WatchingChanged,
-        WatchUncounted,
     )
     from core.miner import Miner as Twitch
     from core.settings import Settings
@@ -155,102 +141,13 @@ if __name__ == "__main__":
     logging.getLogger("TwitchDrops.gql").setLevel(settings.debug_gql)
     logging.getLogger("TwitchDrops.websocket").setLevel(settings.debug_ws)
 
-    def log_reporter(event: Event) -> None:
-        """Дублює важливі події в журнал.
+    from core.reporters import TO_CONSOLE, TO_LOG
 
-        Без цього `--log` розповідав лише половину історії: стан, канал і прогрес
-        ішли тільки в stdout, а він губиться при запуску без вікна. Саме через це
-        журнал обривався на «Websocket підключено», хоча майнер працював далі.
-        """
-        if isinstance(event, StatusChanged):
-            logger.log(CALL, f"Стан: {event.text}")
-        elif isinstance(event, WatchingChanged):
-            if event.channel is None:
-                logger.info("Перестали дивитись")
-            else:
-                logger.info(f"Дивимось {event.channel.name} ({event.channel.game})")
-        elif isinstance(event, DropProgress):
-            logger.log(
-                CALL,
-                f"Дроп {event.drop_name} ({event.game}): "
-                f"{event.current_minutes}/{event.required_minutes} хв"
-            )
-        elif isinstance(event, DropClaimed):
-            logger.warning(f"ОТРИМАНО ДРОП: {event.rewards} — {event.game}")
-        elif isinstance(event, CampaignFinished):
-            logger.warning(f"КАМПАНІЮ ЗАВЕРШЕНО: {event.campaign_name} ({event.game})")
-        elif isinstance(event, ProgressStalled):
-            where = (
-                f", зараховується «{event.counted_elsewhere}»"
-                if event.counted_elsewhere else ""
-            )
-            logger.error(
-                f"Прогрес стоїть {event.minutes_without_progress} хв "
-                f"на {event.channel_name}{where}"
-            )
-        elif isinstance(event, WatchUncounted):
-            logger.error(
-                f"Перегляд не зараховується на {event.channel_name}: "
-                f"{event.consecutive} хвилини поспіль не дійшли до Twitch"
-            )
-        elif isinstance(event, UpdateAvailable):
-            logger.warning(
-                f"Оновлення {event.version}: {event.files} файлів, "
-                f"{event.bytes_to_fetch} байт"
-            )
-        elif isinstance(event, UpdateFailed):
-            logger.error(f"Оновлення не встало: {event.reason}")
-        elif isinstance(event, MinerStopped):
-            logger.warning(f"Майнер зупинено: {event.reason}")
+    def log_reporter(event: Event) -> None:
+        TO_LOG.dispatch(event)
 
     def console_reporter(event: Event) -> None:
-        """Друкує події в консоль. Тимчасова заміна GUI, поки його немає."""
-        if isinstance(event, LogLine):
-            print(event.text)
-        elif isinstance(event, StatusChanged):
-            print(f"[стан] {event.text}")
-        elif isinstance(event, LoginRequired):
-            print(f"\n>>> Потрібна авторизація. Код: {event.user_code}")
-            print(f">>> Сторінка: {event.verification_uri}\n")
-        elif isinstance(event, LoggedIn):
-            print(f"[вхід] Успішно, user ID {event.user_id}")
-        elif isinstance(event, WatchingChanged):
-            if event.channel is None:
-                print("[канал] Нічого не дивимось")
-            else:
-                print(f"[канал] {event.channel.name} ({event.channel.game})")
-        elif isinstance(event, DropProgress):
-            print(
-                f"[дроп] {event.drop_name} ({event.game}): "
-                f"{event.current_minutes}/{event.required_minutes} хв"
-            )
-        elif isinstance(event, DropClaimed):
-            print(f"[НАГОРОДА] {event.rewards} — {event.game}")
-        elif isinstance(event, CampaignFinished):
-            print(f"[ГОТОВО] Кампанію завершено: {event.campaign_name} ({event.game})")
-        elif isinstance(event, ProgressStalled):
-            why = (
-                f"Twitch зараховує «{event.counted_elsewhere}» — інший дроп "
-                f"цього ж каналу."
-                if event.counted_elsewhere
-                else "Можлива причина — цим акаунтом хтось дивиться Twitch вручну."
-            )
-            print(
-                f"[!] Прогрес стоїть {event.minutes_without_progress} хв на "
-                f"{event.channel_name}. {why}"
-            )
-        elif isinstance(event, WatchUncounted):
-            print(
-                f"[!] Перегляд не зараховується на {event.channel_name}. "
-                f"Хвилина не доходить до Twitch — перевірте, чи не блокується "
-                f"spade.twitch.tv."
-            )
-        elif isinstance(event, ConnectionLost):
-            print(f"[!] Втрачено зв'язок: {event.reason}. Перепідключаюсь…")
-        elif isinstance(event, ConnectionRestored):
-            print(f"[+] Зв'язок відновлено за {round(event.downtime_seconds)}с")
-        elif isinstance(event, MinerStopped):
-            print(f"[стоп] {event.reason}")
+        TO_CONSOLE.dispatch(event)
 
     # разові режими завжди консольні — вікно там ні до чого
     one_shot = (args.auth_only or args.dump_inventory or args.test_telegram
