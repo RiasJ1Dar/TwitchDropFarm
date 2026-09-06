@@ -1276,6 +1276,15 @@ def autostart_checks() -> None:
         check("і це теж видно", autostart.is_enabled() is False)
         check("зняття неіснуючого — не помилка", autostart.disable() is True)
 
+        # Відновлення зниклого запису. ⚠️ За скаргою 06.09: «автозапуск не
+        # проходить після оновлення». Запис у Run може прибрати антивірус
+        # після заміни бінарника, а програма знала лише те, що каже реєстр.
+        check("без наміру нічого не робимо", autostart.restore(False) is None)
+        check("запису немає — повертаємо", autostart.restore(True) is True)
+        check("і він справді на місці", autostart.is_enabled() is True)
+        check("запис цілий — не чіпаємо", autostart.restore(True) is False)
+        autostart.disable()
+
         # запис від іншої збірки: команда чужа, отже автозапуск не наш
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, probe, 0,
                             winreg.KEY_SET_VALUE) as key:
