@@ -39,6 +39,7 @@ class ConfigShape(TypedDict):
     watch_games: list[str]
     dark_theme: bool
     start_in_tray: bool
+    autostart: bool
     tray_notifications: bool
     farm_cosmetics: bool
     verify_channel_drops: bool
@@ -89,6 +90,12 @@ DEFAULTS: ConfigShape = {
     "watch_games": [],
     "dark_theme": True,
     "start_in_tray": False,
+    # ⚠️ Намір людини, а не стан реєстру. Стан читається з реєстру, але коли
+    # запис звідти зникає — а він зникає, антивірус має право прибрати
+    # автозавантаження після заміни бінарника — програма мусить знати, що
+    # автозапуск ХОТІЛИ, і повернути його. Без цього поля втрата виглядала
+    # як «після оновлення автозапуск не проходить, вмикай руками».
+    "autostart": False,
     "tray_notifications": True,
     "farm_cosmetics": False,
     "verify_channel_drops": False,

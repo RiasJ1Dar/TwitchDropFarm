@@ -1398,6 +1398,9 @@ class GUI:
         """
         got = autostart.apply(self.boot_var.get())
         self.boot_var.set(got)
+        # Намір зберігаємо окремо від реєстру: якщо запис колись зникне,
+        # програма має знати, що його ставили, і повернути на місце.
+        self._twitch.settings.autostart = got
         self._append_log(
             t("boot_on") if got else t("boot_off"),
             "ok" if got == self.boot_var.get() else "warn",
