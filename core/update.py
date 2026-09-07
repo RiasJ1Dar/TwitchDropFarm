@@ -304,6 +304,21 @@ def write_apply_script() -> Path:
         ":launch\r\n"
         "set /a TRY+=1\r\n"
         "echo start attempt %TRY% >> \"%LOG%\"\r\n"
+        # ⚠️ ОСЬ ЗВІДКИ БРАЛАСЬ «Failed to load Python DLL». Журнал
+        # підміни з чужого ПК (06.09) показав скрипт, що відпрацював
+        # ДВІЧІ: два «copying», два «starting app», два «done». Дві
+        # копії бутлоадера стартували одночасно й розпаковували рантайм
+        # в ОДНУ Й ТУ САМУ теку `%TEMP%\_MEIxxxxx` — ім'я теки в усіх
+        # трьох скаргах було те саме. Друга не знаходила python DLL,
+        # бо перша ще її туди клала.
+        #
+        # Тому перед запуском питаємо, чи програма вже не піднялась.
+        # У гілці повтору це не заважає: там процес щойно знято
+        # `taskkill`, тож перевірка його не побачить.
+        "tasklist /FI \"IMAGENAME eq %NAME%\" | find /I \"%NAME%\" >nul && (\r\n"
+        "  echo already running, not starting a second copy >> \"%LOG%\"\r\n"
+        "  goto finish\r\n"
+        ")\r\n"
         "start \"\" \"%EXE%\" %ARGS%\r\n"
         "set W=0\r\n"
         ":waitflag\r\n"
