@@ -1636,6 +1636,27 @@ def routing_checks() -> None:
           and hasattr(gui_cls, "_block_remove"))
     adds = _ins.getsource(gui_cls._block_add)
     drops = _ins.getsource(gui_cls._block_remove)
+    # Стан дропа окремо від стану кампанії. 06.09 в експорті знайшлись п'ять
+    # рядків «завершено» з claimed=ні — виглядало як загублені нагороди, а
+    # насправді це дропи не за перегляд (потрібно 0 хвилин).
+    from types import SimpleNamespace as _S
+
+    from core.export import _drop_state
+
+    check("взятий дроп названо взятим",
+          _drop_state(_S(taken=True, required_minutes=60, minutes=60)) == "взято")
+    check("дроп не за перегляд названо чесно",
+          _drop_state(_S(taken=False, required_minutes=0, minutes=0))
+          == "не за переглядом")
+    check("готовий до взяття видно",
+          _drop_state(_S(taken=False, required_minutes=60, minutes=60,
+                         ready_to_take=True)) == "можна забрати")
+    check("почате не плутається з непочатим",
+          _drop_state(_S(taken=False, required_minutes=60, minutes=20,
+                         ready_to_take=False)) == "фармимо"
+          and _drop_state(_S(taken=False, required_minutes=60, minutes=0,
+                             ready_to_take=False)) == "не почато")
+
     check("додавання йде командою ядра", "EXCLUDE_ADD" in adds)
     check("зняття йде командою ядра", "EXCLUDE_REMOVE" in drops)
 

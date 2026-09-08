@@ -21,7 +21,7 @@ INVENTORY_HTML = "inventory.html"
 _HISTORY_FIELDS = ("at", "kind", "game", "drop", "rewards", "campaign",
                    "needed", "available", "id")
 _INVENTORY_FIELDS = ("game", "campaign", "drop", "minutes", "required",
-                     "claimed", "state", "ends_at")
+                     "claimed", "drop_state", "state", "ends_at")
 
 
 def write_history(folder: Path, entries: Iterable[dict[str, Any]]) -> list[Path]:
@@ -94,10 +94,37 @@ def _inventory_rows(campaigns: Iterable[Any], now: datetime) -> list[dict[str, s
                 "minutes": str(getattr(drop, "minutes", "")),
                 "required": str(getattr(drop, "required_minutes", "")),
                 "claimed": "так" if getattr(drop, "taken", False) else "ні",
+                "drop_state": _drop_state(drop),
                 "state": state,
                 "ends_at": ends_text,
             })
     return rows
+
+
+def _drop_state(drop: Any) -> str:
+    """Стан самого дропа — окремо від стану кампанії.
+
+    ⚠️ Раніше в рядку дропа стояв лише стан КАМПАНІЇ, і це збивало з пантелику
+    рівно там, де людина шукала пояснення. 06.09 в експорті знайшлись п'ять
+    рядків «завершено», у яких `claimed` = ні: Onimusha Armament, LEGO Harley
+    Mayhem, ELDEN RING Sorcerer Rogier, WARDOGS WARLORD, Dawnwalker Supporter.
+    Виглядало як загублені нагороди.
+
+    Насправді все чесно: у всіх п'ятьох `потрібно 0 хвилин`, тобто переглядом
+    їх не здобути — це нагороди за іншу умову (підписка, покупка, участь).
+    `Campaign.everything_taken` їх свідомо не рахує, тому кампанія й
+    «завершена». Бракувало не логіки, а слова: тепер такий дроп прямо каже, що
+    він не за перегляд.
+    """
+    if getattr(drop, "taken", False):
+        return "взято"
+    if int(getattr(drop, "required_minutes", 0) or 0) <= 0:
+        return "не за переглядом"
+    if getattr(drop, "ready_to_take", False):
+        return "можна забрати"
+    if int(getattr(drop, "minutes", 0) or 0) > 0:
+        return "фармимо"
+    return "не почато"
 
 
 def _campaign_state(campaign: Any, now: datetime) -> str:
