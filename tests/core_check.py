@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import dataclasses
 import hashlib
 import json
 import logging
@@ -1616,6 +1617,28 @@ def routing_checks() -> None:
     # Обробник повертає None для типу без маршруту — на цьому стоїть уся
     # тиша споживачів, і зламати її означало б сипати винятками на кожній події.
     spare = events_module.Router()
+    # ⚠️ Знімок мусить нести прив'язку. Без неї картка «Скоро завершаться»
+    # показувала кампанії, яких програма не фармить і не візьме ніколи, —
+    # 06.09 це прочиталось як «фармить те, до чого акаунт не прив'язаний».
+    import inspect as _ins
+
+    src = _ins.getsource(Miner._campaign_snapshot)
+    check("знімок кампанії несе прив'язку акаунта", "linked=" in src)
+    fields = {f.name for f in dataclasses.fields(events_module.CampaignSnapshot)}
+    check("поле linked є у знімку", "linked" in fields)
+    side = _ins.getsource(sys.modules["gui.app"].GUI._render_side)
+    check("права колонка відсіює непривʼязані", "c.linked" in side)
+
+    # Чорний список: бекенд працював давно, у вікні його не було взагалі —
+    # людина 06.09 просила те, що в неї вже було, але лише в боті.
+    gui_cls = sys.modules["gui.app"].GUI
+    check("у вікні є чорний список", hasattr(gui_cls, "_block_add")
+          and hasattr(gui_cls, "_block_remove"))
+    adds = _ins.getsource(gui_cls._block_add)
+    drops = _ins.getsource(gui_cls._block_remove)
+    check("додавання йде командою ядра", "EXCLUDE_ADD" in adds)
+    check("зняття йде командою ядра", "EXCLUDE_REMOVE" in drops)
+
     check("подія без маршруту не падає",
           spare.dispatch(events_module.LogLine(text="x")) is None)
 
