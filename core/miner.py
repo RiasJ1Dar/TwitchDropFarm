@@ -349,7 +349,7 @@ class Miner:
             active=c.running, upcoming=c.not_started, expired=c.over,
             ends_at=c.closes_at,
             claimed_drops=c.taken_count, total_drops=c.total,
-            image=c.image,
+            image=c.image, linked=c.available_to_me,
             drops=tuple(
                 DropSnapshot(
                     id=d.id, name=d.name,

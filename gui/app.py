@@ -764,9 +764,15 @@ class GUI:
         for child in ends.winfo_children():
             child.destroy()
         now = datetime.now(timezone.utc)
+        # ⚠️ `c.linked` тут обов'язковий. Без нього картка показувала кампанії,
+        # до яких не прив'язаний ігровий акаунт, — програма їх не фармить і
+        # ніколи не візьме, а список читався як «ось що ми робимо». 06.09 туди
+        # потрапили Albion Online, Black Desert, Out of the Park Baseball, і
+        # людина слушно спитала, чому фармиться те, до чого вона не підключена.
         alive = sorted(
             (c for c in campaigns
-             if c.active and c.claimed_drops < c.total_drops and c.ends_at > now),
+             if c.active and c.linked and c.claimed_drops < c.total_drops
+             and c.ends_at > now),
             key=lambda c: c.ends_at,
         )
         if not alive:
@@ -1109,6 +1115,25 @@ class GUI:
         self.watch_entry = self._list_row(watch_box, self._watch_add,
                                           self._watch_remove)
 
+        # Чорний список. Бекенд був готовий давно — `settings.exclude` чесно
+        # відсіює ігри в `_pick_games`, і команди EXCLUDE_ADD/REMOVE ядро вже
+        # розуміло. Не було рівно одного: способу дістатись до нього з вікна.
+        # Людина 06.09 просила «чорний список ігор, які не фармити», не знаючи,
+        # що він у неї вже є — просто лише в боті.
+        block_box = self._block(left, t("blocked"), top=PAD, grow=True)
+        self._hint(block_box, t("blocked_hint"), colour="muted", wrap=240).pack(
+            anchor="w", fill="x")
+        self.block_list = tk.Listbox(block_box, height=4, bg=p["alt"], fg=p["fg"],
+                                     relief="flat", highlightthickness=0,
+                                     activestyle="none",
+                                     selectbackground=p["accent"],
+                                     selectforeground="#ffffff")
+        self.block_list.pack(fill="both", expand=True, pady=(6, 0))
+        for game in settings.exclude:
+            self.block_list.insert("end", game)
+        self.block_entry = self._list_row(block_box, self._block_add,
+                                          self._block_remove)
+
         mode_box = self._block(right, t("farm_mode"))
         self.mode_var = tk.StringVar(value=settings.farm_mode.name)
         for mode, label in (
@@ -1275,6 +1300,20 @@ class GUI:
             game = self.prio_list.get(selection[0])
             self.prio_list.delete(selection[0])
             self._send(CommandType.PRIORITY_REMOVE, game)
+
+    def _block_add(self) -> None:
+        game = self.block_entry.get().strip()
+        if game and game not in self.block_list.get(0, "end"):
+            self.block_list.insert("end", game)
+            self.block_entry.delete(0, "end")
+            self._send(CommandType.EXCLUDE_ADD, game)
+
+    def _block_remove(self) -> None:
+        selection = self.block_list.curselection()
+        if selection:
+            game = self.block_list.get(selection[0])
+            self.block_list.delete(selection[0])
+            self._send(CommandType.EXCLUDE_REMOVE, game)
 
     def _watch_add(self) -> None:
         game = self.watch_entry.get().strip()
