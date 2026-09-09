@@ -1890,6 +1890,50 @@ def routing_checks() -> None:
         Miner._weekly_report(talker)
         check("і не звітує щохвилини", not said)
 
+    # Підказка про прив'язку. ⚠️ Ознака вузька навмисно: у живому інвентарі
+    # було 345 непривʼязаних дропів у 81 грі, і майже всі — про ігри, у які
+    # людина не грає. Кажемо лише про ті, що вона сама назвала.
+    def _hint_camp(cid, game, linked=False, cosmetic=False, over=False,
+                   upcoming=False):
+        return types.SimpleNamespace(
+            id=cid, name=f"Кампанія {cid}", linked=linked, over=over,
+            not_started=upcoming, only_cosmetics=cosmetic, total=3,
+            link_url="https://link/" + cid,
+            game=types.SimpleNamespace(name=game),
+        )
+
+    adviser = miner_stub(
+        events=Bus(), _hint_told=set(),
+        settings=types.SimpleNamespace(
+            hint_links=True, priority=["World of Tanks"],
+            watch_games=["EVE Online"]),
+        campaigns=[_hint_camp("a", "World of Tanks"),
+                   _hint_camp("b", "EVE Online"),
+                   _hint_camp("c", "Shakes and Fidget"),
+                   _hint_camp("d", "World of Tanks", linked=True),
+                   _hint_camp("e", "World of Tanks", cosmetic=True)],
+    )
+    Miner._check_link_hints(adviser)
+    hints = [e for e in adviser.events.sent
+             if isinstance(e, events_module.AccountLinkNeeded)]
+    check("підказка прийшла", len(hints) == 1)
+    named = {c.name for c in hints[0].campaigns} if hints else set()
+    check("лише про ігри, які людина назвала",
+          named == {"Кампанія a", "Кампанія b"})
+    check("посилання на прив'язку є",
+          hints and all(c.url for c in hints[0].campaigns))
+    Miner._check_link_hints(adviser)
+    check("двічі про те саме не нагадуємо",
+          len([e for e in adviser.events.sent
+               if isinstance(e, events_module.AccountLinkNeeded)]) == 1)
+
+    adviser.settings.hint_links = False
+    adviser._hint_told.clear()
+    Miner._check_link_hints(adviser)
+    check("вимикач справді вимикає",
+          len([e for e in adviser.events.sent
+               if isinstance(e, events_module.AccountLinkNeeded)]) == 1)
+
     check("подія без маршруту не падає",
           spare.dispatch(events_module.LogLine(text="x")) is None)
 

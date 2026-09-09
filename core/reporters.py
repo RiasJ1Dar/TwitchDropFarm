@@ -18,6 +18,7 @@ import logging
 from core.config import TRACE as CALL
 from core.events import (
     AccountLinkLost,
+    AccountLinkNeeded,
     CampaignFinished,
     ConnectionLost,
     ConnectionRestored,
@@ -115,6 +116,15 @@ def _log_link_lost(event: AccountLinkLost) -> None:
         f"Прив'язку втрачено: {', '.join(event.campaigns)} "
         f"({event.minutes_lost} хв намайнено намарно)"
     )
+
+
+@TO_LOG.on(AccountLinkNeeded)
+def _log_link_hint(event: AccountLinkNeeded) -> None:
+    for item in event.campaigns:
+        logger.info(
+            f"Бракує прив'язки акаунта: «{item.name}» ({item.game}), "
+            f"{item.drops} дропів. {item.url}".rstrip()
+        )
 
 
 @TO_LOG.on(UpdateFailed)

@@ -66,6 +66,7 @@ class ConfigShape(TypedDict):
     language: str
     telegram: TelegramConfig
     discord_webhook: str
+    hint_links: bool
 
 
 DEFAULT_TELEGRAM: TelegramConfig = {
@@ -129,6 +130,10 @@ DEFAULTS: ConfigShape = {
     # доступу до листування не дає, але й показувати її стороннім не варто:
     # хто має адресу, той може писати в канал.
     "discord_webhook": "",
+    # Підказувати про кампанії, до яких бракує прив'язки акаунта. Лише для
+    # ігор зі списку пріоритету чи спостереження — і все одно вимикається,
+    # бо комусь ці нагадування ні до чого.
+    "hint_links": True,
 }
 
 

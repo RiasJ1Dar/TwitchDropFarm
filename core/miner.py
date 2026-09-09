@@ -40,6 +40,7 @@ from core.config import (
 )
 from core.events import (
     AccountLinkLost,
+    AccountLinkNeeded,
     CampaignAppeared,
     CampaignFinished,
     CampaignSnapshot,
@@ -56,6 +57,7 @@ from core.events import (
     DropSnapshot,
     EventBus,
     InventoryUpdated,
+    LinkHint,
     LoggedIn,
     MinerError,
     MinerStopped,
@@ -166,6 +168,8 @@ class Miner:
         self._link_told: set[str] = set()
         # дропи, чию загибель уже занесено в історію
         self._loss_told: set[str] = set()
+        # кампанії, про які вже підказали «варто прив'язати акаунт»
+        self._hint_told: set[str] = set()
         # остання причина, чому перевірка оновлень не вдалась: щоб та сама
         # не летіла в Telegram двічі на добу
         self._update_problem: str | None = None
@@ -421,6 +425,41 @@ class Miner:
             return
         self.history.record("report")
         self.say(t("report_weekly") + chr(10) + self.history.summary(7))
+
+    def _check_link_hints(self) -> None:
+        """Каже про дропи, до яких бракує лише прив'язки акаунта.
+
+        Беремо ЛИШЕ ігри, які людина назвала сама — у пріоритеті або в списку
+        спостереження. Без цього фільтра підказка охопила б сотні кампаній
+        (345 дропів у 81 грі в одному живому інвентарі) і перетворилась би на
+        шум, серед якого не видно важливого.
+
+        Про кожну кампанію говоримо один раз за запуск, і вимикач у
+        налаштуваннях вимикає це повністю.
+        """
+        if not self.settings.hint_links:
+            return
+        mine = {name.strip().lower()
+                for name in (*self.settings.priority, *self.settings.watch_games)
+                if name.strip()}
+        if not mine:
+            return
+        found = [
+            c for c in self.campaigns
+            if not c.linked and not c.over and not c.not_started
+            and not c.only_cosmetics
+            and c.game.name.strip().lower() in mine
+            and c.id not in self._hint_told
+        ]
+        if not found:
+            return
+        for campaign in found:
+            self._hint_told.add(campaign.id)
+        self.events.emit(AccountLinkNeeded(campaigns=tuple(
+            LinkHint(name=c.name.strip(), game=c.game.name,
+                     url=c.link_url, drops=c.total)
+            for c in found
+        )))
 
     def _check_losses(self) -> None:
         """Записує дропи, які згоріли з уже намайненими хвилинами.
@@ -720,6 +759,7 @@ class Miner:
         self._check_watchlist()
         self._check_links()
         self._check_losses()
+        self._check_link_hints()
         self._weekly_report()
         if self.settings.drop_images:
             # У фоні: картинки — прикраса, і чекати на них перед фармом безглуздо
