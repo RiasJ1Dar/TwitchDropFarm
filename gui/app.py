@@ -1262,6 +1262,17 @@ class GUI:
         self.tg_hint = self._hint(tg, self._telegram_hint())
         self.tg_hint.pack(anchor="w", fill="x", pady=(6, 0))
 
+        # Другий канал сповіщень. Без токена й без бота — потрібна лише адреса,
+        # тому й налаштування тут одне поле, а не майстер із трьох кроків.
+        dis = self._block(right, t("discord"), top=PAD)
+        self._hint(dis, t("discord_hint"), colour="muted", wrap=240).pack(
+            anchor="w", fill="x")
+        self.discord_entry = ctk.CTkEntry(dis, placeholder_text=t("discord_url"))
+        self.discord_entry.pack(fill="x", pady=(6, 0))
+        self.discord_entry.insert(0, settings.discord_webhook or "")
+        self.discord_entry.bind("<FocusOut>", self._discord_changed)
+        self.discord_entry.bind("<Return>", self._discord_changed)
+
         about = self._block(right, t("about_title"), top=PAD)
         # Окремою кнопкою, а не текстом у картці: у вузькій колонці опис
         # обрізався на півслові й читати його було нічим.
@@ -1567,6 +1578,28 @@ class GUI:
         if not telegram["chat_ids"]:
             return t("tg_hint_nochat")
         return t("tg_hint_ok")
+
+    def _discord_changed(self, _event: object = None) -> None:
+        """Зберігає адресу вебхука і каже, чи вона схожа на справжню.
+
+        Перевірка навмисно поверхнева: адреса або починається як вебхук
+        Discord, або ні. Ходити по ній із перевірочним запитом на кожен
+        натиск клавіші означало б слати в чужий канал сміття.
+        """
+        settings = self._twitch.settings
+        value = self.discord_entry.get().strip()
+        if value and not value.startswith((
+                "https://discord.com/api/webhooks/",
+                "https://discordapp.com/api/webhooks/",
+                "https://canary.discord.com/api/webhooks/")):
+            self._append_log(t("discord_bad_url"), "warn")
+            return
+        if value == (settings.discord_webhook or ""):
+            return
+        settings.discord_webhook = value
+        settings.save()
+        self._append_log(
+            t("discord_saved") if value else t("discord_off"), "ok")
 
     def _open_telegram_setup(self) -> None:
         from gui.telegram_setup import TelegramSetup
