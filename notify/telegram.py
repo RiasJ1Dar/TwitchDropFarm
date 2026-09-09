@@ -22,6 +22,7 @@ import aiohttp
 from core.config import REPORT_DAYS
 from core.config import TRACE as CALL
 from core.events import (
+    AccountLinkLost,
     CampaignAppeared,
     CampaignFinished,
     Command,
@@ -558,6 +559,12 @@ class TelegramNotifier:
             return None
         return t("tg_update", version=html.escape(event.version),
                  files=event.files, kb=event.bytes_to_fetch // 1024)
+
+    @SAY.on(AccountLinkLost, group="critical")
+    def _say_link_lost(self, event: AccountLinkLost) -> str:
+        return t("tg_link_lost",
+                 names=html.escape(", ".join(event.campaigns)),
+                 minutes=event.minutes_lost)
 
     @SAY.on(UpdateFailed, group="critical")
     def _say_update_fail(self, event: UpdateFailed) -> str:
