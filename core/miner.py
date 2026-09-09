@@ -19,6 +19,7 @@ from core import protocol, pubsub
 from core.api import Aborted, ApiError, TwitchApi
 from core.channels import Channel
 from core.config import (
+    CHANNEL_BENCH_SECONDS,
     CHANNEL_REFRESH_DELAY,
     HISTORY_FILE,
     IMAGE_DIR,
@@ -36,6 +37,7 @@ from core.config import (
     Stage,
 )
 from core.events import (
+    AccountLinkLost,
     CampaignAppeared,
     CampaignFinished,
     CampaignSnapshot,
@@ -156,6 +158,10 @@ class Miner:
         self._delivery_failures = 0
         self._shown_progress: dict[str, tuple[int, int]] = {}
         self._update_plan: tuple | None = None
+        # канали, які не зараховують хвилини: ім'я -> доки не чіпати
+        self._benched: dict[str, float] = {}
+        # кампанії, про втрачену прив'язку яких уже сказали
+        self._link_told: set[str] = set()
         # остання причина, чому перевірка оновлень не вдалась: щоб та сама
         # не летіла в Telegram двічі на добу
         self._update_problem: str | None = None
@@ -362,6 +368,33 @@ class Miner:
             ),
         )
 
+    def _check_links(self) -> None:
+        """Шукає кампанії, де прогрес є, а прив'язки вже немає.
+
+        Викликається після оновлення інвентаря. Про кожну кампанію говоримо
+        один раз за запуск: повторювати щогодини те саме означало б привчити
+        не читати ці рядки.
+        """
+        lost = [
+            c for c in self.campaigns
+            if not c.linked and not c.over and not c.only_cosmetics
+            and any(d.minutes > 0 for d in c.all_drops)
+            and c.id not in self._link_told
+        ]
+        if not lost:
+            return
+        minutes = sum(d.minutes for c in lost for d in c.all_drops)
+        for campaign in lost:
+            self._link_told.add(campaign.id)
+            log.warning(
+                f"Прив'язку втрачено: «{campaign.name}» ({campaign.game.name}) — "
+                f"намайнені хвилини не перетворяться на нагороду"
+            )
+        self.events.emit(AccountLinkLost(
+            campaigns=tuple(c.name.strip() for c in lost),
+            minutes_lost=minutes,
+        ))
+
     def _publish_inventory(self) -> None:
         self.events.emit(InventoryUpdated(campaigns=tuple(
             self._campaign_snapshot(c) for c in self.campaigns
@@ -406,7 +439,34 @@ class Miner:
             for campaign in self.campaigns
         )
 
+    def benched(self, channel: Channel) -> bool:
+        """Чи сидить канал у відстійнику після того, як підвів.
+
+        ⚠️ Детектор «хвилина не зарахувалась» у нас був і раніше, але лише
+        повідомляв. Пам'яті про канал не було зовсім, тож наступний добір міг
+        обрати той самий канал знову — і так по колу, поки людина не помічала,
+        що прогрес стоїть. Тепер канал, який двічі не зарахував хвилину, на
+        півгодини випадає з добору.
+        """
+        until = self._benched.get(channel.name)
+        if until is None:
+            return False
+        if monotonic() >= until:
+            del self._benched[channel.name]
+            return False
+        return True
+
+    def bench(self, channel: Channel) -> None:
+        """Відкладає канал: він щойно довів, що хвилини через нього не йдуть."""
+        self._benched[channel.name] = monotonic() + CHANNEL_BENCH_SECONDS
+        log.warning(
+            f"Канал {channel.name} відкладено на "
+            f"{CHANNEL_BENCH_SECONDS // 60} хв: хвилини не зараховуються"
+        )
+
     def should_switch_to(self, channel: Channel) -> bool:
+        if self.benched(channel):
+            return False
         if not self.can_farm(channel):
             return False
         current = self.watching.peek()
@@ -548,6 +608,7 @@ class Miner:
         self._publish_inventory()
         self._check_deadlines()
         self._check_watchlist()
+        self._check_links()
         if self.settings.drop_images:
             # У фоні: картинки — прикраса, і чекати на них перед фармом безглуздо
             self._tasks.launch(self._fetch_images())
@@ -953,6 +1014,9 @@ class Miner:
                 channel_name=channel.name,
                 consecutive=self._delivery_failures,
             ))
+            # Сказати мало: без цього наступний добір міг повернути нас сюди ж.
+            self.bench(channel)
+            self._restart_watch.set()
 
     def _note_delivery_ok(self, channel: Channel) -> None:
         if not self._delivery_failures:

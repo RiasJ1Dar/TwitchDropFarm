@@ -1660,6 +1660,35 @@ def routing_checks() -> None:
     check("додавання йде командою ядра", "EXCLUDE_ADD" in adds)
     check("зняття йде командою ядра", "EXCLUDE_REMOVE" in drops)
 
+    # Втрачена прив'язка. ⚠️ Ознака навмисно вузька: непривʼязаних кампаній у
+    # Twitch сотні (в живому інвентарі було 345), і якби ми говорили про кожну,
+    # новина потонула б у шумі. Кажемо лише там, де вже намайнено хвилини.
+    def _camp(cid, linked, minutes, cosmetic=False, over=False):
+        drops = [types.SimpleNamespace(minutes=minutes)]
+        return types.SimpleNamespace(
+            id=cid, name=f"Кампанія {cid}", linked=linked, over=over,
+            only_cosmetics=cosmetic, all_drops=drops,
+            game=types.SimpleNamespace(name="Гра"),
+        )
+
+    miner = types.SimpleNamespace(
+        events=Bus(), _link_told=set(),
+        campaigns=[_camp("a", False, 120), _camp("b", False, 0),
+                   _camp("c", True, 60), _camp("d", False, 30, cosmetic=True),
+                   _camp("e", False, 90, over=True)],
+    )
+    Miner._check_links(miner)
+    said = [e for e in miner.events.sent
+            if isinstance(e, events_module.AccountLinkLost)]
+    check("про втрачену прив'язку сказано", len(said) == 1)
+    check("сказано лише там, де є намайнене",
+          said and said[0].campaigns == ("Кампанія a",))
+    check("хвилини порахували", said and said[0].minutes_lost == 120)
+    Miner._check_links(miner)
+    check("вдруге про те саме не нагадуємо",
+          len([e for e in miner.events.sent
+               if isinstance(e, events_module.AccountLinkLost)]) == 1)
+
     check("подія без маршруту не падає",
           spare.dispatch(events_module.LogLine(text="x")) is None)
 
@@ -2105,8 +2134,10 @@ def delivery_checks() -> None:
     check("коли фолбек згас — spade пробують знову", after.posts == 1)
 
     fake = types.SimpleNamespace(
-        _delivery_failures=0, events=Bus(),
+        _delivery_failures=0, events=Bus(), _benched={},
+        _restart_watch=types.SimpleNamespace(set=lambda: None),
     )
+    fake.bench = lambda channel: Miner.bench(fake, channel)
     ch = types.SimpleNamespace(name="канал")
     Miner._note_delivery_failed(fake, ch)
     Miner._note_delivery_failed(fake, ch)
@@ -2118,6 +2149,15 @@ def delivery_checks() -> None:
           f"подій={len(uncounted)}")
     check("вікно каже прямо, що перегляд не йде",
           "Перегляд не зараховується" in statuses)
+
+    # ⚠️ Сказати про збій мало. Раніше майнер лише повідомляв «хвилина не
+    # зарахувалась» і спокійно вертався на той самий канал наступним добором.
+    check("канал, що підвів, відкладено", Miner.benched(fake, ch))
+    check("відстійник знає, доки чекати",
+          fake._benched["канал"] > monotonic())
+    fake._benched["канал"] = monotonic() - 1.0
+    check("через півгодини канал знову в грі", not Miner.benched(fake, ch))
+    check("прострочений запис прибирається", "канал" not in fake._benched)
 
     Miner._note_delivery_ok(fake, ch)
     check("успіх скидає лічильник відмов", fake._delivery_failures == 0)

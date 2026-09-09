@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import logging
 import random
 from base64 import b64encode
 from dataclasses import dataclass, field
@@ -22,6 +23,8 @@ from typing import Any
 JsonDict = dict[str, Any]
 
 # ---------------------------------------------------------------- адреси
+
+log = logging.getLogger("TwitchDrops")
 
 GQL_ENDPOINT = "https://gql.twitch.tv/gql"
 PUBSUB_ENDPOINT = "wss://pubsub-edge.twitch.tv/v1"
@@ -300,3 +303,87 @@ SETTINGS_SCRIPT = r'src="(https://[\w.]+/config/settings\.[0-9a-f]{32}\.js)"'
 
 # Ігри, для яких Twitch не прив'язує кампанію до конкретного каналу.
 GAMES_WITHOUT_CHANNEL_LIMIT = frozenset({509663, 509672})
+
+
+# ------------------------------------------------- хеші, які можна поправити
+
+OVERRIDES_NAME = "queries.json"
+
+
+def known_queries() -> dict[str, Query]:
+    """Усі persisted-запити модуля: ім'я операції → запит."""
+    return {
+        value.operation: value
+        for value in globals().values()
+        if isinstance(value, Query)
+    }
+
+
+def apply_query_overrides() -> dict[str, str]:
+    """Підміняє sha256 запитів значеннями з `queries.json`, якщо він є.
+
+    ⚠️ ЦЕ ПРО ТЕ, ЩОБ НЕ ЛЕЖАТИ ДО НАСТУПНОГО РЕЛІЗУ. Twitch час від часу
+    змінює текст persisted-запиту, а отже і його хеш, — і тоді програма
+    отримує `PersistedQueryNotFound` та стає непрацездатною у ВСІХ одразу.
+    У найбільшого аналога це в топі проблем; інший автор роздає користувачам
+    Postman-колекцію, щоб вони полагодили самі.
+
+    Сторожа в `_watch_protocol` помічає таку зміну раніше за інших, але вміє
+    лише сказати. Тепер поруч із нею є спосіб полагодити: покласти в теку
+    стану файл виду
+
+        {"Inventory": "<64 шістнадцяткові знаки>"}
+
+    і перезапустити програму. Файлу типово немає, і поки його немає, діють
+    хеші, зашиті в збірку.
+
+    Помилки тут ніколи не валять запуск: кривий JSON, чуже ім'я операції чи
+    рядок, не схожий на sha256, лише пишуться в журнал і пропускаються. Ціна
+    помилки в цьому файлі — непрацездатний майнер, тож краще проігнорувати
+    сумнівне значення, ніж підставити його в запит.
+    """
+    from core.config import STATE_DIR
+
+    path = STATE_DIR / OVERRIDES_NAME
+    try:
+        if not path.exists():
+            return {}
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        log.warning(f"{OVERRIDES_NAME} не прочитано, беру вбудовані хеші: {error}")
+        return {}
+    if not isinstance(raw, dict):
+        log.warning(f"{OVERRIDES_NAME}: очікувався обʼєкт «операція: хеш»")
+        return {}
+
+    queries = known_queries()
+    applied: dict[str, str] = {}
+    for name, value in raw.items():
+        query = queries.get(str(name))
+        if query is None:
+            log.warning(
+                f"{OVERRIDES_NAME}: операції «{name}» немає. "
+                f"Відомі: {', '.join(sorted(queries))}"
+            )
+            continue
+        text = str(value).strip().lower()
+        if len(text) != 64 or any(c not in "0123456789abcdef" for c in text):
+            log.warning(
+                f"{OVERRIDES_NAME}: «{name}» — не схоже на sha256, пропускаю"
+            )
+            continue
+        if text == query.sha256:
+            continue
+        # dataclass заморожений навмисно: запит не має мінятись на ходу. Тут
+        # виняток свідомий і разовий — підміна відбувається один раз, на
+        # старті, до першого використання.
+        object.__setattr__(query, "sha256", text)
+        applied[query.operation] = text
+    if applied:
+        log.warning(
+            f"Хеші запитів підмінено з {OVERRIDES_NAME}: {', '.join(sorted(applied))}"
+        )
+    return applied
+
+
+apply_query_overrides()

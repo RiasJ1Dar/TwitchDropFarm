@@ -41,6 +41,7 @@ from core.config import VERSION as __version__
 from core.config import FarmMode as PriorityMode
 from core.config import log_path as log_file
 from core.events import (
+    AccountLinkLost,
     CampaignAppeared,
     ChannelsUpdated,
     Command,
@@ -1710,6 +1711,12 @@ class GUI:
             "update_ask", version=event.version, files=event.files,
             unit=what, size=size)
         self._maybe_ask_update()
+
+    @SHOW.on(AccountLinkLost)
+    def _show_link_lost(self, event: AccountLinkLost) -> None:
+        self._append_log(
+            t("link_lost_log", names=", ".join(event.campaigns),
+              minutes=event.minutes_lost), "err")
 
     @SHOW.on(UpdateFailed)
     def _show_update_failed(self, event: UpdateFailed) -> None:
