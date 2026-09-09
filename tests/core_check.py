@@ -24,6 +24,7 @@ from time import monotonic
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import autostart, export, protocol, update
+from core import config as config_module
 from core import history as history_module
 from core.api import ApiError, TwitchApi
 from core.channels import WatchReporter
@@ -1933,6 +1934,37 @@ def routing_checks() -> None:
     check("вимикач справді вимикає",
           len([e for e in adviser.events.sent
                if isinstance(e, events_module.AccountLinkNeeded)]) == 1)
+
+    # Моменти й рейди. ⚠️ Обидва топіки — лише на активний канал: масова
+    # підписка ділить навпіл, скільки каналів узагалі влазить у поле зору.
+    calls: list[dict] = []
+
+    async def _gql(payload):
+        calls.append(payload)
+        return {"data": {}}
+
+    keeper = miner_stub(graphql=_gql, _joined_raid="")
+    asyncio.run(Miner.on_moment(keeper, 1, {"type": "active",
+                                            "data": {"moment_id": "m1"}}))
+    check("момент забрано",
+          calls and calls[0]["operationName"] == "CommunityMomentCallout_Claim")
+    calls.clear()
+    asyncio.run(Miner.on_moment(keeper, 1, {"type": "inactive", "data": {}}))
+    check("на чужі повідомлення не смикаємось", not calls)
+
+    asyncio.run(Miner.on_raid(keeper, 1, {"type": "raid_go_v2",
+                                          "raid": {"id": "r1"}}))
+    check("до рейду приєднались",
+          calls and calls[0]["operationName"] == "JoinRaid")
+    calls.clear()
+    asyncio.run(Miner.on_raid(keeper, 1, {"type": "raid_update_v2",
+                                          "raid": {"id": "r1"}}))
+    check("до того самого рейду вдруге не лізем", not calls)
+
+    check("моменти й рейди мають свої топіки",
+          {"moments", "raid"} <= set(protocol.CHANNEL_TOPICS))
+    check("місткість поля зору лишилась триснижною",
+          config_module.MAX_CHANNELS > 300)
 
     check("подія без маршруту не падає",
           spare.dispatch(events_module.LogLine(text="x")) is None)
