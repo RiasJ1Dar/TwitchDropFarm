@@ -93,6 +93,8 @@
   "quit_miner": "停止挖取",
   "reload_inventory": "重新读取库存",
   "reload_log": "正在按你的要求重新读取库存…",
+  "report_lost": "过期未领取：{count} 个——{minutes} 分钟白看了",
+  "report_weekly": "每周小结",
   "resume": "继续",
   "say_claimed": "已领取：{rewards} — {game}（{taken}/{total}）",
   "say_crash": "错误「{error}」。将在 {pause:.0f} 秒后重启。",

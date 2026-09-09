@@ -93,6 +93,8 @@
   "quit_miner": "Parar o miner",
   "reload_inventory": "Recarregar inventário",
   "reload_log": "A reler o inventário a teu pedido…",
+  "report_lost": "Expiraram sem recompensa: {count} — {minutes} min vistos em vão",
+  "report_weekly": "Resumo semanal",
   "resume": "Retomar",
   "say_claimed": "Recebido: {rewards} — {game} ({taken}/{total})",
   "say_crash": "Erro «{error}». Reinício em {pause:.0f}s.",

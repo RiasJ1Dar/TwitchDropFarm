@@ -1809,6 +1809,87 @@ def routing_checks() -> None:
     check("справжнє поле проходить",
           miner_stub(_benched={}, campaigns=[]) is not None)
 
+    # ⚠️ Рятівний пріоритет. Написано за втраченим дропом: 31.08
+    # `Anniversary Store #9 Drop 2` згорів на 206/240, і разом із ним майже
+    # чотири години перегляду. Попередження прийшло, коли рятувати вже не було
+    # чого, тож правило мусить спрацьовувати ЗАЗДАЛЕГІДЬ, поки запас тане.
+    def _rescue_camp(slack, minutes, taken=False, hopeless=False, linked=True,
+                     required=240):
+        return types.SimpleNamespace(
+            slack=slack, hopeless=hopeless, available_to_me=linked,
+            all_drops=[types.SimpleNamespace(
+                minutes=minutes, taken=taken, required_minutes=required)],
+        )
+
+    saver = miner_stub()
+    check("кампанію з прогресом і тонким запасом рятуємо",
+          Miner._needs_rescue(saver, _rescue_camp(1.2, 206)))
+    check("порожню кампанію рятувати нема сенсу",
+          not Miner._needs_rescue(saver, _rescue_camp(1.2, 0)))
+    check("із запасом часу не смикаємось",
+          not Miner._needs_rescue(saver, _rescue_camp(5.0, 206)))
+    check("безнадійну не тягнемо поперед інших",
+          not Miner._needs_rescue(saver, _rescue_camp(0.5, 206, hopeless=True)))
+    check("взятий дроп рятувати нічого",
+          not Miner._needs_rescue(saver, _rescue_camp(1.2, 240, taken=True)))
+    check("непривʼязану не рятуємо — вона й так не фармиться",
+          not Miner._needs_rescue(saver, _rescue_camp(1.2, 206, linked=False)))
+
+    # Не кидати те, що ось-ось дасть нагороду.
+    def _watching(left, taken=False, required=60):
+        drop = types.SimpleNamespace(
+            minutes=required - left, taken=taken, required_minutes=required)
+        camp = types.SimpleNamespace(next_drop=drop)
+        return miner_stub(active_campaign=lambda channel=None: camp)
+
+    check("за чверть години до нагороди канал не міняють",
+          Miner.almost_there(_watching(10)) == 10)
+    check("коли до нагороди далеко — не тримаємось",
+          Miner.almost_there(_watching(40)) == 0)
+    check("взятий дроп не тримає канал",
+          Miner.almost_there(_watching(5, taken=True)) == 0)
+    check("без активної кампанії нічого не тримаємо",
+          Miner.almost_there(miner_stub(
+              active_campaign=lambda channel=None: None)) == 0)
+
+    # Ціна втрат. ⚠️ Історія знала про РИЗИК, але не про наслідок, тож
+    # втрачений дроп знаходився лише при ручному розборі CSV.
+    with tempfile.TemporaryDirectory() as room:
+        book = history_module.History(Path(room) / "h.jsonl")
+        drops = [
+            types.SimpleNamespace(id="d1", name="Drop 2", minutes=206,
+                                  required_minutes=240, taken=False),
+            types.SimpleNamespace(id="d2", name="Drop 1", minutes=180,
+                                  required_minutes=180, taken=True),
+            types.SimpleNamespace(id="d3", name="Drop 3", minutes=0,
+                                  required_minutes=60, taken=False),
+        ]
+        burnt = types.SimpleNamespace(
+            id="c1", name="Anniversary Store #9", over=True, all_drops=drops,
+            game=types.SimpleNamespace(name="World of Tanks"))
+        alive = types.SimpleNamespace(
+            id="c2", name="Жива", over=False, all_drops=drops,
+            game=types.SimpleNamespace(name="Гра"))
+        keeper = miner_stub(campaigns=[burnt, alive], history=book,
+                            _loss_told=set())
+        Miner._check_losses(keeper)
+        lost = book.entries(kind="lost")
+        check("згорілий дроп із прогресом занесено", len(lost) == 1)
+        check("занесено саме той, що згорів",
+              lost and lost[0]["drop"] == "Drop 2" and lost[0]["minutes"] == 206)
+        Miner._check_losses(keeper)
+        check("двічі те саме не пишемо", len(book.entries(kind="lost")) == 1)
+        check("звіт називає ціну", "206" in book.summary(90))
+
+        # Тижневий підсумок мовчить на першому запуску.
+        talker = miner_stub(history=book, say=lambda text: said.append(text))
+        said: list[str] = []
+        Miner._weekly_report(talker)
+        check("перший запуск не звітує одразу", not said)
+        check("але позначку ставить", len(book.entries(kind="report")) == 1)
+        Miner._weekly_report(talker)
+        check("і не звітує щохвилини", not said)
+
     check("подія без маршруту не падає",
           spare.dispatch(events_module.LogLine(text="x")) is None)
 
