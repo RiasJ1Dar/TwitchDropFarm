@@ -17,6 +17,7 @@ import logging
 
 from core.config import TRACE as CALL
 from core.events import (
+    AccountLinkLost,
     CampaignFinished,
     ConnectionLost,
     ConnectionRestored,
@@ -105,6 +106,14 @@ def _log_update(event: UpdateAvailable) -> None:
     logger.warning(
         f"Оновлення {event.version}: {event.files} файлів, "
         f"{event.bytes_to_fetch} байт"
+    )
+
+
+@TO_LOG.on(AccountLinkLost)
+def _log_link_lost(event: AccountLinkLost) -> None:
+    logger.error(
+        f"Прив'язку втрачено: {', '.join(event.campaigns)} "
+        f"({event.minutes_lost} хв намайнено намарно)"
     )
 
 
