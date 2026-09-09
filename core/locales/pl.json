@@ -93,6 +93,8 @@
   "quit_miner": "Wyłącz miner",
   "reload_inventory": "Ponownie odczytać ekwipunek",
   "reload_log": "Ponownie czytam ekwipunek na Twoje żądanie…",
+  "report_lost": "Przepadło bez nagrody: {count} — {minutes} min oglądania na marne",
+  "report_weekly": "Podsumowanie tygodnia",
   "resume": "Wznów",
   "say_claimed": "Odebrano: {rewards} — {game} ({taken}/{total})",
   "say_crash": "Błąd „{error}”. Restart za {pause:.0f}s.",
