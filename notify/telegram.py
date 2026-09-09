@@ -23,6 +23,7 @@ from core.config import REPORT_DAYS
 from core.config import TRACE as CALL
 from core.events import (
     AccountLinkLost,
+    AccountLinkNeeded,
     CampaignAppeared,
     CampaignFinished,
     Command,
@@ -565,6 +566,16 @@ class TelegramNotifier:
         return t("tg_link_lost",
                  names=html.escape(", ".join(event.campaigns)),
                  minutes=event.minutes_lost)
+
+    @SAY.on(AccountLinkNeeded, group="critical")
+    def _say_link_hint(self, event: AccountLinkNeeded) -> str:
+        lines = []
+        for item in event.campaigns[:5]:
+            line = f"• {html.escape(item.name)} ({html.escape(item.game)})"
+            if item.url:
+                line += chr(10) + html.escape(item.url)
+            lines.append(line)
+        return t("tg_link_hint", names=chr(10).join(lines))
 
     @SAY.on(UpdateFailed, group="critical")
     def _say_update_fail(self, event: UpdateFailed) -> str:
