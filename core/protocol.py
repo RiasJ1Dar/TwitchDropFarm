@@ -200,6 +200,23 @@ CLAIM_POINTS = Query(
     {"input": {"claimID": REQUIRED, "channelID": REQUIRED}},
     mutation=True,
 )
+# ⚠️ Хеші взяті з відкритого коду робочого аналога
+# (rdavydov/Twitch-Channel-Points-Miner-v2, `constants.py`), а не підібрані.
+# Перевірити їх наживо ми не могли: для цього потрібен справжній рейд і
+# справжній момент у прямому ефірі. Якщо Twitch їх змінить, сторожа запитів
+# скаже про це, а полагодити можна через `queries.json` без нового релізу.
+CLAIM_MOMENT = Query(
+    "CommunityMomentCallout_Claim",
+    "e2d67415aead910f7f9ceb45a77b750a1e1d9622c936d832328a0689e054db62",
+    {"input": {"momentID": REQUIRED}},
+    mutation=True,
+)
+JOIN_RAID = Query(
+    "JoinRaid",
+    "c6a332a86d1087fbbb1a8623aa01bd1313d2386e7c63be60fdb2d1901f01a4ae",
+    {"input": {"raidID": REQUIRED}},
+    mutation=True,
+)
 DROP_NOTIFICATION_DELETE = Query(
     "OnsiteNotifications_DeleteNotification",
     "13d463c831f28ffe17dccf55b3148ed8b3edbbd0ebadd56352f1ff0160616816",
@@ -228,6 +245,11 @@ USER_TOPICS = {
 CHANNEL_TOPICS = {
     "state": "video-playback-by-id",
     "settings": "broadcast-settings-update",
+    # ⚠️ Обидва — ЛИШЕ на канал, який дивимось. Масово підписувати їх не можна:
+    # місткість PubSub жорстка (8 сокетів × 50 топіків), і кожен зайвий топік
+    # на канал ділить навпіл, скільки каналів узагалі влазить у поле зору.
+    "moments": "community-moments-channel-v1",
+    "raid": "raid",
 }
 
 

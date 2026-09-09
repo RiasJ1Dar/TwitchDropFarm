@@ -144,8 +144,10 @@ class Miner:
         self.wanted = []  # сеттер нижче будує ще й індекс пріоритетів
         self.channels: OrderedDict[int, Channel] = OrderedDict()
         self.watching: Slot[Channel] = Slot()
-        # топік «зміна гри» активного каналу; тримаємо ім'я, щоб відписати
-        self._settings_topic: str | None = None
+        # точкові топіки активного каналу; тримаємо імена, щоб відписати
+        self._live_topics: list[str] = []
+        # рейд, до якого вже приєднались: Twitch шле подію кілька разів
+        self._joined_raid: str = ""
 
         self._tasks = TaskKeeper()
         self._watch_task: asyncio.Task[None] | None = None
@@ -650,16 +652,21 @@ class Miner:
         каналі він потрібен: стрімер може перемкнути гру, не перериваючи
         трансляції, і тоді хвилини йдуть у порожнечу.
         """
-        previous = self._settings_topic
-        if previous is not None:
-            self.topics.unsubscribe([previous])
-            self._settings_topic = None
+        if self._live_topics:
+            self.topics.unsubscribe(self._live_topics)
+            self._live_topics = []
         if channel is None:
             return
-        subscription = pubsub.channel_subscription(
-            "settings", channel.id, self.on_stream_settings)
-        self.topics.subscribe([subscription])
-        self._settings_topic = subscription.name
+        # Три точкові підписки на активний канал: зміна гри, моменти, рейди.
+        # Масово їх тримати не можна — місткість PubSub жорстка.
+        wanted = [
+            pubsub.channel_subscription("settings", channel.id,
+                                        self.on_stream_settings),
+            pubsub.channel_subscription("moments", channel.id, self.on_moment),
+            pubsub.channel_subscription("raid", channel.id, self.on_raid),
+        ]
+        self.topics.subscribe(wanted)
+        self._live_topics = [item.name for item in wanted]
 
     def stop_watching(self) -> None:
         self._follow_settings(None)
@@ -1017,6 +1024,43 @@ class Miner:
             log.log(TRACE, "Забрано бонус channel points")
         except (ApiError, Exception) as error:
             log.log(TRACE, f"Бонус поінтів не забрався: {error}")
+
+    async def on_moment(self, _channel_id: int, message: dict[str, Any]) -> None:
+        """Забирає community moment — разову нагороду за присутність в ефірі.
+
+        Стрімер вмикає «момент» вручну, і той, хто дивиться саме тоді, отримує
+        значок. Пропустити його легко: він живе хвилини й ніде більше не
+        повторюється.
+        """
+        if message.get("type") != "active":
+            return
+        moment = str(message.get("data", {}).get("moment_id") or "")
+        if not moment:
+            return
+        try:
+            await self.graphql(protocol.CLAIM_MOMENT(input={"momentID": moment}))
+            log.info("Забрано community moment")
+        except Exception as error:
+            log.log(TRACE, f"Момент не забрався: {error}")
+
+    async def on_raid(self, _channel_id: int, message: dict[str, Any]) -> None:
+        """Приєднується до рейду каналу, який дивимось.
+
+        ⚠️ Це не забирає нас із фарму: рейд означає, що канал уже закінчив
+        ефір, тобто дропи там усе одно припинились. Приєднання дає нагороду за
+        участь і нічого не коштує.
+        """
+        if message.get("type") not in ("raid_go_v2", "raid_update_v2"):
+            return
+        raid = str(message.get("raid", {}).get("id") or "")
+        if not raid or raid == self._joined_raid:
+            return
+        self._joined_raid = raid
+        try:
+            await self.graphql(protocol.JOIN_RAID(input={"raidID": raid}))
+            log.info("Приєднались до рейду")
+        except Exception as error:
+            log.log(TRACE, f"До рейду не приєднались: {error}")
 
     # ================================================================ перегляд
 
