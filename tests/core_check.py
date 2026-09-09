@@ -1689,6 +1689,37 @@ def routing_checks() -> None:
           len([e for e in miner.events.sent
                if isinstance(e, events_module.AccountLinkLost)]) == 1)
 
+    # Discord-вебхук. ⚠️ Свідомо вужчий за Telegram: односторонній канал, на
+    # який не можна відповісти, тож рутина туди не йде — інакше його
+    # перестануть читати саме тоді, коли він знадобиться.
+    from notify.discord import LIMIT, POST, DiscordHook, _to_markdown
+
+    check("вебхук показує головне",
+          {events_module.DropClaimed, events_module.AccountLinkLost,
+           events_module.ProgressStalled, events_module.MinerError}
+          <= POST.covered())
+    check("рутина у вебхук не йде",
+          events_module.WatchingChanged not in POST.covered()
+          and events_module.StreamOffline not in POST.covered()
+          and events_module.LogLine not in POST.covered())
+    check("розмітка стає Discord-івською",
+          _to_markdown("<b>Дроп</b> &amp; <i>гра</i>") == "**Дроп** & *гра*")
+    check("невідомий тег не показують людині",
+          "<" not in _to_markdown("<span class='x'>текст</span>"))
+
+    hook = DiscordHook.__new__(DiscordHook)
+    hook._twitch = types.SimpleNamespace(
+        settings=types.SimpleNamespace(discord_webhook="  "))
+    check("порожня адреса — канал вимкнений", hook.url == "")
+    hook._twitch.settings.discord_webhook = " https://discord.com/api/webhooks/x "
+    check("адресу беруть без пробілів",
+          hook.url == "https://discord.com/api/webhooks/x")
+    hook._session = None
+    asyncio.run(hook.send("текст"))  # без сесії просто нічого не робить
+    check("без сесії надсилання не падає", True)
+    check("довге повідомлення ріжеться самі, а не 400 від Discord",
+          LIMIT < 2000)
+
     check("подія без маршруту не падає",
           spare.dispatch(events_module.LogLine(text="x")) is None)
 

@@ -181,6 +181,14 @@ if __name__ == "__main__":
             telegram = TelegramNotifier(client)
             await telegram.start()
 
+        # Другий канал сповіщень. Односторонній і без токена — потрібна лише
+        # адреса, яку Discord видає в налаштуваннях каналу.
+        discord = None
+        if str(settings.discord_webhook or "").strip():
+            from notify.discord import DiscordHook
+            discord = DiscordHook(client)
+            await discord.start()
+
         # Після підписки Telegram, інакше повідомлення про старт нікуди не піде.
         # Для разових режимів не шлемо: --dump-inventory це не «запуск майнера».
         if not one_shot:
@@ -314,6 +322,8 @@ if __name__ == "__main__":
         finally:
             if telegram is not None:
                 await telegram.stop()
+            if discord is not None:
+                await discord.stop()
             await client.shutdown()
             settings.save(force=True)
             if tray is not None:

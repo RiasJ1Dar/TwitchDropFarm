@@ -65,6 +65,7 @@ class ConfigShape(TypedDict):
     # "uk" типово. "auto" — мова Windows, якщо вона в наборі.
     language: str
     telegram: TelegramConfig
+    discord_webhook: str
 
 
 DEFAULT_TELEGRAM: TelegramConfig = {
@@ -124,6 +125,10 @@ DEFAULTS: ConfigShape = {
     "proxy": "",
     "language": "uk",
     "telegram": DEFAULT_TELEGRAM,
+    # Адреса вебхука Discord. Порожньо — канал вимкнений; це не токен бота й
+    # доступу до листування не дає, але й показувати її стороннім не варто:
+    # хто має адресу, той може писати в канал.
+    "discord_webhook": "",
 }
 
 
