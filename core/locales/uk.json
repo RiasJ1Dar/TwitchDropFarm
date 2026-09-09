@@ -93,6 +93,8 @@
   "quit_miner": "Вимкнути майнер",
   "reload_inventory": "Перечитати інвентар",
   "reload_log": "Перечитую інвентар за вашим запитом…",
+  "report_lost": "Згоріло без нагороди: {count} — {minutes} хв перегляду намарно",
+  "report_weekly": "Тижневий підсумок",
   "resume": "Продовжити",
   "say_claimed": "Отримано: {rewards} — {game} ({taken}/{total})",
   "say_crash": "Помилка «{error}». Перезапуск через {pause:.0f}с.",

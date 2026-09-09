@@ -93,6 +93,8 @@
   "quit_miner": "Stop miner",
   "reload_inventory": "Reload inventory",
   "reload_log": "Reloading inventory at your request…",
+  "report_lost": "Expired unclaimed: {count} — {minutes} min watched for nothing",
+  "report_weekly": "Weekly summary",
   "resume": "Resume",
   "say_claimed": "Claimed: {rewards} — {game} ({taken}/{total})",
   "say_crash": "Error “{error}”. Restarting in {pause:.0f}s.",
