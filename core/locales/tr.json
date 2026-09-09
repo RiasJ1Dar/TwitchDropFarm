@@ -93,6 +93,8 @@
   "quit_miner": "Mineri durdur",
   "reload_inventory": "Envanteri yeniden oku",
   "reload_log": "İsteğin üzerine envanter yeniden okunuyor…",
+  "report_lost": "Ödülsüz doldu: {count} — {minutes} dk boşa izlendi",
+  "report_weekly": "Haftalık özet",
   "resume": "Sürdür",
   "say_claimed": "Alındı: {rewards} — {game} ({taken}/{total})",
   "say_crash": "Hata «{error}». {pause:.0f}s içinde yeniden başlıyorum.",
