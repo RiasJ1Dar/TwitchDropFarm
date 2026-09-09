@@ -93,6 +93,8 @@
   "quit_miner": "Miner beenden",
   "reload_inventory": "Inventar neu laden",
   "reload_log": "Lade Inventar auf Anforderung neu…",
+  "report_lost": "Ohne Belohnung verfallen: {count} — {minutes} Min umsonst gesehen",
+  "report_weekly": "Wochenbericht",
   "resume": "Fortsetzen",
   "say_claimed": "Abgeholt: {rewards} — {game} ({taken}/{total})",
   "say_crash": "Fehler „{error}“. Neustart in {pause:.0f}s.",

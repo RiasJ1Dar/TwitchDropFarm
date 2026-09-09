@@ -19,6 +19,7 @@ from core import protocol, pubsub
 from core.api import Aborted, ApiError, TwitchApi
 from core.channels import Channel
 from core.config import (
+    ALMOST_THERE_MINUTES,
     CHANNEL_BENCH_SECONDS,
     CHANNEL_REFRESH_DELAY,
     HISTORY_FILE,
@@ -27,6 +28,7 @@ from core.config import (
     PROGRESS_GRACE,
     PROTOCOL_PROBE_EVERY,
     PROTOCOL_PROBE_PAUSE,
+    RESCUE_SLACK,
     RESTART_PAUSE,
     SEEN_CAMPAIGNS_FILE,
     STALL_LIMIT,
@@ -162,6 +164,8 @@ class Miner:
         self._benched: dict[str, float] = {}
         # кампанії, про втрачену прив'язку яких уже сказали
         self._link_told: set[str] = set()
+        # дропи, чию загибель уже занесено в історію
+        self._loss_told: set[str] = set()
         # остання причина, чому перевірка оновлень не вдалась: щоб та сама
         # не летіла в Telegram двічі на добу
         self._update_problem: str | None = None
@@ -368,6 +372,88 @@ class Miner:
             ),
         )
 
+    def _needs_rescue(self, campaign: Any) -> bool:
+        """Чи горить кампанія, у яку вже вкладено години.
+
+        Три умови разом, і кожна потрібна:
+
+        * **є прогрес** — рятувати порожню кампанію нема сенсу, вона нічого
+          не втрачає;
+        * **запас тане** (`slack` менший за поріг) — інакше під «рятунок»
+          потрапило б усе підряд і звичайний порядок втратив би сенс;
+        * **ще можливо встигнути** — кампанію, де жоден дроп уже не дотягнути,
+          рятувати пізно, і місце попереду вона займала б дарма.
+        """
+        if campaign.hopeless or not campaign.available_to_me:
+            return False
+        if campaign.slack >= RESCUE_SLACK:
+            return False
+        return any(
+            d.minutes > 0 and not d.taken and d.required_minutes > 0
+            for d in campaign.all_drops
+        )
+
+    def _weekly_report(self) -> None:
+        """Раз на тиждень — короткий підсумок туди ж, куди йдуть новини.
+
+        Нічого не збирає: усе вже лежить в історії, лишається показати. Сенс у
+        тому, що людина бачить не окремі події, а картину — скільки взято,
+        скільки згоріло, за якими іграми.
+
+        ⚠️ Перший запуск мовчить. Свіжопоставлена програма інакше вистрілила б
+        звітом ще до того, як їй є про що звітувати, — і привчила б не читати
+        ці повідомлення.
+        """
+        marks = self.history.entries(kind="report")
+        now = datetime.now(timezone.utc)
+        if not marks:
+            self.history.record("report")
+            return
+        raw = str(marks[-1].get("at") or "")
+        try:
+            last = datetime.fromisoformat(raw)
+        except ValueError:
+            self.history.record("report")
+            return
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        if now - last < timedelta(days=7):
+            return
+        self.history.record("report")
+        self.say(t("report_weekly") + chr(10) + self.history.summary(7))
+
+    def _check_losses(self) -> None:
+        """Записує дропи, які згоріли з уже намайненими хвилинами.
+
+        ⚠️ Історія знала про РИЗИК («треба 43 хв, лишилось 8»), але не знала,
+        чим воно скінчилось. Через це ціна зволікання не була видна ніде:
+        втрачений `Anniversary Store #9 Drop 2` на 206/240 знайшовся лише тоді,
+        коли людина вручну переглянула вивантажений CSV.
+
+        Пишемо один раз на дроп: `_loss_told` не дає повторити запис при
+        кожному оновленні інвентаря, поки кампанія ще висить у списку.
+        """
+        for campaign in self.campaigns:
+            if not campaign.over:
+                continue
+            for drop in campaign.all_drops:
+                key = f"{campaign.id}:{drop.id}"
+                if key in self._loss_told:
+                    continue
+                if drop.taken or drop.minutes <= 0 or drop.required_minutes <= 0:
+                    continue
+                self._loss_told.add(key)
+                self.history.record(
+                    "lost", game=campaign.game.name, campaign=campaign.name.strip(),
+                    drop=drop.name, minutes=drop.minutes,
+                    required=drop.required_minutes,
+                )
+                log.warning(
+                    f"Згоріло без нагороди: «{drop.name}» "
+                    f"({campaign.game.name}) — {drop.minutes}/"
+                    f"{drop.required_minutes} хв"
+                )
+
     def _check_links(self) -> None:
         """Шукає кампанії, де прогрес є, а прив'язки вже немає.
 
@@ -464,8 +550,32 @@ class Miner:
             f"{CHANNEL_BENCH_SECONDS // 60} хв: хвилини не зараховуються"
         )
 
+    def almost_there(self) -> int:
+        """Скільки хвилин лишилось до нагороди на каналі, який дивимось.
+
+        Нуль означає «нема чого доводити до кінця»: або дроп щойно взято, або
+        каналу немає, або до нагороди ще далеко.
+        """
+        campaign = self.active_campaign()
+        if campaign is None:
+            return 0
+        drop = campaign.next_drop
+        if drop is None or drop.taken or drop.required_minutes <= 0:
+            return 0
+        left = drop.required_minutes - drop.minutes
+        if left <= 0 or left > ALMOST_THERE_MINUTES:
+            return 0
+        return left
+
     def should_switch_to(self, channel: Channel) -> bool:
         if self.benched(channel):
+            return False
+        # ⚠️ Доводимо до кінця те, що ось-ось дасть нагороду. Інакше добір міг
+        # перемкнути канал за десять хвилин до дропа — намайнене лишалось
+        # висіти, а хвилини починали копитись в іншому місці.
+        left = self.almost_there()
+        if left and self.can_farm(self.watching.peek()):
+            log.log(TRACE, f"Не перемикаюсь: до нагороди {left} хв")
             return False
         if not self.can_farm(channel):
             return False
@@ -609,6 +719,8 @@ class Miner:
         self._check_deadlines()
         self._check_watchlist()
         self._check_links()
+        self._check_losses()
+        self._weekly_report()
         if self.settings.drop_images:
             # У фоні: картинки — прикраса, і чекати на них перед фармом безглуздо
             self._tasks.launch(self._fetch_images())
@@ -1398,6 +1510,16 @@ class Miner:
             ordered.sort(key=lambda c: (
                 priority.index(c.game.name) if c.game.name in priority else 1 << 30
             ))
+
+        # ⚠️ РЯТІВНИЙ ПРІОРИТЕТ, поверх будь-якого режиму. Кампанія, у якій уже
+        # намайнено години і в якої тане запас часу, має перебивати решту — бо
+        # інакше ці години просто згорять. Саме так 31.08 пропав
+        # `Anniversary Store #9 Drop 2` на 206/240: попередження про ризик
+        # прийшло, коли рятувати було вже нічого.
+        #
+        # Стабільне сортування: усе інше впорядкування, вибудуване вище,
+        # зберігається всередині обох груп.
+        ordered.sort(key=lambda c: not self._needs_rescue(c))
 
         chosen: list[Game] = []
         for campaign in ordered:

@@ -148,7 +148,8 @@ class History:
         entries = self.entries(since=since)
         drops = [e for e in entries if e.get("kind") == "drop"]
         campaigns = [e for e in entries if e.get("kind") == "campaign"]
-        if not drops and not campaigns:
+        lost = [e for e in entries if e.get("kind") == "lost"]
+        if not drops and not campaigns and not lost:
             return t("tg_report_empty", days=days)
 
         by_game: dict[str, int] = {}
@@ -162,6 +163,13 @@ class History:
         ]
         for game, count in sorted(by_game.items(), key=lambda p: -p[1]):
             lines.append(f"  {game}: {count}")
+        # ⚠️ Втрати показуємо поруч зі здобутками. Історія й раніше знала про
+        # ризик («треба 43 хв, лишилось 8»), але не фіксувала, чим воно
+        # скінчилось, — тож ціну зволікання не бачив ніхто. Один рядок тут
+        # відповідає на питання «а чи варто щось міняти в налаштуваннях».
+        if lost:
+            minutes = sum(int(e.get("minutes") or 0) for e in lost)
+            lines.append(t("report_lost", count=len(lost), minutes=minutes))
         recent = drops[-3:]
         if recent:
             lines.append(t("tg_report_recent"))
