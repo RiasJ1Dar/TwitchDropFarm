@@ -42,6 +42,7 @@ from core.config import FarmMode as PriorityMode
 from core.config import log_path as log_file
 from core.events import (
     AccountLinkLost,
+    AccountLinkNeeded,
     CampaignAppeared,
     ChannelsUpdated,
     Command,
@@ -1189,6 +1190,9 @@ class GUI:
         self.images_var = tk.BooleanVar(value=settings.drop_images)
         self._switch(misc, t("drop_images"), self.images_var,
                      self._misc_changed).pack(anchor="w", pady=3)
+        self.hints_var = tk.BooleanVar(value=settings.hint_links)
+        self._switch(misc, t("hint_links"), self.hints_var,
+                     self._misc_changed).pack(anchor="w", pady=3)
         self.updates_var = tk.BooleanVar(value=settings.check_updates)
         self._switch(misc, t("check_updates"), self.updates_var,
                      self._misc_changed).pack(anchor="w", pady=3)
@@ -1489,6 +1493,7 @@ class GUI:
         images_were = settings.drop_images
         settings.drop_images = self.images_var.get()
         settings.check_updates = self.updates_var.get()
+        settings.hint_links = self.hints_var.get()
         settings.progress_style = "rainbow" if self.rainbow_var.get() else "state"
         settings.skip_hopeless = self.hopeless_var.get()
         settings.keep_log = self.keeplog_var.get()
@@ -1750,6 +1755,16 @@ class GUI:
         self._append_log(
             t("link_lost_log", names=", ".join(event.campaigns),
               minutes=event.minutes_lost), "err")
+
+    @SHOW.on(AccountLinkNeeded)
+    def _show_link_hint(self, event: AccountLinkNeeded) -> None:
+        names = ", ".join(f"{c.name} ({c.game})" for c in event.campaigns[:5])
+        self._append_log(t("link_hint_log", names=names), "warn")
+        # Посилання окремими рядками: у журналі їх можна виділити й скопіювати,
+        # а вставляти адресу в загальний рядок означало б зробити його нечитним.
+        for item in event.campaigns[:5]:
+            if item.url:
+                self._append_log(f"  {item.url}", "muted")
 
     @SHOW.on(UpdateFailed)
     def _show_update_failed(self, event: UpdateFailed) -> None:
