@@ -90,6 +90,75 @@ ok = 0
 fail = 0
 
 
+def class_attrs(cls: type) -> frozenset[str]:
+    """Усе, що справжній клас заводить на собі.
+
+    Збираємо з трьох джерел: клас (методи й властивості), анотації та
+    присвоєння `self.X =` у `__init__`. Останнє — через розбір джерела, бо
+    інакше атрибути екземпляра не видно, доки об'єкт не створено, а створювати
+    справжній об'єкт у перевірках ядра ми не хочемо: він тягне мережу
+    або вікно.
+    """
+    import inspect
+    import re as _re
+
+    names = set(dir(cls)) | set(getattr(cls, "__annotations__", {}))
+    # Джерело всього класу, а не лише `__init__`: половина атрибутів
+    # заводиться пізніше — у `_load_palette`, у побудові вкладок, у обробниках.
+    source = inspect.getsource(cls)
+    names.update(_re.findall(r"self\.([A-Za-z_]\w*)\s*[:=]", source))
+    return frozenset(names)
+
+
+_MINER_ATTRS = class_attrs(Miner)
+
+
+def stub_of(cls: type, **fields: object) -> types.SimpleNamespace:
+    """Звірена заглушка будь-якого класу.
+
+    Дрібні заглушки на одне-два поля (`channel`, `drop`, `stream`) свідомо
+    лишились простими: вони не ламаються від змін у майнері, а звіряти
+    `name="канал"` — робота заради роботи. Але коли така заглушка виросте,
+    ось готовий спосіб не лишити її сліпою.
+    """
+    return _checked_stub(cls, class_attrs(cls), fields)
+
+
+def _checked_stub(cls: type, known: frozenset[str],
+                  fields: dict[str, object]) -> types.SimpleNamespace:
+    unknown = sorted(set(fields) - known)
+    if unknown:
+        raise AssertionError(
+            f"Заглушка {cls.__name__} описує поля, яких у класі немає: "
+            f"{', '.join(unknown)}. Або поле перейменували, або в перевірці "
+            f"помилка."
+        )
+    return types.SimpleNamespace(**fields)
+
+
+def gui_stub(**fields: object) -> types.SimpleNamespace:
+    """Те саме для вікна: заглушка, звірена зі справжнім `GUI`."""
+    from gui.app import GUI as _GUI
+
+    return _checked_stub(_GUI, class_attrs(_GUI), fields)
+
+
+def miner_stub(**fields: object) -> types.SimpleNamespace:
+    """Заглушка майнера, звірена зі справжнім класом.
+
+    ⚠️ Заглушки `SimpleNamespace` мовчазні за природою: вони приймають будь-яке
+    ім'я поля. Через це перевірка могла роками стояти на полі, якого в `Miner`
+    давно немає, і при цьому бути зеленою — тобто нічого не перевіряти.
+    Зворотний бік теж болить: 09.09 нове поле `bench` поклало відразу три
+    перевірки, бо заглушка про нього не знала.
+
+    Тут ми хоча б ловимо перше: поле, якого в справжньому класі немає, валить
+    перевірку одразу й називає його. Друге ловиться природно — заглушка без
+    потрібного поля впаде на виклику.
+    """
+    return _checked_stub(Miner, _MINER_ATTRS, fields)
+
+
 def check(name: str, condition: bool, detail: str = "") -> None:
     global ok, fail
     if condition:
@@ -199,7 +268,7 @@ def stall_checks() -> None:
         )
 
     here = types.SimpleNamespace(name="канал")
-    box = types.SimpleNamespace(
+    box = miner_stub(
         watching=types.SimpleNamespace(peek=lambda _d: here),
         wanted=["гра"],
         campaigns=[campaign(drop(40, blind=7)), campaign(drop(151), drop(151))],
@@ -301,7 +370,7 @@ def deadline_checks() -> None:
             farmable=lambda: farmable,
         )
 
-    fake = types.SimpleNamespace(events=Bus(), _risk_reported=set(), campaigns=[
+    fake = miner_stub(events=Bus(), _risk_reported=set(), campaigns=[
         campaign("встигаємо", needs=60, hours=10),
         campaign("не встигаємо", needs=600, hours=2),
         campaign("чужа", needs=600, hours=1, farmable=False),
@@ -322,7 +391,7 @@ def window_checks() -> None:
     print("\n[4] Керування вікном")
     for kind, visible in ((CommandType.HIDE_WINDOW, False),
                           (CommandType.SHOW_WINDOW, True)):
-        box = types.SimpleNamespace(events=Bus())
+        box = miner_stub(events=Bus())
         Miner._apply(box, types.SimpleNamespace(type=kind, argument=""))
         got = [e for e in box.events.sent if isinstance(e, WindowVisibility)]
         check(f"{kind.name} → подія", len(got) == 1 and got[0].visible is visible,
@@ -603,7 +672,7 @@ def farm_indicator_checks() -> None:
             if "fg" in kwargs:
                 self.fg = str(kwargs["fg"])
 
-    box = types.SimpleNamespace(
+    box = gui_stub(
         palette=DARK, farm_label=FakeLabel(), _farm_state="",
     )
     box._set_farm_state = lambda state: GUI._set_farm_state(box, state)
@@ -660,7 +729,7 @@ def growing_checks() -> None:
                 return self.value
             raise KeyError(key)
 
-    box = types.SimpleNamespace(
+    box = gui_stub(
         _growing={}, _watching_name="berbatow",
         drop_var=FakeVar(), progress=FakeBar(),
         GROWING_WINDOW=GUI.GROWING_WINDOW, GROWING_LINES=GUI.GROWING_LINES,
@@ -750,7 +819,7 @@ def growing_checks() -> None:
             self.colour = kwargs.get("progress_color", self.colour)
 
     def styled(style: str, job: str | None) -> types.SimpleNamespace:
-        fake = types.SimpleNamespace(
+        fake = gui_stub(
             palette=DARK, progress=FakeColourBar(), root=FakeRoot(),
             _farm_state="going", _rainbow_job=job,
             RAINBOW_FRAME_MS=GUI.RAINBOW_FRAME_MS,
@@ -827,7 +896,7 @@ def parallel_watch_checks() -> None:
                 "dropID": "d1", "currentMinutesWatched": 5,
             }}}}
 
-        fake = types.SimpleNamespace(graphql=graphql, _drops={"d1": drop},
+        fake = miner_stub(graphql=graphql, _drops={"d1": drop},
                                      _counted_elsewhere="")
         spy, real = FakeLog(), miner_module.log
         miner_module.log = spy
@@ -852,7 +921,7 @@ def parallel_watch_checks() -> None:
           confirmed is False and counted == [], str(counted))
 
     # Причина доїжджає до повідомлення замість здогаду про ручний перегляд
-    fake = types.SimpleNamespace(
+    fake = miner_stub(
         _progress_mark=lambda: 40, _stall_since=0.0, _stall_alerted=False,
         events=Bus(), _counted_elsewhere="Special Events",
     )
@@ -1526,7 +1595,7 @@ def update_checks() -> None:
         check("теку поточного запуску не чіпає", current.exists())
         check("осиротілу нашу теку прибрано", gone == 1 and not orphan.exists())
 
-    fake = types.SimpleNamespace(
+    fake = miner_stub(
         _update_plan=None, update_postponed=False, events=Bus(),
         say=lambda text: None,
     )
@@ -1546,7 +1615,7 @@ def update_checks() -> None:
     # ⚠️ Провал перевірки мусить бути ЧУТНИМ. Зламаний підпис манифесту два
     # тижні не давав оновитись, і про це не знав ніхто: у вікні порожньо, у
     # Telegram порожньо, а журнал тоді вівся лише з `--log`.
-    quiet = types.SimpleNamespace(events=Bus(), _update_problem=None)
+    quiet = miner_stub(events=Bus(), _update_problem=None)
     Miner._update_check_failed(quiet, ValueError("підпис манифесту недійсний"))
     said = [e for e in quiet.events.sent if isinstance(e, UpdateFailed)]
     check("зламаний підпис — подія, а не тільки журнал", len(said) == 1)
@@ -1671,7 +1740,7 @@ def routing_checks() -> None:
             game=types.SimpleNamespace(name="Гра"),
         )
 
-    miner = types.SimpleNamespace(
+    miner = miner_stub(
         events=Bus(), _link_told=set(),
         campaigns=[_camp("a", False, 120), _camp("b", False, 0),
                    _camp("c", True, 60), _camp("d", False, 30, cosmetic=True),
@@ -1719,6 +1788,26 @@ def routing_checks() -> None:
     check("без сесії надсилання не падає", True)
     check("довге повідомлення ріжеться самі, а не 400 від Discord",
           LIMIT < 2000)
+
+    # Самі заглушки. ⚠️ `SimpleNamespace` приймає будь-яке ім'я поля, тож
+    # перевірка могла роками стояти на полі, якого в класі давно немає, — і
+    # бути зеленою, тобто не перевіряти нічого. Тепер заглушка звіряється з
+    # класом; ця перевірка стежить, що звіряння живе.
+    caught = False
+    try:
+        miner_stub(_поля_такого_немає=1)
+    except AssertionError as error:
+        caught = "_поля_такого_немає" in str(error)
+    check("заглушка майнера ловить неіснуюче поле", caught)
+
+    caught = False
+    try:
+        gui_stub(_поля_такого_немає=1)
+    except AssertionError:
+        caught = True
+    check("заглушка вікна ловить неіснуюче поле", caught)
+    check("справжнє поле проходить",
+          miner_stub(_benched={}, campaigns=[]) is not None)
 
     check("подія без маршруту не падає",
           spare.dispatch(events_module.LogLine(text="x")) is None)
@@ -2039,7 +2128,7 @@ def model_cache_checks() -> None:
     check("дозволили косметику — беремо", only_badges.available_to_me)
 
     # Пріоритети: індекс будується сеттером разом зі списком.
-    fake = types.SimpleNamespace()
+    fake = miner_stub()
     Miner.wanted.fset(fake, [Game({"id": "10", "name": "перша"}),
                             Game({"id": "20", "name": "друга"})])
     first = types.SimpleNamespace(game=Game({"id": "10", "name": "перша"}))
@@ -2164,7 +2253,7 @@ def delivery_checks() -> None:
     send(after, fresh=False)
     check("коли фолбек згас — spade пробують знову", after.posts == 1)
 
-    fake = types.SimpleNamespace(
+    fake = miner_stub(
         _delivery_failures=0, events=Bus(), _benched={},
         _restart_watch=types.SimpleNamespace(set=lambda: None),
     )
