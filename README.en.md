@@ -4,7 +4,7 @@
 
 ![Architecture](docs/architecture.en.png)
 
-Interactive diagram: [docs/architecture.en.html](docs/architecture.en.html).
+Interactive diagram: [open in the browser](https://riasj1dar.github.io/TwitchDropFarm/architecture.en.html) (GitHub shows the HTML source, not a page).
 
 
 Farm **timed drops** on Twitch with no browser window open and no stream on your

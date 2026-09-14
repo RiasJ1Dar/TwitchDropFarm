@@ -4,7 +4,7 @@
 
 ![Architecture](docs/architecture.en.png)
 
-Schéma interactif : [docs/architecture.en.html](docs/architecture.en.html).
+Schéma interactif : [ouvrir dans le navigateur](https://riasj1dar.github.io/TwitchDropFarm/architecture.en.html) (GitHub affiche le code, pas la page).
 
 
 Farmez les **timed drops** sur Twitch sans navigateur ouvert ni stream à l'écran.

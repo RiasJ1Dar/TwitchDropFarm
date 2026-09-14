@@ -4,7 +4,7 @@
 
 ![架构](docs/architecture.en.png)
 
-交互式图: [docs/architecture.en.html](docs/architecture.en.html).
+交互式图: [在浏览器中打开](https://riasj1dar.github.io/TwitchDropFarm/architecture.en.html)（GitHub 会显示源代码，而不是页面）。
 
 
 在 Twitch 上刷 **timed drops**，无需打开浏览器，屏幕上也不必挂着直播。程序自己读取库存，
