@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Twitch Drop Farm: a single exe",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "output": "architecture.en.html",
+    "viewBox": [1280, 720]
+  },
+  "components": [
+    { "id": "tray", "type": "frontend", "label": "Tray / window", "sublabel": "CustomTkinter", "pos": [80, 200], "size": [170, 64] },
+    { "id": "tg", "type": "frontend", "label": "Telegram", "sublabel": "remote control", "pos": [80, 420], "size": [170, 64] },
+    { "id": "core", "type": "backend", "label": "miner", "sublabel": "Python → exe", "pos": [420, 300], "size": [170, 72] },
+    { "id": "cfg", "type": "database", "label": "config + log", "sublabel": "Documents\\TwitchDropFarm", "pos": [720, 180], "size": [200, 64] },
+    { "id": "twitch", "type": "cloud", "label": "Twitch", "sublabel": "drops / inventory", "pos": [720, 400], "size": [170, 64] },
+    { "id": "exe", "type": "external", "label": "TwitchDropFarm.exe", "sublabel": "no extra runtime", "pos": [1000, 300], "size": [190, 64] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "one process", "wraps": ["tray", "core", "cfg"] }
+  ],
+  "connections": [
+    { "id": "tray-core", "from": "tray", "to": "core", "label": "start / stop / theme", "variant": "emphasis" },
+    { "id": "tg-core", "from": "tg", "to": "core", "label": "bot commands" },
+    { "id": "core-cfg", "from": "core", "to": "cfg", "label": "always logging" },
+    { "id": "core-twitch", "from": "core", "to": "twitch", "label": "GQL / drops" },
+    { "id": "pack", "from": "core", "to": "exe", "label": "PyInstaller", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Shipping", "items": ["One self-contained exe", "No Python on the user's PC"] },
+    { "dot": "emerald", "title": "Control", "items": ["Tray on the desktop", "Telegram from a phone"] },
+    { "dot": "rose", "title": "Boundary", "items": ["Do not touch the live exe from an agent session"] }
+  ]
+}

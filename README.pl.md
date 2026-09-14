@@ -2,6 +2,11 @@
 
 # TwitchDropFarm
 
+![Architektura](docs/architecture.en.png)
+
+Interaktywny schemat: [docs/architecture.en.html](docs/architecture.en.html).
+
+
 Farmienie **timed dropów** na Twitchu bez otwartej przeglądarki i bez streama na
 ekranie. Program sam czyta ekwipunek, decyduje, co warto farmić, znajduje
 odpowiedni kanał i dostarcza Twitchowi czas oglądania — a odebrane nagrody

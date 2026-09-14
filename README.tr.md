@@ -2,6 +2,11 @@
 
 # TwitchDropFarm
 
+![Mimari](docs/architecture.en.png)
+
+Etkileşimli şema: [docs/architecture.en.html](docs/architecture.en.html).
+
+
 Twitch'te **timed drop** toplama — açık bir tarayıcı olmadan, ekranda yayın
 açmadan. Program envanteri kendi okur, neyi toplamaya değeceğine karar verir,
 uygun bir kanal bulur ve Twitch'e izlenme süresi iletir; alınan ödülleri de

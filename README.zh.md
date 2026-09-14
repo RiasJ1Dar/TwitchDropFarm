@@ -2,6 +2,11 @@
 
 # TwitchDropFarm
 
+![架构](docs/architecture.en.png)
+
+交互式图: [docs/architecture.en.html](docs/architecture.en.html).
+
+
 在 Twitch 上刷 **timed drops**，无需打开浏览器，屏幕上也不必挂着直播。程序自己读取库存，
 判断什么值得刷，找到合适的频道并向 Twitch 投递观看时长；领到的奖励会显示在窗口、系统托盘
 和 Telegram 里。
