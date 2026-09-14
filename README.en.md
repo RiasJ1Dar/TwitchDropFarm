@@ -2,6 +2,11 @@
 
 # TwitchDropFarm
 
+![Architecture](docs/architecture.en.png)
+
+Interactive diagram: [docs/architecture.en.html](docs/architecture.en.html).
+
+
 Farm **timed drops** on Twitch with no browser window open and no stream on your
 screen. The program reads your inventory itself, decides what is worth farming,
 finds a suitable channel and delivers watch time to Twitch — then shows claimed
