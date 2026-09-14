@@ -4,7 +4,7 @@
 
 ![Архітектура](docs/architecture.png)
 
-Інтерактивна схема: [docs/architecture.html](docs/architecture.html). Кнопки переглядача — англійською.
+Інтерактивна схема: [відкрити в браузері](https://riasj1dar.github.io/TwitchDropFarm/architecture.html) (на GitHub файл показує код, не сторінку).
 
 Фарм **timed drops** на Twitch без відкритого браузера й без стріму на екрані.
 Програма сама читає інвентар, обирає, що вигідніше фармити, знаходить придатний
