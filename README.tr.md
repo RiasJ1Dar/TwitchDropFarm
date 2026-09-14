@@ -4,7 +4,7 @@
 
 ![Mimari](docs/architecture.en.png)
 
-Etkileşimli şema: [docs/architecture.en.html](docs/architecture.en.html).
+Etkileşimli şema: [tarayıcıda aç](https://riasj1dar.github.io/TwitchDropFarm/architecture.en.html) (GitHub sayfa değil, HTML kaynağını gösterir).
 
 
 Twitch'te **timed drop** toplama — açık bir tarayıcı olmadan, ekranda yayın
