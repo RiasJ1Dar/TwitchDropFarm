@@ -68,6 +68,7 @@ from core.i18n import NAMES, t
 from core.toolbox import human_size, plural
 from gui.progress import ProgressMixin
 from gui.pulse import PulseDot
+from gui.tabs.channels import ChannelsTabMixin
 from gui.tabs.mining import MiningTabMixin
 from gui.theme import PRESETS, blended, preset, read_overrides
 from gui.theme import export as export_theme
@@ -174,7 +175,7 @@ SOON_LIMIT = 8
 SHOW = Router()
 
 
-class GUI(WidgetsMixin, ProgressMixin, MiningTabMixin):
+class GUI(WidgetsMixin, ProgressMixin, MiningTabMixin, ChannelsTabMixin):
     settings_tab: SettingsTab
     channel_var: tk.StringVar
     title_var: tk.StringVar
@@ -183,6 +184,7 @@ class GUI(WidgetsMixin, ProgressMixin, MiningTabMixin):
     progress: ctk.CTkProgressBar
     pause_btn: ctk.CTkButton
     log: tk.Text
+    channel_tree: ttk.Treeview
 
     def __init__(self, twitch: Twitch):
         self._twitch = twitch
@@ -616,43 +618,6 @@ class GUI(WidgetsMixin, ProgressMixin, MiningTabMixin):
 
 
 
-    def _build_channels_tab(self, tabs: ctk.CTkTabview) -> None:
-        # Усередині лишається ttk: тут `Treeview`, який не переводимо (замір —
-        # 3026 мс проти 53 мс на 198 рядках).
-        tab = ttk.Frame(tabs.add(t("tab_channels")), padding=10)
-        tab.pack(fill="both", expand=True)
-        ttk.Label(
-            tab, text=t("channels_hint")
-        ).pack(anchor="w", pady=(0, 6))
-        columns = ("name", "game", "viewers", "status")
-        self.channel_tree = ttk.Treeview(tab, columns=columns, show="headings",
-                                         style="Table.Treeview")
-        for column, title, width in (
-            ("name", t("col_channel"), 200), ("game", t("col_game"), 260),
-            ("viewers", t("col_viewers"), 90), ("status", t("col_status"), 140),
-        ):
-            self.channel_tree.heading(column, text=title)
-            self.channel_tree.column(
-                column, width=width, anchor="e" if column == "viewers" else "w",
-            )
-        self.channel_tree.bind("<Double-1>", self._on_channel_activate)
-        self._table_scrollbar(tab, self.channel_tree)
-        self.channel_tree.pack(fill="both", expand=True)
-
-    def _table_scrollbar(self, parent: tk.Misc, table: ttk.Treeview) -> None:
-        """`CTkScrollbar` замість `ttk.Scrollbar` — перевірено, з `Treeview`
-        працює: той самий протокол `yview` / `yscrollcommand`, що й у журналі
-        вкладки «Майнінг». Стара смуга зі стрілками й канавкою була найпомітнішим
-        старим елементом на обох вкладках зі списками."""
-        scroll = self._paint(
-            ctk.CTkScrollbar(parent, command=table.yview, width=12),
-            button_color="line", button_hover_color="accent", fg_color="card",
-        )
-        table.configure(yscrollcommand=scroll.set)
-        # канавка того ж кольору, що й таблиця: смуга читається як її частина,
-        # а не як окрема сіра колонка збоку
-        scroll.pack(side="right", fill="y", padx=(2, 0))
-
     def _build_inventory_tab(self, tabs: ctk.CTkTabview) -> None:
         tab = ttk.Frame(tabs.add(t("tab_inventory")), padding=10)
         tab.pack(fill="both", expand=True)
@@ -820,11 +785,6 @@ class GUI(WidgetsMixin, ProgressMixin, MiningTabMixin):
             self._send(CommandType.PAUSE)
             self.pause_btn.configure(text=t("resume"))
             self._set_farm_state("paused")
-
-    def _on_channel_activate(self, _event: tk.Event) -> None:
-        selection = self.channel_tree.selection()
-        if selection:
-            self._send(CommandType.SWITCH, self.channel_tree.item(selection[0], "values")[0])
 
     def _priority_add(self) -> None:
         game = self.settings_tab.prio_entry.get().strip()
@@ -1356,24 +1316,6 @@ class GUI(WidgetsMixin, ProgressMixin, MiningTabMixin):
         else:
             state = t("ws_some", ok=connected, total=total)
         self.conn_var.set(t("ws_line", state=state, topics=topics))
-
-
-
-    def _render_channels(self, event: ChannelsUpdated) -> None:
-        selected = self.channel_tree.selection()
-        keep = self.channel_tree.item(selected[0], "values")[0] if selected else None
-        self.channel_tree.delete(*self.channel_tree.get_children())
-        for channel in event.channels:
-            if channel.online:
-                state = t("ch_online_drops") if channel.drops_enabled else t("ch_online")
-            else:
-                state = t("ch_offline")
-            iid = self.channel_tree.insert(
-                "", "end",
-                values=(channel.name, channel.game or "—", channel.viewers, state),
-            )
-            if keep == channel.name:
-                self.channel_tree.selection_set(iid)
 
     def _render_inventory(self, event: InventoryUpdated) -> None:
         # Тут не об'єкти моделі, а знімки з події: у них власні імена полів,
