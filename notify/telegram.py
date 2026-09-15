@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import html
-import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,7 +48,8 @@ from core.events import (
 )
 from core.i18n import t
 from core.protocol import TELEGRAM_ENDPOINT as TELEGRAM_API
-from core.toolbox import Backoff, plural
+from core.toolbox import plural
+from notify.telegram_client import TelegramClient
 
 if TYPE_CHECKING:
     from core.miner import Miner as Twitch
@@ -110,10 +110,6 @@ def update_buttons() -> dict:
         ]],
     }
 
-
-# Telegram відхиляє повідомлення понад 4096 символів помилкою, а не обрізає його.
-# Довгий інвентар через це просто не доходив би, і мовчки.
-MESSAGE_LIMIT = 3900
 
 
 # ================================================================ майстер налаштування
@@ -190,21 +186,6 @@ async def send_greeting(token: str, chat_id: int) -> str:
     return error
 
 
-def _split_message(text: str) -> list[str]:
-    """Ріже довгий текст по межах рядків, щоб не ламати HTML-розмітку."""
-    if len(text) <= MESSAGE_LIMIT:
-        return [text]
-    parts: list[str] = []
-    current = ""
-    for line in text.split("\n"):
-        if len(current) + len(line) + 1 > MESSAGE_LIMIT and current:
-            parts.append(current)
-            current = ""
-        current += (line + "\n")
-    if current.strip():
-        parts.append(current)
-    return parts
-
 
 def control_keyboard() -> dict:
     """Клавіатура під полем вводу — постійна панель керування.
@@ -243,16 +224,23 @@ class TelegramNotifier:
     def __init__(self, twitch: Twitch):
         self._twitch = twitch
         self._settings = twitch.settings
-        self._session: aiohttp.ClientSession | None = None
-        self._poll_task: asyncio.Task[None] | None = None
+        self._client = TelegramClient(
+            token=self._config.get("bot_token", ""),
+            allowed_chat_ids=lambda: self._chat_ids,
+            on_command=self._handle_command,
+            default_keyboard=control_keyboard,
+            commands_provider=command_catalog,
+        )
         self._report_task: asyncio.Task[None] | None = None
-        self._offset: int = 0
         self._unsubscribe: Any = None
         # троттлінг рутини: не частіше ніж раз на стільки секунд для того самого типу
         self._last_routine: dict[str, float] = {}
-        self._bio = ""
 
     # ------------------------------------------------------------ життєвий цикл
+
+    @property
+    def client(self) -> TelegramClient:
+        return self._client
 
     @property
     def _config(self) -> dict[str, Any]:
@@ -262,13 +250,45 @@ class TelegramNotifier:
     def _chat_ids(self) -> list[int]:
         return list(self._config["chat_ids"])
 
+    @property
+    def _session(self) -> aiohttp.ClientSession | None:
+        return self._client.session
+
+    @_session.setter
+    def _session(self, value: aiohttp.ClientSession | None) -> None:
+        self._client.session = value
+
+    @property
+    def _offset(self) -> int:
+        return self._client.offset
+
+    @_offset.setter
+    def _offset(self, value: int) -> None:
+        self._client.offset = value
+
+    @property
+    def _poll_task(self) -> asyncio.Task[None] | None:
+        return self._client.poll_task
+
+    @_poll_task.setter
+    def _poll_task(self, value: asyncio.Task[None] | None) -> None:
+        self._client.poll_task = value
+
+    @property
+    def _bio(self) -> str:
+        return self._client.bio
+
+    @_bio.setter
+    def _bio(self, value: str) -> None:
+        self._client._bio = value
+
     async def start(self) -> None:
-        if not self._config["bot_token"]:
+        token = self._config.get("bot_token", "")
+        if not token:
             logger.warning("Telegram увімкнено, але bot_token порожній")
             return
-        self._session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=70)  # long-polling до 60с + запас
-        )
+        self._client.token = token
+        await self._client.start()
         self._unsubscribe = self._twitch.events.subscribe(self._on_event)
         if self._config["allow_control"]:
             await self.register_commands()
@@ -292,117 +312,39 @@ class TelegramNotifier:
         if self._unsubscribe is not None:
             self._unsubscribe()
             self._unsubscribe = None
-        # знімаємо наглядача першим, інакше він перезапустить те, що ми зупиняємо
-        if self._poll_task is not None:
-            self._poll_task.remove_done_callback(self._poll_task_died)
-        for task in (self._poll_task, self._report_task):
-            if task is not None:
-                task.cancel()
-                try:
-                    await task
-                except (asyncio.CancelledError, Exception):
-                    pass
-        self._poll_task = self._report_task = None
-        if self._session is not None:
-            await self._session.close()
-            self._session = None
+        if self._report_task is not None:
+            self._report_task.cancel()
+            try:
+                await self._report_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._report_task = None
+        await self._client.stop()
 
     # ------------------------------------------------------------ транспорт
 
-    async def _api(self, method: str, **payload: Any) -> Any:
-        """Виклик Bot API. `Any`, а не `dict`, — і це не лінь.
+    @property
+    def _api(self) -> Any:
+        return self._client._api
 
-        `result` у Telegram різного типу залежно від методу: `getUpdates` віддає
-        **список** оновлень, `getMe` — обʼєкт, `setMyCommands` — `true`. Тип
-        `dict | None` тут був просто неправдою: перевірка типів через нього
-        показувала «"str" has no attribute "get"» у місцях, де насправді все
-        гаразд, і водночас не помітила б справжньої плутанини.
-        """
-        if self._session is None:
-            return None
-        url = TELEGRAM_API.format(token=self._config["bot_token"], method=method)
-        try:
-            async with self._session.post(url, json=payload) as response:
-                data = await response.json()
-        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
-            # Telegram лежить — це не привід зупиняти майнінг, але й мовчати не можна.
-            # Раніше тут був debug, і канал керування міг падати щосекунди абсолютно
-            # нечутно: бот «не реагує», а в лозі порожньо.
-            logger.warning(f"Telegram {method} не вдався: {type(exc).__name__}: {exc}")
-            return None
-        if not data.get("ok"):
-            logger.warning(f"Telegram {method}: {data.get('description')}")
-            return None
-        return data.get("result")
+    @_api.setter
+    def _api(self, value: Any) -> None:
+        self._client._api = value
 
     async def send(
         self, text: str, *, chat_id: int | None = None, keyboard: bool = False,
         markup: dict | None = None,
     ) -> None:
-        targets = [chat_id] if chat_id is not None else self._chat_ids
-        payload: dict[str, Any] = {
-            "text": text,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True,
-        }
-        # `markup` — разова інлайн-клавіатура під конкретним повідомленням
-        # (питання «оновити чи відкласти»), `keyboard` — постійна панель.
-        if markup is not None:
-            payload["reply_markup"] = markup
-        elif keyboard:
-            payload["reply_markup"] = control_keyboard()
-        for target in targets:
-            # Telegram обриває повідомлення понад 4096 символів помилкою, а не
-            # усіченням, тож ріжемо самі — інакше довгий інвентар зникав би мовчки.
-            for part in _split_message(text):
-                chunk_payload = dict(payload, text=part, chat_id=target)
-                if part is not text:
-                    chunk_payload.pop("reply_markup", None)
-                await self._api("sendMessage", **chunk_payload)
+        await self._client.send(text, chat_id=chat_id, keyboard=keyboard, markup=markup)
 
     async def register_commands(self) -> bool:
-        """Показує команди в меню Telegram (кнопка «/» у полі вводу).
-
-        Викликається на кожному старті: список у меню має відповідати тому, що код
-        насправді вміє, а не тому, що колись вписали руками в BotFather.
-        """
-        result = await self._api(
-            "setMyCommands",
-            commands=[
-                {"command": name, "description": description}
-                for name, description, _args in command_catalog()
-            ],
-        )
-        if result:
-            logger.info(f"Меню Telegram оновлено: {len(command_catalog())} команд")
-            return True
-        return False
+        return await self._client.register_commands()
 
     async def discover_chat_ids(self) -> list[int]:
-        """Хто вже писав боту. Нічого не зберігає — власника ставить лише майстер."""
-        updates = await self._api("getUpdates", timeout=0)
-        if not updates:
-            return []
-        found: list[int] = []
-        for update in updates:
-            message = update.get("message") or update.get("edited_message")
-            if message and (chat_id := message["chat"]["id"]) not in found:
-                found.append(chat_id)
-        return found
+        return await self._client.discover_chat_ids()
 
     async def send_test(self) -> None:
-        chat_ids = self._chat_ids
-        if not chat_ids:
-            found = await self.discover_chat_ids()
-            print(
-                "chat_id не задано. Підключи бота через Налаштування → "
-                "Підключити бота… — майстер запише власника після перевірки."
-            )
-            if found:
-                print(f"Хто вже писав боту (ще не власники): {found}")
-            return
-        await self.send(t("tg_test_ok"))
-        print(f"Тестове повідомлення надіслано у чати: {chat_ids}")
+        await self._client.send_test(self._chat_ids)
 
     # ------------------------------------------------------------ події → повідомлення
 
@@ -476,34 +418,10 @@ class TelegramNotifier:
         return t("farm_idle")
 
     async def _set_bio(self, text: str) -> None:
-        # Кружечок ставимо тут, а не в перекладах: це оформлення, однакове для
-        # всіх станів. Поки він жив у текстах локалей, частина станів його мала,
-        # частина ні — і в дев'яти мовах це розходилось непомітно.
-        text = f"● {text}"[:120]
-        if text == self._bio:
-            return
-        # Тротлінг лише для рядків з «·» (застій зі зміною хвилин). Без крапки
-        # find() дає -1, зріз [:0] порожній, і всі стани («Іде», «Чекає»,
-        # «Не зараховується») виглядали як один вид — зміна Іде←Стоїть
-        # губилась на 15 с. Після того як канал прибрали з біо, точний збіг
-        # вище вже закриває «те саме Іде».
-        old_dot, new_dot = self._bio.find("·"), text.find("·")
-        same_kind = (
-            old_dot >= 0 and new_dot >= 0
-            and self._bio[: old_dot + 1] == text[: new_dot + 1]
-        )
-        if same_kind and self._bio and not self._routine_allowed("bio", 15.0):
-            return
-        self._bio = text
-        # ⚠️ Тільки короткий опис. `setMyDescription` — інше поле: Telegram
-        # показує його великим блоком у порожньому чаті, замість «Що вміє цей
-        # бот?». Поточний стан там недоречний, а виглядало це як випадковий
-        # текст, продубльований поруч зі статусом.
-        await self._api("setMyShortDescription", short_description=text)
+        await self._client.set_bio(text)
 
     async def _set_description(self) -> None:
-        """Опис у порожньому чаті. Ставиться раз при старті й далі не міняється."""
-        await self._api("setMyDescription", description=t("tg_description")[:512])
+        await self._client.set_description()
 
     def _routine_allowed(self, key: str, min_interval: float = 60.0) -> bool:
         now = time()
@@ -780,98 +698,22 @@ class TelegramNotifier:
         керування виглядає для користувача точно як «бот зламався», тому тепер вона
         і помітна, і самовиправна.
         """
-        self._poll_task = asyncio.create_task(self._poll_loop())
-        self._poll_task.add_done_callback(self._poll_task_died)
+        self._client.start_polling()
 
     def _poll_task_died(self, task: asyncio.Task[None]) -> None:
-        if task.cancelled():
-            return
-        exc = task.exception()
-        if exc is None:
-            logger.error("Цикл команд Telegram завершився без причини — перезапускаю")
-        else:
-            logger.error("Цикл команд Telegram упав — перезапускаю", exc_info=exc)
-        # не перезапускаємось, якщо застосунок уже згортається
-        if self._session is not None and not self._session.closed:
-            asyncio.get_running_loop().call_later(5, self._restart_poll)
+        self._client._poll_task_died(task)
 
     def _restart_poll(self) -> None:
-        if self._session is not None and not self._session.closed:
-            self._start_poll_task()
+        self._client._restart_poll()
 
     async def _poll_loop(self) -> None:
-        """Long-polling getUpdates.
-
-        Уся ітерація під `try`, а не лише HTTP-запит: одне криве оновлення не сміє
-        зупинити обробку всіх наступних.
-        """
-        backoff = Backoff(start=2.0, ceiling=60.0, factor=2.0)
-        while True:
-            try:
-                updates = await self._api("getUpdates", offset=self._offset, timeout=60)
-                if updates is None:
-                    # Мережа або Bot API недоступні — експоненційний відкат,
-                    # щоб не спамити щосекунди
-                    delay = next(backoff)
-                    logger.debug(f"Telegram polling retry via backoff in {delay:.1f}s")
-                    await asyncio.sleep(delay)
-                    continue
-                backoff.reset()
-                if not updates:
-                    await asyncio.sleep(1)
-                    continue
-                logger.log(CALL, f"Telegram: отримано оновлень — {len(updates)}")
-                for update in updates:
-                    # offset рухаємо одразу: інакше криве оновлення повертатиметься вічно
-                    self._offset = max(self._offset, update.get("update_id", 0) + 1)
-                    try:
-                        await self._process_update(update)
-                    except Exception:
-                        logger.exception("Помилка обробки оновлення Telegram")
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.exception("Помилка полінгу Telegram")
-                await asyncio.sleep(5)
-
+        await self._client._poll_loop()
 
     async def _process_update(self, update: dict[str, Any]) -> None:
-        if (callback := update.get("callback_query")) is not None:
-            await self._process_callback(callback)
-            return
-        message = update.get("message") or update.get("edited_message")
-        if not message or "text" not in message:
-            return
-        chat_id = message["chat"]["id"]
-        if chat_id not in self._chat_ids:
-            logger.warning(
-                f"Відхилено команду з чужого chat_id {chat_id}: "
-                f"{message['text'][:60]!r}"
-            )
-            return
-        text = message["text"].strip()
-        await self._handle_command(chat_id, text)
-        # слід про успіх, а не лише про факт отримання: інакше при скарзі «бот не
-        # відповів» неможливо сказати, на якому кроці обірвався ланцюг
-        logger.log(CALL, f"Telegram: команда {text[:40]!r} від {chat_id} — оброблено")
+        await self._client._process_update(update)
 
     async def _process_callback(self, callback: dict[str, Any]) -> None:
-        """Обробляє натискання інлайн-кнопки.
-
-        Кнопки прив'язані до тих самих команд, що й текст, тож уся логіка одна.
-        Білий список chat_id перевіряється так само жорстко: кнопка нікому не дає
-        обхідного шляху.
-        """
-        message = callback.get("message") or {}
-        chat_id = (message.get("chat") or {}).get("id")
-        command = callback.get("data", "")
-        # Telegram чекає на відповідь, інакше кнопка «крутиться» до таймауту
-        await self._api("answerCallbackQuery", callback_query_id=callback["id"])
-        if chat_id is None or chat_id not in self._chat_ids:
-            logger.warning(f"Відхилено натискання з чужого chat_id {chat_id}")
-            return
-        logger.log(CALL, f"Telegram: кнопка «{command}» від {chat_id}")
-        await self._handle_command(chat_id, f"/{command}")
+        await self._client._process_callback(callback)
 
     async def _handle_command(self, chat_id: int, text: str) -> None:
         # Кнопка панелі надсилає свій напис звичайним повідомленням — перекладаємо
@@ -979,28 +821,7 @@ class TelegramNotifier:
 
     async def _send_document(self, data: bytes, *, filename: str, chat_id: int) -> None:
         """Кладе файл у чат. Немає сесії (тести) — мовчки пропускаємо."""
-        if self._session is None or not data:
-            return
-        url = TELEGRAM_API.format(
-            token=self._config["bot_token"], method="sendDocument",
-        )
-        form = aiohttp.FormData()
-        form.add_field("chat_id", str(chat_id))
-        form.add_field(
-            "document", data,
-            filename=filename,
-            content_type="text/csv",
-        )
-        try:
-            async with self._session.post(url, data=form) as response:
-                # не `data`: цим іменем уже названо байти файлу в аргументах, і
-                # перевірка типів справедливо бачила в цьому плутанину
-                answer = await response.json()
-        except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
-            logger.warning(f"Telegram sendDocument не вдався: {type(exc).__name__}: {exc}")
-            return
-        if not answer.get("ok"):
-            logger.warning(f"Telegram sendDocument: {answer.get('description')}")
+        await self._client.send_document(data, filename=filename, chat_id=chat_id)
 
     async def _ensure_profile_photo(self) -> None:
         """Ставить аватар бота з іконки програми, один раз на версію."""
@@ -1016,32 +837,8 @@ class TelegramNotifier:
             logger.info("Аватар Telegram-бота оновлено")
 
     async def _set_profile_photo(self, jpeg: bytes) -> bool:
-        if self._session is None or not jpeg:
-            return False
-        url = TELEGRAM_API.format(
-            token=self._config["bot_token"], method="setMyProfilePhoto",
-        )
-        form = aiohttp.FormData()
-        form.add_field(
-            "photo",
-            json.dumps({"type": "static", "photo": "attach://icon"}),
-            content_type="application/json",
-        )
-        form.add_field(
-            "icon", jpeg, filename="icon.jpg", content_type="image/jpeg",
-        )
-        try:
-            async with self._session.post(url, data=form) as response:
-                answer = await response.json()
-        except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
-            logger.warning(
-                f"Telegram setMyProfilePhoto не вдався: {type(exc).__name__}: {exc}"
-            )
-            return False
-        if not answer.get("ok"):
-            logger.warning(f"Telegram setMyProfilePhoto: {answer.get('description')}")
-            return False
-        return True
+        return await self._client.set_profile_photo(jpeg)
+
 
     async def _handle_priority(self, chat_id: int, argument: str) -> None:
         bits = argument.split(maxsplit=1)
