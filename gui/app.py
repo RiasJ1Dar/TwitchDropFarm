@@ -70,6 +70,7 @@ from gui.celebrate import Confetti
 from gui.pulse import PulseDot, rainbow
 from gui.theme import PRESETS, blended, preset, read_overrides
 from gui.theme import export as export_theme
+from gui.widgets import WidgetsMixin
 
 if TYPE_CHECKING:
     from core.miner import Miner as Twitch
@@ -84,8 +85,11 @@ TILE_LIMIT = 120
 
 
 def _shorten(text: str, limit: int = 34) -> str:
-    """Довгі назви нагород ламають сітку — рівні картки читаються краще."""
-    return text if len(text) <= limit else text[: limit - 1] + "…"
+    """Обрізає довгий підпис із «…» посередині, щоб було видно початок і кінець."""
+    if len(text) <= limit:
+        return text
+    half = (limit - 1) // 2
+    return f"{text[:half]}…{text[-half:]}"
 
 
 # Наскільки заокруглені кути плитки. Той самий радіус, що в `_card`, — інакше
@@ -169,7 +173,7 @@ SOON_LIMIT = 8
 SHOW = Router()
 
 
-class GUI:
+class GUI(WidgetsMixin):
     settings_tab: SettingsTab
 
     def __init__(self, twitch: Twitch):
@@ -502,120 +506,7 @@ class GUI:
         # Смуга вже існує — можна вмикати перелив, якщо його обрали минулого разу
         self._apply_progress_style()
 
-    def _card(self, parent: tk.Misc, title: str) -> ctk.CTkFrame:
-        """Заокруглена картка з підписом-шапкою.
 
-        Заміна `ttk.LabelFrame`: той малює прямокутну рамку з врізаним у неї
-        текстом, і саме ця рамка найбільше видавала вік вікна. Тут підпис
-        стоїть над вмістом приглушеним кольором, а межу тримає тонка лінія.
-        """
-        c = self.cards
-        ttk.Label(parent, text=title, foreground=self.palette["muted"]).pack(
-            anchor="w", padx=4, pady=(0, 4),
-        )
-        card = ctk.CTkFrame(parent, corner_radius=12, fg_color=c["card"],
-                            border_width=1, border_color=c["line"])
-        card.pack(fill="x")
-        return card
-
-    def _block(self, parent: tk.Misc, title: str, *, top: int = 0,
-               grow: bool = False) -> ctk.CTkFrame:
-        """Картка з відступом зверху; повертає її нутрощі.
-
-        `_card` пакує підпис і рамку одне за одним, тож відступ між сусідніми
-        картками ставиться на обгортці — інакше підпис наступної прилипає до
-        попередньої. Вміст лягає в прозорий фрейм із полями, щоб кожен рядок
-        не носив власний `padx`.
-        """
-        wrap = ctk.CTkFrame(parent, fg_color="transparent")
-        wrap.pack(fill="both" if grow else "x", expand=grow, pady=(top, 0))
-        card = self._card(wrap, title)
-        if grow:
-            card.pack(fill="both", expand=True)
-        inner = ctk.CTkFrame(card, fg_color="transparent")
-        inner.pack(fill="both" if grow else "x", expand=grow, padx=PAD, pady=PAD)
-        return inner
-
-    def _colour(self, key: str) -> str:
-        """Ключ палітри → колір. Імена в `palette` і `cards` не перетинаються."""
-        return self.palette.get(key) or self.cards[key]
-
-    def _paint(self, widget: Any, **options: str) -> Any:
-        """Пофарбувати CTk-віджет і запам'ятати, чим саме.
-
-        Значення тут — не кольори, а ключі палітри: саме тому те саме
-        оформлення вдається накласти вдруге, коли людина перемикає тему.
-        """
-        self._painted.append((widget, options))
-        widget.configure(**{name: self._colour(key)
-                            for name, key in options.items()})
-        return widget
-
-    def _button(self, parent: tk.Misc, text: str, command: Any,
-                *, accent: bool = False, width: int = 140) -> ctk.CTkButton:
-        """Кнопка вкладки. Акцентна — та, яку натискають найчастіше."""
-        p, c = self.palette, self.cards
-        return ctk.CTkButton(
-            parent, text=text, command=command, corner_radius=8, height=32,
-            width=width,
-            font=("Segoe UI", 12, "bold" if accent else "normal"),
-            fg_color=p["accent"] if accent else c["card"],
-            hover_color=p["accent"] if accent else c["hover"],
-            text_color="#ffffff" if accent else p["fg"],
-            border_width=0 if accent else 1, border_color=c["line"],
-        )
-
-    def _switch(self, parent: tk.Misc, text: str, variable: tk.Variable,
-                command: Any) -> ctk.CTkSwitch:
-        """Тумблер замість галочки: увімкнено це чи ні, видно без вчитування.
-
-        `onvalue`/`offvalue` задані явно: типово CustomTkinter пише в змінну
-        одиницю й нуль, а тут скрізь `tk.BooleanVar` — і саме її читає
-        `_misc_changed`.
-        """
-        return self._paint(
-            ctk.CTkSwitch(
-                parent, text=text, variable=variable, command=command,
-                onvalue=True, offvalue=False, switch_width=40, switch_height=20,
-                font=("Segoe UI", 12),
-            ),
-            fg_color="line", progress_color="accent", button_color="muted",
-            button_hover_color="fg", text_color="fg",
-        )
-
-    def _entry(self, parent: tk.Misc, variable: tk.StringVar | None = None,
-               *, placeholder: str = "") -> ctk.CTkEntry:
-        extra: dict[str, Any] = {}
-        if variable is not None:
-            extra["textvariable"] = variable
-        if placeholder:
-            # підказка сірим, поки поле порожнє: інакше незрозуміло, що буде,
-            # якщо нічого не вписати
-            extra["placeholder_text"] = placeholder
-        return self._paint(
-            ctk.CTkEntry(parent, corner_radius=8, height=30,
-                         font=("Segoe UI", 12), **extra),
-            fg_color="alt", border_color="line", text_color="fg",
-        )
-
-    def _hint(self, parent: tk.Misc, text: str, *, colour: str = "muted",
-              wrap: int = 320) -> ctk.CTkLabel:
-        """Мітка-пояснення. `wrap=0` — короткий підпис, який не переносять."""
-        return self._paint(
-            ctk.CTkLabel(parent, text=text, wraplength=wrap, justify="left",
-                         anchor="w", font=("Segoe UI", 12)),
-            text_color=colour,
-        )
-
-    def _list_row(self, parent: tk.Misc, add: Any, remove: Any) -> ctk.CTkEntry:
-        """Поле вводу з «+» і «−» — однаковий рядок під обома списками ігор."""
-        row = ctk.CTkFrame(parent, fg_color="transparent")
-        row.pack(fill="x", pady=(8, 0))
-        entry = self._entry(row)
-        entry.pack(side="left", fill="x", expand=True)
-        self._button(row, "+", add, width=34).pack(side="left", padx=(6, 0))
-        self._button(row, "−", remove, width=34).pack(side="left", padx=(4, 0))
-        return entry
 
     # Яку частку шляху до цілі проходимо за кадр. 0.25 дає рух, який око
     # встигає простежити, але який не тягнеться: смуга доїжджає за ~10 кадрів.
