@@ -73,6 +73,7 @@ from gui.theme import export as export_theme
 
 if TYPE_CHECKING:
     from core.miner import Miner as Twitch
+    from gui.settings_tab import SettingsTab
 
 logger = logging.getLogger("TwitchDrops")
 
@@ -169,41 +170,7 @@ SHOW = Router()
 
 
 class GUI:
-    # ⚠️ Ці поля створює не `__init__`, а `gui.settings_tab.build_settings_tab`:
-    # вкладку налаштувань винесено окремим модулем, і він накидає віджети сюди.
-    # Оголошення потрібні не для краси. По-перше, без них перевірка типів не
-    # бачила 99 звернень до неоголошених полів — тобто мовчала там, де мала
-    # кричати. По-друге, той, хто читає це вікно, інакше не дізнається, звідки
-    # береться `self.prio_list`, і побачить її лише в мить `AttributeError`.
-    #
-    # Напрямок на потім: зробити з вкладки клас, який тримає свої віджети сам,
-    # замість функції, що пише в чужий об'єкт.
-    _lang_codes: list[str]
-    autostart_var: tk.BooleanVar
-    badges_var: tk.BooleanVar
-    block_entry: ctk.CTkEntry
-    block_list: tk.Listbox
-    boot_var: tk.BooleanVar
-    dark_var: tk.BooleanVar
-    discord_entry: ctk.CTkEntry
-    hints_var: tk.BooleanVar
-    hopeless_var: tk.BooleanVar
-    images_var: tk.BooleanVar
-    keeplog_var: tk.BooleanVar
-    lang_var: tk.StringVar
-    logdir_var: tk.StringVar
-    mode_var: tk.StringVar
-    preset_var: tk.StringVar
-    prio_entry: ctk.CTkEntry
-    prio_list: tk.Listbox
-    rainbow_var: tk.BooleanVar
-    size_label: ctk.CTkLabel
-    size_var: tk.IntVar
-    tg_hint: ctk.CTkLabel
-    tg_var: tk.BooleanVar
-    updates_var: tk.BooleanVar
-    watch_entry: ctk.CTkEntry
-    watch_list: tk.Listbox
+    settings_tab: SettingsTab
 
     def __init__(self, twitch: Twitch):
         self._twitch = twitch
@@ -420,8 +387,11 @@ class GUI:
             self.log.tag_configure("time", foreground=p["muted"])
             for tag, colour in (("ok", p["ok"]), ("warn", p["warn"]), ("err", p["err"])):
                 self.log.tag_configure(tag, foreground=colour)
-        for name in ("prio_list", "watch_list"):
-            box = getattr(self, name, None)
+        for name in ("prio_list", "watch_list", "block_list"):
+            box = (
+                getattr(getattr(self, "settings_tab", None), name, None)
+                or getattr(self, name, None)
+            )
             if box is not None:
                 box.configure(bg=p["alt"], fg=p["fg"], selectbackground=p["accent"],
                               selectforeground="#ffffff", highlightthickness=0)
@@ -1105,9 +1075,9 @@ class GUI:
         )
 
     def _build_settings_tab(self, tabs: ctk.CTkTabview) -> None:
-        from gui.settings_tab import build_settings_tab
+        from gui.settings_tab import SettingsTab
 
-        build_settings_tab(self, tabs)
+        self.settings_tab = SettingsTab(self, tabs)
 
 
     # ------------------------------------------------------------ дії користувача
@@ -1131,44 +1101,44 @@ class GUI:
             self._send(CommandType.SWITCH, self.channel_tree.item(selection[0], "values")[0])
 
     def _priority_add(self) -> None:
-        game = self.prio_entry.get().strip()
-        if game and game not in self.prio_list.get(0, "end"):
-            self.prio_list.insert("end", game)
-            self.prio_entry.delete(0, "end")
+        game = self.settings_tab.prio_entry.get().strip()
+        if game and game not in self.settings_tab.prio_list.get(0, "end"):
+            self.settings_tab.prio_list.insert("end", game)
+            self.settings_tab.prio_entry.delete(0, "end")
             self._send(CommandType.PRIORITY_ADD, game)
 
     def _priority_remove(self) -> None:
-        selection = self.prio_list.curselection()
+        selection = self.settings_tab.prio_list.curselection()
         if selection:
-            game = self.prio_list.get(selection[0])
-            self.prio_list.delete(selection[0])
+            game = self.settings_tab.prio_list.get(selection[0])
+            self.settings_tab.prio_list.delete(selection[0])
             self._send(CommandType.PRIORITY_REMOVE, game)
 
     def _block_add(self) -> None:
-        game = self.block_entry.get().strip()
-        if game and game not in self.block_list.get(0, "end"):
-            self.block_list.insert("end", game)
-            self.block_entry.delete(0, "end")
+        game = self.settings_tab.block_entry.get().strip()
+        if game and game not in self.settings_tab.block_list.get(0, "end"):
+            self.settings_tab.block_list.insert("end", game)
+            self.settings_tab.block_entry.delete(0, "end")
             self._send(CommandType.EXCLUDE_ADD, game)
 
     def _block_remove(self) -> None:
-        selection = self.block_list.curselection()
+        selection = self.settings_tab.block_list.curselection()
         if selection:
-            game = self.block_list.get(selection[0])
-            self.block_list.delete(selection[0])
+            game = self.settings_tab.block_list.get(selection[0])
+            self.settings_tab.block_list.delete(selection[0])
             self._send(CommandType.EXCLUDE_REMOVE, game)
 
     def _watch_add(self) -> None:
-        game = self.watch_entry.get().strip()
-        if game and game not in self.watch_list.get(0, "end"):
-            self.watch_list.insert("end", game)
-            self.watch_entry.delete(0, "end")
+        game = self.settings_tab.watch_entry.get().strip()
+        if game and game not in self.settings_tab.watch_list.get(0, "end"):
+            self.settings_tab.watch_list.insert("end", game)
+            self.settings_tab.watch_entry.delete(0, "end")
             self._save_watchlist()
 
     def _watch_remove(self) -> None:
-        selection = self.watch_list.curselection()
+        selection = self.settings_tab.watch_list.curselection()
         if selection:
-            self.watch_list.delete(selection[0])
+            self.settings_tab.watch_list.delete(selection[0])
             self._save_watchlist()
 
     def _save_watchlist(self) -> None:
@@ -1179,12 +1149,12 @@ class GUI:
         отримати негайний залп про все, що вже є.
         """
         settings = self._twitch.settings
-        settings.watch_games = list(self.watch_list.get(0, "end"))
+        settings.watch_games = list(self.settings_tab.watch_list.get(0, "end"))
         settings.touch()
         settings.save()
 
     def _language_changed(self, _chosen: object = None) -> None:
-        label = self.lang_var.get()
+        label = self.settings_tab.lang_var.get()
         if label == t("language_auto"):
             code = "auto"
         else:
@@ -1250,7 +1220,7 @@ class GUI:
 
     def _preset_changed(self, _chosen: object = None) -> None:
         """Обраний набір кольорів. Застосовується одразу, без перезапуску."""
-        label = self.preset_var.get()
+        label = self.settings_tab.preset_var.get()
         name = next(
             (key for key in PRESETS if t(f"theme_{key or 'builtin'}") == label), "",
         )
@@ -1268,7 +1238,7 @@ class GUI:
             messagebox.showwarning(WINDOW_TITLE, t("theme_save_failed"))
 
     def _mode_changed(self) -> None:
-        self._twitch.settings.farm_mode = PriorityMode[self.mode_var.get()]
+        self._twitch.settings.farm_mode = PriorityMode[self.settings_tab.mode_var.get()]
         # ⚠️ Зберігаємо одразу. Раніше запис на диск траплявся сам собою: RELOAD
         # веде ядро в LOAD_INVENTORY, а там уже є `save()`. Але на паузі та
         # стадія відводиться в IDLE, і збереження не стається взагалі — вибір
@@ -1284,14 +1254,14 @@ class GUI:
         профіль. Галочка, яка стоїть, коли автозапуску немає, гірша за
         відсутність галочки взагалі.
         """
-        got = autostart.apply(self.boot_var.get())
-        self.boot_var.set(got)
+        got = autostart.apply(self.settings_tab.boot_var.get())
+        self.settings_tab.boot_var.set(got)
         # Намір зберігаємо окремо від реєстру: якщо запис колись зникне,
         # програма має знати, що його ставили, і повернути на місце.
         self._twitch.settings.autostart = got
         self._append_log(
             t("boot_on") if got else t("boot_off"),
-            "ok" if got == self.boot_var.get() else "warn",
+            "ok" if got == self.settings_tab.boot_var.get() else "warn",
         )
 
     def _image_size_changed(self, _value: object = None) -> None:
@@ -1301,12 +1271,12 @@ class GUI:
         дробове число, а розмір картинки цілий — і в `size_var` воно вже
         округлене.
         """
-        size = self.size_var.get()
+        size = self.settings_tab.size_var.get()
         if size == self._twitch.settings.image_size:
             return
         self._twitch.settings.image_size = size
         self._twitch.settings.save()
-        self.size_label.configure(text=f"{self._image_size} px")
+        self.settings_tab.size_label.configure(text=f"{self._image_size} px")
         # мініатюри вже готові під старий розмір — доведеться зібрати наново
         self._images.clear()
         self._apply_theme()
@@ -1314,17 +1284,18 @@ class GUI:
 
     def _misc_changed(self) -> None:
         settings = self._twitch.settings
-        settings.farm_cosmetics = self.badges_var.get()
-        settings.start_in_tray = self.autostart_var.get()
-        settings.dark_theme = self.dark_var.get()
+        tab = self.settings_tab
+        settings.farm_cosmetics = tab.badges_var.get()
+        settings.start_in_tray = tab.autostart_var.get()
+        settings.dark_theme = tab.dark_var.get()
         images_were = settings.drop_images
-        settings.drop_images = self.images_var.get()
-        settings.check_updates = self.updates_var.get()
-        settings.hint_links = self.hints_var.get()
-        settings.progress_style = "rainbow" if self.rainbow_var.get() else "state"
-        settings.skip_hopeless = self.hopeless_var.get()
-        settings.keep_log = self.keeplog_var.get()
-        settings.log_dir = self.logdir_var.get().strip()
+        settings.drop_images = tab.images_var.get()
+        settings.check_updates = tab.updates_var.get()
+        settings.hint_links = tab.hints_var.get()
+        settings.progress_style = "rainbow" if tab.rainbow_var.get() else "state"
+        settings.skip_hopeless = tab.hopeless_var.get()
+        settings.keep_log = tab.keeplog_var.get()
+        settings.log_dir = tab.logdir_var.get().strip()
         settings.save()
         # CustomTkinter тримає власне поняття теми, і без цього рядка його
         # віджети лишались би світлими в темному вікні (й навпаки)
@@ -1392,11 +1363,11 @@ class GUI:
         self._send(CommandType.RELOAD)
 
     def _telegram_changed(self) -> None:
-        self._twitch.settings.telegram["enabled"] = self.tg_var.get()
+        self._twitch.settings.telegram["enabled"] = self.settings_tab.tg_var.get()
         self._twitch.settings.touch()
         # CTkLabel — не ttk.Label: у нього немає доступу за ключем, лише
         # `configure`, і синтаксис `hint["text"] = …` тут падає в рантаймі
-        self.tg_hint.configure(text=self._telegram_hint())
+        self.settings_tab.tg_hint.configure(text=self._telegram_hint())
 
     def _telegram_hint(self) -> str:
         """Одним рядком: чи бот узагалі готовий працювати.
@@ -1419,7 +1390,7 @@ class GUI:
         натиск клавіші означало б слати в чужий канал сміття.
         """
         settings = self._twitch.settings
-        value = self.discord_entry.get().strip()
+        value = self.settings_tab.discord_entry.get().strip()
         if value and not value.startswith((
                 "https://discord.com/api/webhooks/",
                 "https://discordapp.com/api/webhooks/",
@@ -1444,8 +1415,8 @@ class GUI:
     def _telegram_saved(self) -> None:
         try:
             telegram = self._twitch.settings.telegram
-            self.tg_var.set(telegram["enabled"])
-            self.tg_hint.configure(text=self._telegram_hint())
+            self.settings_tab.tg_var.set(telegram["enabled"])
+            self.settings_tab.tg_hint.configure(text=self._telegram_hint())
         except tk.TclError:
             pass  # вікно вже закривають
 

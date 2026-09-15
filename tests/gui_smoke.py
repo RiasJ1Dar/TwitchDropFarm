@@ -49,6 +49,7 @@ from core.miner import Miner
 from core.settings import Settings
 from core.toolbox import force_utf8_console
 from gui.app import GUI, SHOW
+from gui.settings_tab import SettingsTab
 from gui.theme import PRESETS
 
 ok = 0
@@ -118,16 +119,27 @@ def run_smoke_tests() -> int:
         gui.root.update()
         check("вікно GUI успішно створене", gui.root is not None)
 
-        print("\n[3] Звірка обов'язкових полів GUI (__annotations__)")
-        annotations = getattr(GUI, "__annotations__", {})
+        print("\n[3] Звірка обов'язкових полів SettingsTab (__annotations__)")
         check(
-            "GUI має оголошені анотації",
+            "вкладка settings_tab створена",
+            hasattr(gui, "settings_tab") and gui.settings_tab is not None,
+        )
+        annotations = getattr(SettingsTab, "__annotations__", {})
+        check(
+            "SettingsTab має оголошені анотації",
             len(annotations) > 0,
             f"кількість: {len(annotations)}",
         )
         for name in annotations:
-            has_attr = hasattr(gui, name) and getattr(gui, name) is not None
-            check(f"поле {name} створено", has_attr, f"hasattr={hasattr(gui, name)}")
+            has_attr = (
+                hasattr(gui.settings_tab, name)
+                and getattr(gui.settings_tab, name) is not None
+            )
+            check(
+                f"поле {name} створено у settings_tab",
+                has_attr,
+                f"hasattr={hasattr(gui.settings_tab, name)}",
+            )
 
         print("\n[4] Відображення інвентаря (список і плитки)")
         now = datetime.now(timezone.utc)
@@ -205,12 +217,12 @@ def run_smoke_tests() -> int:
 
         print("\n[5] Перемикання тем і пресетів кольорів")
         # Перемикання світла / темна тема
-        gui.dark_var.set(False)
+        gui.settings_tab.dark_var.set(False)
         gui._misc_changed()
         gui.root.update()
         check("світла тема застосована без помилок", not gui._twitch.settings.dark_theme)
 
-        gui.dark_var.set(True)
+        gui.settings_tab.dark_var.set(True)
         gui._misc_changed()
         gui.root.update()
         check("темна тема застосована без помилок", gui._twitch.settings.dark_theme)
@@ -219,7 +231,7 @@ def run_smoke_tests() -> int:
         for name in PRESETS:
             key = name or "builtin"
             label = t(f"theme_{key}")
-            gui.preset_var.set(label)
+            gui.settings_tab.preset_var.set(label)
             gui._preset_changed()
             gui.root.update()
             check(
