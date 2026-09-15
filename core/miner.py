@@ -15,10 +15,20 @@ from typing import Any
 
 from core import protocol, pubsub
 from core.api import Aborted, ApiError, TwitchApi
+from core.campaigns import (
+    CampaignTracker,
+    campaign_snapshot,
+    check_deadlines,
+    check_link_hints,
+    check_links,
+    check_losses,
+    check_watchlist,
+    needs_rescue,
+    weekly_report,
+)
 from core.channels import Channel
 from core.config import (
     ALMOST_THERE_MINUTES,
-    CHANNEL_BENCH_SECONDS,
     CHANNEL_REFRESH_DELAY,
     HISTORY_FILE,
     IMAGE_DIR,
@@ -26,19 +36,14 @@ from core.config import (
     PROGRESS_GRACE,
     PROTOCOL_PROBE_EVERY,
     PROTOCOL_PROBE_PAUSE,
-    RESCUE_SLACK,
     RESTART_PAUSE,
     SEEN_CAMPAIGNS_FILE,
-    STALL_LIMIT,
     TRACE,
     WATCH_PERIOD,
     FarmMode,
     Stage,
 )
 from core.events import (
-    AccountLinkLost,
-    AccountLinkNeeded,
-    CampaignAppeared,
     CampaignFinished,
     CampaignSnapshot,
     ChannelSnapshot,
@@ -48,22 +53,16 @@ from core.events import (
     ConnectionLost,
     ConnectionRestored,
     ControlBus,
-    DeadlineRisk,
     DropClaimed,
     DropProgress,
-    DropSnapshot,
     EventBus,
     InventoryUpdated,
-    LinkHint,
     LoggedIn,
     MinerError,
     MinerStopped,
-    ProgressStalled,
     ProtocolStale,
-    RiskSnapshot,
     StreamOffline,
     WatchingChanged,
-    WatchUncounted,
     WindowVisibility,
 )
 from core.history import History
@@ -85,6 +84,14 @@ from core.toolbox import (
     sleep_unless,
 )
 from core.update_manager import UpdateCoordinator
+from core.watchdog import (
+    ChannelBench,
+    StallDetector,
+    build_probe_variables,
+    note_delivery_failed,
+    note_delivery_ok,
+    query_alive,
+)
 
 log = logging.getLogger("TwitchDrops")
 
@@ -156,6 +163,7 @@ class Miner:
         self._upcoming: deque[datetime] = deque()
 
         self._full_sweep = False
+        self.stall_detector = StallDetector()
         self._stall_since: float | None = None
         self._stall_alerted = False
         # назва кампанії, якій Twitch зараховує наш перегляд замість нашої
@@ -163,13 +171,8 @@ class Miner:
         self._delivery_failures = 0
         self._shown_progress: dict[str, tuple[int, int]] = {}
         # канали, які не зараховують хвилини: ім'я -> доки не чіпати
-        self._benched: dict[str, float] = {}
-        # кампанії, про втрачену прив'язку яких уже сказали
-        self._link_told: set[str] = set()
-        # дропи, чию загибель уже занесено в історію
-        self._loss_told: set[str] = set()
-        # кампанії, про які вже підказали «варто прив'язати акаунт»
-        self._hint_told: set[str] = set()
+        self.bench_tracker = ChannelBench()
+        self._benched: dict[str, float] = self.bench_tracker.benched
         # людина натиснула «Відкласти» — до наступного запуску не нагадуємо
         self.update_postponed = False
         # Стан оновлення тримає координатор, а не майнер. `_update_plan`,
@@ -189,12 +192,12 @@ class Miner:
         # Які кампанії вже бачили — щоб «нова» означало справді нову, а перший
         # запуск не сипав повідомленнями про все, що існувало й до нас.
         self.seen = SeenCampaigns(SEEN_CAMPAIGNS_FILE)
-        # Кампанії, про безнадійність яких уже сказали. Не в самій кампанії:
-        # `_rebuild` створює об'єкти заново на кожне читання інвентаря, тож
-        # позначка всередині них не пережила б жодного оновлення. І не лише в
-        # пам'яті: набір піднімається з історії, інакше після кожного
-        # перезапуску та сама кампанія скаржилась би вдруге.
-        self._risk_reported: set[str] = self.history.campaigns_warned()
+        # Відстеження стану кампаній, дедлайнів, зв'язків та втрат
+        self.tracker = CampaignTracker(risk_reported=self.history.campaigns_warned())
+        self._risk_reported: set[str] = self.tracker.risk_reported
+        self._link_told: set[str] = self.tracker.link_told
+        self._loss_told: set[str] = self.tracker.loss_told
+        self._hint_told: set[str] = self.tracker.hint_told
 
     # ================================================================ послуги
 
@@ -373,167 +376,31 @@ class Miner:
         ))
 
     def _campaign_snapshot(self, c: Campaign) -> CampaignSnapshot:
-        return CampaignSnapshot(
-            id=c.id, name=c.name, game=c.game.name,
-            active=c.running, upcoming=c.not_started, expired=c.over,
-            ends_at=c.closes_at,
-            claimed_drops=c.taken_count, total_drops=c.total,
-            image=c.image, linked=c.available_to_me,
-            drops=tuple(
-                DropSnapshot(
-                    id=d.id, name=d.name,
-                    current_minutes=d.minutes,
-                    required_minutes=d.required_minutes,
-                    claimed=d.taken, can_claim=d.ready_to_take,
-                    image=d.rewards[0].image if d.rewards else "",
-                )
-                for d in c.all_drops
-            ),
-        )
+        # linked=c.available_to_me
+        return campaign_snapshot(c)
 
     def _needs_rescue(self, campaign: Any) -> bool:
-        """Чи горить кампанія, у яку вже вкладено години.
-
-        Три умови разом, і кожна потрібна:
-
-        * **є прогрес** — рятувати порожню кампанію нема сенсу, вона нічого
-          не втрачає;
-        * **запас тане** (`slack` менший за поріг) — інакше під «рятунок»
-          потрапило б усе підряд і звичайний порядок втратив би сенс;
-        * **ще можливо встигнути** — кампанію, де жоден дроп уже не дотягнути,
-          рятувати пізно, і місце попереду вона займала б дарма.
-        """
-        if campaign.hopeless or not campaign.available_to_me:
-            return False
-        if campaign.slack >= RESCUE_SLACK:
-            return False
-        return any(
-            d.minutes > 0 and not d.taken and d.required_minutes > 0
-            for d in campaign.all_drops
-        )
+        return needs_rescue(campaign)
 
     def _weekly_report(self) -> None:
-        """Раз на тиждень — короткий підсумок туди ж, куди йдуть новини.
-
-        Нічого не збирає: усе вже лежить в історії, лишається показати. Сенс у
-        тому, що людина бачить не окремі події, а картину — скільки взято,
-        скільки згоріло, за якими іграми.
-
-        ⚠️ Перший запуск мовчить. Свіжопоставлена програма інакше вистрілила б
-        звітом ще до того, як їй є про що звітувати, — і привчила б не читати
-        ці повідомлення.
-        """
-        marks = self.history.entries(kind="report")
-        now = datetime.now(timezone.utc)
-        if not marks:
-            self.history.record("report")
-            return
-        raw = str(marks[-1].get("at") or "")
-        try:
-            last = datetime.fromisoformat(raw)
-        except ValueError:
-            self.history.record("report")
-            return
-        if last.tzinfo is None:
-            last = last.replace(tzinfo=timezone.utc)
-        if now - last < timedelta(days=7):
-            return
-        self.history.record("report")
-        self.say(t("report_weekly") + chr(10) + self.history.summary(7))
+        say_fn = getattr(self, "say", None)
+        if say_fn is not None:
+            weekly_report(self.history, say_fn)
 
     def _check_link_hints(self) -> None:
-        """Каже про дропи, до яких бракує лише прив'язки акаунта.
-
-        Беремо ЛИШЕ ігри, які людина назвала сама — у пріоритеті або в списку
-        спостереження. Без цього фільтра підказка охопила б сотні кампаній
-        (345 дропів у 81 грі в одному живому інвентарі) і перетворилась би на
-        шум, серед якого не видно важливого.
-
-        Про кожну кампанію говоримо один раз за запуск, і вимикач у
-        налаштуваннях вимикає це повністю.
-        """
-        if not self.settings.hint_links:
-            return
-        mine = {name.strip().lower()
-                for name in (*self.settings.priority, *self.settings.watch_games)
-                if name.strip()}
-        if not mine:
-            return
-        found = [
-            c for c in self.campaigns
-            if not c.linked and not c.over and not c.not_started
-            and not c.only_cosmetics
-            and c.game.name.strip().lower() in mine
-            and c.id not in self._hint_told
-        ]
-        if not found:
-            return
-        for campaign in found:
-            self._hint_told.add(campaign.id)
-        self.events.emit(AccountLinkNeeded(campaigns=tuple(
-            LinkHint(name=c.name.strip(), game=c.game.name,
-                     url=c.link_url, drops=c.total)
-            for c in found
-        )))
+        tracker = getattr(self, "tracker", None)
+        told = tracker.hint_told if tracker is not None else getattr(self, "_hint_told", set())
+        check_link_hints(self.campaigns, self.settings, self.events, told)
 
     def _check_losses(self) -> None:
-        """Записує дропи, які згоріли з уже намайненими хвилинами.
-
-        ⚠️ Історія знала про РИЗИК («треба 43 хв, лишилось 8»), але не знала,
-        чим воно скінчилось. Через це ціна зволікання не була видна ніде:
-        втрачений `Anniversary Store #9 Drop 2` на 206/240 знайшовся лише тоді,
-        коли людина вручну переглянула вивантажений CSV.
-
-        Пишемо один раз на дроп: `_loss_told` не дає повторити запис при
-        кожному оновленні інвентаря, поки кампанія ще висить у списку.
-        """
-        for campaign in self.campaigns:
-            if not campaign.over:
-                continue
-            for drop in campaign.all_drops:
-                key = f"{campaign.id}:{drop.id}"
-                if key in self._loss_told:
-                    continue
-                if drop.taken or drop.minutes <= 0 or drop.required_minutes <= 0:
-                    continue
-                self._loss_told.add(key)
-                self.history.record(
-                    "lost", game=campaign.game.name, campaign=campaign.name.strip(),
-                    drop=drop.name, minutes=drop.minutes,
-                    required=drop.required_minutes,
-                )
-                log.warning(
-                    f"Згоріло без нагороди: «{drop.name}» "
-                    f"({campaign.game.name}) — {drop.minutes}/"
-                    f"{drop.required_minutes} хв"
-                )
+        tracker = getattr(self, "tracker", None)
+        told = tracker.loss_told if tracker is not None else getattr(self, "_loss_told", set())
+        check_losses(self.campaigns, self.history, told)
 
     def _check_links(self) -> None:
-        """Шукає кампанії, де прогрес є, а прив'язки вже немає.
-
-        Викликається після оновлення інвентаря. Про кожну кампанію говоримо
-        один раз за запуск: повторювати щогодини те саме означало б привчити
-        не читати ці рядки.
-        """
-        lost = [
-            c for c in self.campaigns
-            if not c.linked and not c.over and not c.only_cosmetics
-            and any(d.minutes > 0 for d in c.all_drops)
-            and c.id not in self._link_told
-        ]
-        if not lost:
-            return
-        minutes = sum(d.minutes for c in lost for d in c.all_drops)
-        for campaign in lost:
-            self._link_told.add(campaign.id)
-            log.warning(
-                f"Прив'язку втрачено: «{campaign.name}» ({campaign.game.name}) — "
-                f"намайнені хвилини не перетворяться на нагороду"
-            )
-        self.events.emit(AccountLinkLost(
-            campaigns=tuple(c.name.strip() for c in lost),
-            minutes_lost=minutes,
-        ))
+        tracker = getattr(self, "tracker", None)
+        told = tracker.link_told if tracker is not None else getattr(self, "_link_told", set())
+        check_links(self.campaigns, self.events, told)
 
     def _publish_inventory(self) -> None:
         self.events.emit(InventoryUpdated(campaigns=tuple(
@@ -580,29 +447,23 @@ class Miner:
         )
 
     def benched(self, channel: Channel) -> bool:
-        """Чи сидить канал у відстійнику після того, як підвів.
-
-        ⚠️ Детектор «хвилина не зарахувалась» у нас був і раніше, але лише
-        повідомляв. Пам'яті про канал не було зовсім, тож наступний добір міг
-        обрати той самий канал знову — і так по колу, поки людина не помічала,
-        що прогрес стоїть. Тепер канал, який двічі не зарахував хвилину, на
-        півгодини випадає з добору.
-        """
-        until = self._benched.get(channel.name)
-        if until is None:
+        tracker = getattr(self, "bench_tracker", None)
+        benched_map = getattr(self, "_benched", None)
+        if benched_map is None and tracker is not None:
+            benched_map = tracker.benched
+        if benched_map is None:
             return False
-        if monotonic() >= until:
-            del self._benched[channel.name]
-            return False
-        return True
+        return ChannelBench(benched_map).is_benched(channel.name)
 
     def bench(self, channel: Channel) -> None:
-        """Відкладає канал: він щойно довів, що хвилини через нього не йдуть."""
-        self._benched[channel.name] = monotonic() + CHANNEL_BENCH_SECONDS
-        log.warning(
-            f"Канал {channel.name} відкладено на "
-            f"{CHANNEL_BENCH_SECONDS // 60} хв: хвилини не зараховуються"
-        )
+        tracker = getattr(self, "bench_tracker", None)
+        benched_map = getattr(self, "_benched", None)
+        if benched_map is None and tracker is not None:
+            benched_map = tracker.benched
+        if benched_map is None:
+            benched_map = {}
+            self._benched = benched_map
+        ChannelBench(benched_map).bench(channel.name)
 
     def almost_there(self) -> int:
         """Скільки хвилин лишилось до нагороди на каналі, який дивимось.
@@ -817,78 +678,23 @@ class Miner:
             self._publish_inventory()
 
     def _check_deadlines(self) -> None:
-        """Попереджає про кампанії, які вже не встигнути закрити.
-
-        Про кожну кажемо один раз: інвентар перечитується часто, а повторювати
-        погану новину щогодини — це лише привчити її не читати.
-        """
-        now = datetime.now(timezone.utc)
-        risky: list[RiskSnapshot] = []
-        for campaign in self.campaigns:
-            if campaign.id in self._risk_reported:
-                continue
-            # безнадійною може бути лише та кампанія, яку ми взагалі беремося
-            # фармити: чужі й завершені сюди потрапляти не повинні
-            if not campaign.farmable() or campaign.slack >= 1:
-                continue
-            self._risk_reported.add(campaign.id)
-            risky.append(RiskSnapshot(
-                id=campaign.id,
-                name=campaign.name,
-                game=campaign.game.name,
-                minutes_needed=campaign.minutes_left,
-                minutes_available=max(
-                    0, int((campaign.closes_at - now).total_seconds() // 60)
-                ),
-            ))
-        if not risky:
-            return
-        for item in risky:
-            log.warning(
-                f"Не встигаємо закрити «{item.name}» ({item.game}): треба "
-                f"{item.minutes_needed} хв перегляду, лишилось "
-                f"{item.minutes_available} хв часу"
-            )
-        self.events.emit(DeadlineRisk(campaigns=tuple(risky)))
+        tracker = getattr(self, "tracker", None)
+        reported = (
+            tracker.risk_reported
+            if tracker is not None
+            else getattr(self, "_risk_reported", set())
+        )
+        check_deadlines(self.campaigns, self.events, reported)
 
     def _check_watchlist(self) -> None:
-        """Нова кампанія для гри, за якою людина просила слідкувати.
-
-        Поточний фарм не переривається: майнер тримається свого вибору, а
-        новина потрібна, щоб людина могла вирішити сама. Саме тому це подія, а
-        не перемикання.
-
-        Порівнюємо з набором уже побачених — і **перший запуск мовчить**.
-        Інакше свіжопоставлена програма вистрілила б вісьмома десятками
-        повідомлень про кампанії, що існували й до неї.
-        """
-        wanted = {name.strip().lower() for name in self.settings.watch_games
-                  if name.strip()}
-        current = {c.id for c in self.campaigns}
-        if not wanted:
-            # список порожній — сповіщати нічого, але побачене запам'ятовуємо:
-            # інакше в день, коли людина додасть гру, усе старе стане «новим»
-            self.seen.remember(current)
-            return
-        first_run = not self.seen.known
-        fresh_ids = self.seen.fresh(current)
-        self.seen.remember(current)
-        if first_run or not fresh_ids:
-            return
-        news = [
-            c for c in self.campaigns
-            if c.id in fresh_ids and c.game.name.strip().lower() in wanted
-            and not c.over
-        ]
-        if not news:
-            return
-        for campaign in news:
-            log.warning(
-                f"Нова кампанія: «{campaign.name.strip()}» ({campaign.game.name})"
-            )
-        self.events.emit(CampaignAppeared(
-            campaigns=tuple(self._campaign_snapshot(c) for c in news)
-        ))
+        snapshot_fn = getattr(self, "_campaign_snapshot", campaign_snapshot)
+        check_watchlist(
+            self.campaigns,
+            self.settings.watch_games,
+            self.seen,
+            self.events,
+            snapshot_builder=snapshot_fn,
+        )
 
     async def find_streams(self, game: Game, *, limit: int = 20) -> list[Channel]:
         try:
@@ -1230,56 +1036,40 @@ class Miner:
         campaign.add_blind_minute(channel)
 
     def _note_delivery_failed(self, channel: Channel) -> None:
-        """Обидва шляхи доставки хвилини відмовили.
-
-        Раніше це йшло в TRACE, а вікно лишало «Дивимось» — бо GQL живий.
-        Для користувача це виглядало як робота, хоча хвилини не рахувались.
-        """
-        self._delivery_failures += 1
-        log.warning(f"Хвилина не зарахувалась: {channel.name}")
-        self.events.status(t("status_uncounted"))
-        if self._delivery_failures == 2:
-            self.events.emit(WatchUncounted(
-                channel_name=channel.name,
-                consecutive=self._delivery_failures,
-            ))
-            # Сказати мало: без цього наступний добір міг повернути нас сюди ж.
+        current = getattr(self, "_delivery_failures", 0)
+        failures, should_bench = note_delivery_failed(channel.name, current, self.events)
+        self._delivery_failures = failures
+        if should_bench:
             self.bench(channel)
             self._restart_watch.set()
 
     def _note_delivery_ok(self, channel: Channel) -> None:
-        if not self._delivery_failures:
-            return
-        self._delivery_failures = 0
-        self.events.status(t("status_watching", name=channel.name))
+        current = getattr(self, "_delivery_failures", 0)
+        self._delivery_failures = note_delivery_ok(channel.name, current, self.events)
 
     def _check_stall(self, before: int | None, channel: Channel,
                      *, now: float | None = None) -> None:
         after = self._progress_mark()
-        if after is None:
-            return  # нема чого фармити — це не застій
-        clock = monotonic() if now is None else now
-        # before is None — фарм щойно почався, порівнювати ще нема з чим
-        if before is None or after != before:
-            self._stall_since = clock
-            self._stall_alerted = False
-            return
-        started = self._stall_since
-        if started is None:
-            self._stall_since = clock
-            return
-        elapsed = clock - started
-        if elapsed >= STALL_LIMIT * 60 and not self._stall_alerted:
-            self._stall_alerted = True
-            minutes = max(STALL_LIMIT, int(elapsed // 60))
-            self.events.status(t("status_stalled", minutes=minutes))
-            # у журнал це пише підписник подій у main; другий рядок звідси лише
-            # дублював би той самий факт
-            self.events.emit(ProgressStalled(
-                minutes_without_progress=minutes,
-                channel_name=channel.name,
-                counted_elsewhere=self._counted_elsewhere,
-            ))
+        detector = getattr(self, "stall_detector", None)
+        if detector is None:
+            detector = StallDetector(
+                stall_since=getattr(self, "_stall_since", None),
+                stall_alerted=getattr(self, "_stall_alerted", False),
+            )
+        else:
+            detector.stall_since = getattr(self, "_stall_since", detector.stall_since)
+            detector.stall_alerted = getattr(self, "_stall_alerted", detector.stall_alerted)
+
+        detector.check(
+            before=before,
+            after=after,
+            channel_name=channel.name,
+            events=self.events,
+            counted_elsewhere=getattr(self, "_counted_elsewhere", ""),
+            now=now,
+        )
+        self._stall_since = detector.stall_since
+        self._stall_alerted = detector.stall_alerted
 
     def _maybe_watch_protocol(self) -> None:
         """Раз на добу — і у фоні: перевірка не має затримувати читання інвентаря."""
@@ -1294,42 +1084,19 @@ class Miner:
         self._tasks.launch(self._watch_protocol())
 
     def _probe_variables(self) -> dict[str, dict[str, Any]]:
-        """Живі значення для запитів, яким потрібні аргументи.
-
-        Беремо зі власного стану, а не вигадуємо: на фіктивний `dropID` Twitch
-        відповість помилкою даних, і сторожа почне кричати про поломку, якої
-        немає. Чого немає в стані — те просто не перевіряється цього разу.
-        """
-        found: dict[str, dict[str, Any]] = {}
-        login = str(self.identity.user_id)
-        campaign = next((c for c in self.campaigns if c.available_to_me), None)
-        if campaign is not None:
-            found[protocol.CAMPAIGN_DETAILS.operation] = {
-                "channelLogin": login, "dropID": campaign.id,
-            }
-            found[protocol.GAME_DIRECTORY.operation] = {
-                "slug": campaign.game.slug,
-            }
-        channel = self.watching.peek(None) or next(
-            iter(self.channels.values()), None
+        channels_map = getattr(self, "channels", None)
+        fallback = next(iter(channels_map.values()), None) if channels_map else None
+        watching = getattr(self, "watching", None)
+        watching_ch = watching.peek(None) if watching is not None else None
+        return build_probe_variables(
+            identity=getattr(self, "identity", None),
+            campaigns=getattr(self, "campaigns", ()),
+            watching_channel=watching_ch,
+            fallback_channel=fallback,
         )
-        if channel is not None:
-            found[protocol.CURRENT_DROP.operation] = {"channelID": str(channel.id)}
-            found[protocol.CHANNEL_DROPS.operation] = {"channelID": str(channel.id)}
-            found[protocol.STREAM_INFO.operation] = {"channel": channel.login}
-        return found
 
     async def probe_protocol(self) -> tuple[list[str], list[str]]:
-        """Чи знає Twitch наші persisted-запити. Повертає (мертві, пропущені).
-
-        Мутації не перевіряються **ніколи**: питання «а чи живий цей хеш» для
-        `ClaimDropRewards` означало б справді заклеймити дроп. Про них
-        дізнаємось у момент справжнього використання, і там обробка вже є.
-
-        Одна відмова нічого не значить — `PersistedQueryNotFound` це стан кешу
-        Twitch, який приходить сплеском. Тому кожен підозрюваний перепитуємо
-        після паузи, і лише друга відмова означає, що хеш змінився.
-        """
+        pause = PROTOCOL_PROBE_PAUSE
         variables = self._probe_variables()
         suspects: list[protocol.Query] = []
         skipped: list[str] = []
@@ -1348,7 +1115,7 @@ class Miner:
             return [], skipped
 
         log.log(TRACE, f"Перепитую підозрюваних: {[q.operation for q in suspects]}")
-        await asyncio.sleep(PROTOCOL_PROBE_PAUSE.total_seconds())
+        await asyncio.sleep(pause.total_seconds())
         dead = [
             query.operation for query in suspects
             if not await self._query_alive(query, variables)
@@ -1357,21 +1124,7 @@ class Miner:
 
     async def _query_alive(self, query: protocol.Query,
                            variables: dict[str, dict[str, Any]]) -> bool:
-        """False — Twitch не знає цього хеша просто зараз."""
-        try:
-            await self.graphql(
-                query(**variables.get(query.operation, {})), retries=0,
-            )
-        except ApiError as error:
-            if "PersistedQueryNotFound" in str(error):
-                return False
-            # інші помилки — не про хеші: немає прав, немає даних, мережа
-            log.log(TRACE, f"{query.operation}: {error}")
-        except Aborted:
-            raise
-        except Exception as error:
-            log.log(TRACE, f"{query.operation}: {describe_exception(error)}")
-        return True
+        return await query_alive(self.graphql, query, variables)
 
     async def _watch_protocol(self) -> None:
         """Раз на добу питає, чи живі наші запити.
