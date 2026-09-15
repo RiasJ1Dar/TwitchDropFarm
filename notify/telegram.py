@@ -49,7 +49,7 @@ from core.events import (
 )
 from core.i18n import t
 from core.protocol import TELEGRAM_ENDPOINT as TELEGRAM_API
-from core.toolbox import plural
+from core.toolbox import Backoff, plural
 
 if TYPE_CHECKING:
     from core.miner import Miner as Twitch
@@ -805,9 +805,18 @@ class TelegramNotifier:
         Уся ітерація під `try`, а не лише HTTP-запит: одне криве оновлення не сміє
         зупинити обробку всіх наступних.
         """
+        backoff = Backoff(start=2.0, ceiling=60.0, factor=2.0)
         while True:
             try:
                 updates = await self._api("getUpdates", offset=self._offset, timeout=60)
+                if updates is None:
+                    # Мережа або Bot API недоступні — експоненційний відкат,
+                    # щоб не спамити щосекунди
+                    delay = next(backoff)
+                    logger.debug(f"Telegram polling retry via backoff in {delay:.1f}s")
+                    await asyncio.sleep(delay)
+                    continue
+                backoff.reset()
                 if not updates:
                     await asyncio.sleep(1)
                     continue
@@ -824,6 +833,7 @@ class TelegramNotifier:
             except Exception:
                 logger.exception("Помилка полінгу Telegram")
                 await asyncio.sleep(5)
+
 
     async def _process_update(self, update: dict[str, Any]) -> None:
         if (callback := update.get("callback_query")) is not None:

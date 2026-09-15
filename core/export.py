@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from core.toolbox import atomic_write_text
+
 HISTORY_CSV = "history.csv"
 HISTORY_HTML = "history.html"
 INVENTORY_CSV = "inventory.csv"
@@ -145,12 +147,14 @@ def _campaign_state(campaign: Any, now: datetime) -> str:
 
 def _write_csv(path: Path, fields: tuple[str, ...],
                rows: Iterable[dict[str, Any]]) -> None:
-    with path.open("w", encoding="utf-8-sig", newline="") as handle:
+    staging = path.with_suffix(path.suffix + ".new")
+    with staging.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(fields), extrasaction="ignore")
         writer.writeheader()
         for row in rows:
             writer.writerow({key: "" if row.get(key) is None else row.get(key, "")
                              for key in fields})
+    staging.replace(path)
 
 
 def _write_html(path: Path, *, title: str, headers: tuple[str, ...],
@@ -169,7 +173,8 @@ def _write_html(path: Path, *, title: str, headers: tuple[str, ...],
         + "\n".join(cells)
         + "\n</tbody>\n</table>"
     )
-    path.write_text(
+    atomic_write_text(
+        path,
         "<!DOCTYPE html>\n<html lang=\"uk\"><head><meta charset=\"utf-8\">"
         f"<title>{html.escape(title)}</title>"
         "<style>body{font:14px/1.4 sans-serif;margin:24px}"
@@ -177,5 +182,5 @@ def _write_html(path: Path, *, title: str, headers: tuple[str, ...],
         "th,td{border:1px solid #ccc;padding:6px 8px;text-align:left}"
         "th{background:#f3f3f3}</style></head><body>"
         f"<h1>{html.escape(title)}</h1>\n{table}\n</body></html>\n",
-        encoding="utf-8",
     )
+

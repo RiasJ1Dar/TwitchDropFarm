@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
-import sys
 from collections import OrderedDict, deque
 from datetime import datetime, timedelta, timezone
 from time import monotonic
@@ -33,7 +31,6 @@ from core.config import (
     SEEN_CAMPAIGNS_FILE,
     STALL_LIMIT,
     TRACE,
-    UPDATE_CHECK_EVERY,
     WATCH_PERIOD,
     FarmMode,
     Stage,
@@ -65,8 +62,6 @@ from core.events import (
     ProtocolStale,
     RiskSnapshot,
     StreamOffline,
-    UpdateAvailable,
-    UpdateFailed,
     WatchingChanged,
     WatchUncounted,
     WindowVisibility,
@@ -85,14 +80,18 @@ from core.toolbox import (
     batched,
     describe_exception,
     guard_task,
-    human_size,
     parse_timestamp,
-    plural,
     race,
     sleep_unless,
 )
+from core.update_manager import UpdateCoordinator
 
 log = logging.getLogger("TwitchDrops")
+
+# Скільки тримати подробиці кампаній у кеші (90 хвилин). Описи, канали й
+# нагороди рідко змінюються на ходу, тож повторний запис десятків однакових
+# CAMPAIGN_DETAILS на кожному оновленні інвентаря лише марнує запити до GraphQL.
+CAMPAIGN_DETAILS_TTL = 5400.0
 
 
 class Restart(Exception):
@@ -163,7 +162,6 @@ class Miner:
         self._counted_elsewhere = ""
         self._delivery_failures = 0
         self._shown_progress: dict[str, tuple[int, int]] = {}
-        self._update_plan: tuple | None = None
         # канали, які не зараховують хвилини: ім'я -> доки не чіпати
         self._benched: dict[str, float] = {}
         # кампанії, про втрачену прив'язку яких уже сказали
@@ -172,16 +170,15 @@ class Miner:
         self._loss_told: set[str] = set()
         # кампанії, про які вже підказали «варто прив'язати акаунт»
         self._hint_told: set[str] = set()
-        # остання причина, чому перевірка оновлень не вдалась: щоб та сама
-        # не летіла в Telegram двічі на добу
-        self._update_problem: str | None = None
         # людина натиснула «Відкласти» — до наступного запуску не нагадуємо
         self.update_postponed = False
-        # оновлення ставиться просто зараз: вікно й Telegram — два входи
-        # до однієї дії, і натиснути можна двічі
-        self._updating = False
+        # Стан оновлення тримає координатор, а не майнер. `_update_plan`,
+        # `_updating` і `_update_problem` нижче — властивості до нього.
+        self.updater = UpdateCoordinator(self)
         # коли востаннє питали Twitch, чи живі наші persisted-запити
         self._protocol_checked = 0.0
+        # кеш подробиць кампаній (id -> (timestamp, data)) для зменшення навантаження GraphQL
+        self._campaign_details_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
         # Ядро історію лише читає. Підписку на запис робить `main`, і не з
         # педантизму: `Miner` створюють і тести, а вони не сміють дописувати
@@ -228,6 +225,22 @@ class Miner:
     @property
     def stopping(self) -> bool:
         return self._quitting.is_set()
+
+    # Стан оновлення переїхав у `UpdateCoordinator`, але читають його звідусіль:
+    # вікно, Telegram і перевірки. Властивості лишають старі імена робочими,
+    # не заводячи другої копії — синхронізувати дві копії руками вже пробували,
+    # і саме там ховається «кнопку натиснули двічі».
+    @property
+    def _update_plan(self) -> tuple | None:
+        return self.updater.plan
+
+    @property
+    def _updating(self) -> bool:
+        return self.updater.updating
+
+    @property
+    def _update_problem(self) -> str | None:
+        return self.updater.problem
 
     # ================================================================ події
 
@@ -710,28 +723,48 @@ class Miner:
     async def _load_details(
         self, wanted: list[tuple[str, dict[str, Any]]]
     ) -> dict[str, dict[str, Any]]:
-        """Дотягує подробиці кампаній пакетами, паралельно."""
-        login = str(self.identity.user_id)
-        jobs = [
-            asyncio.ensure_future(self.graphql([
-                protocol.CAMPAIGN_DETAILS(channelLogin=login, dropID=campaign_id)
-                for campaign_id, _ in portion
-            ]))
-            for portion in batched(wanted, 20)
-        ]
+        """Дотягує подробиці кампаній пакетами, паралельно з кешуванням TTL."""
+        now = monotonic()
         collected: dict[str, dict[str, Any]] = {}
-        base = dict(wanted)
-        try:
-            for finished in asyncio.as_completed(jobs):
-                for reply in await finished:
-                    body = reply["data"]["user"]["dropCampaign"]
-                    if body:
-                        collected[body["id"]] = _blend(base.get(body["id"], {}), body)
-        except Exception:
-            for job in jobs:
-                job.cancel()
-            raise
+        missing: list[tuple[str, dict[str, Any]]] = []
+
+        for cid, body in wanted:
+            entry = self._campaign_details_cache.get(cid)
+            if entry is not None and (now - entry[0]) < CAMPAIGN_DETAILS_TTL:
+                collected[cid] = entry[1]
+            else:
+                missing.append((cid, body))
+
+        if missing:
+            login = str(self.identity.user_id)
+            jobs = [
+                asyncio.ensure_future(self.graphql([
+                    protocol.CAMPAIGN_DETAILS(channelLogin=login, dropID=campaign_id)
+                    for campaign_id, _ in portion
+                ]))
+                for portion in batched(missing, 20)
+            ]
+            base = dict(missing)
+            try:
+                for finished in asyncio.as_completed(jobs):
+                    for reply in await finished:
+                        body = reply["data"]["user"]["dropCampaign"]
+                        if body:
+                            blended = _blend(base.get(body["id"], {}), body)
+                            self._campaign_details_cache[body["id"]] = (now, blended)
+                            collected[body["id"]] = blended
+            except Exception:
+                for job in jobs:
+                    job.cancel()
+                raise
+
+        current_ids = {cid for cid, _ in wanted}
+        for cid in list(self._campaign_details_cache):
+            if cid not in current_ids:
+                self._campaign_details_cache.pop(cid, None)
+
         return collected
+
 
     def _rebuild(self, raw: dict[str, dict[str, Any]],
                  awarded: dict[str, datetime]) -> None:
@@ -1429,6 +1462,7 @@ class Miner:
             self._paused = False
             self.go(Stage.LOAD_INVENTORY)
         elif kind is CommandType.RELOAD:
+            self._campaign_details_cache.clear()
             self.go(Stage.LOAD_INVENTORY)
         elif kind is CommandType.SHUTDOWN:
             self.request_stop()
@@ -1635,147 +1669,33 @@ class Miner:
 
     async def _check_updates(self) -> None:
         """На старті і далі двічі на добу, поки галочка не знята."""
-        first = True
-        while not self.stopping:
-            if not first:
-                if await sleep_unless(self._quitting, UPDATE_CHECK_EVERY):
-                    return
-            first = False
-            if self.settings.check_updates:
-                await self._check_updates_once()
+        await self.updater.check_updates()
 
     async def _check_updates_once(self) -> None:
-        from core import update
-
-        try:
-            async with __import__("aiohttp").ClientSession() as session:
-                found = await update.check_for_update(session)
-        except Exception as error:
-            self._update_check_failed(error)
-            return
-        self._update_problem = None
-        if found is None:
-            return
-        self._offer_update(*found)
+        await self.updater.check_updates_once()
 
     def _update_check_failed(self, error: Exception) -> None:
-        """Провал перевірки: коли досить журналу, а коли треба сказати вголос.
-
-        ⚠️ ЦЕ КОШТУВАЛО МІСЯЦІВ ТИШІ. Тут був самий `log.warning`. Приватний
-        ключ на GitHub розійшовся з публічним у програмі, манифест чесно
-        відкидався — і людина не бачила НІЧОГО: у вікні порожньо, у Telegram
-        порожньо, а журнал до 1.1 вівся лише з ключем `--log`, тобто на
-        звичайному запуску не вівся взагалі. Симптом звався «оновлення не
-        приходить», і шукати причину не було по чому.
-
-        Тому: 404 (манифест ще не викладали) і мережеві збої лишаються в
-        журналі, а поломка доставки — немає підпису, підпис недійсний, кривий
-        манифест — іде в подію, тобто у вікно і в бота. Ту саму причину
-        повторно не шлемо: інакше двічі на добу летіло б одне й те саме.
-        """
-        text = str(error).strip() or type(error).__name__
-        # Поки жоден реліз не несе манифесту, GitHub віддає 404 — це не
-        # поломка, а «оновлень не викладали». Кричати про це щостарту
-        # означає привчити не читати червоні рядки взагалі.
-        if "404" in text:
-            log.log(TRACE, "Манифест оновлень ще не опубліковано")
-            return
-        log.warning(f"Перевірка оновлення не вдалась: {text}")
-        # ValueError тут — це наші власні перевірки манифесту: підпис,
-        # структура, версія. Обірвана мережа приходить іншими типами, і
-        # смикати нею людину не треба: наступна спроба сама все виправить.
-        if not isinstance(error, ValueError):
-            return
-        if text == self._update_problem:
-            return
-        self._update_problem = text
-        self.events.emit(UpdateFailed(reason=text))
+        updater = getattr(self, "updater", None)
+        if updater is None:
+            updater = UpdateCoordinator(self)
+            self.updater = updater
+        updater._update_check_failed(error)
 
     def _offer_update(self, manifest: Any, items: list) -> None:
-        already = (
-            self._update_plan is not None
-            and self._update_plan[0].version == manifest.version
-        )
-        self._update_plan = (manifest, items)
-        if self.update_postponed:
-            # людина вже сказала «не зараз» — план тримаємо, щоб /update спрацював
-            # без повторної перевірки, але з нагадуванням не лізем
-            log.log(TRACE, f"Оновлення {manifest.version} відкладено людиною")
-            return
-        if already:
-            return
-        total = sum(item.spec.size for item in items)
-        self.events.emit(UpdateAvailable(
-            version=manifest.version,
-            files=len(items),
-            bytes_to_fetch=total,
-        ))
-        if not items:
-            self.say(t("say_update_same", version=manifest.version))
-            return
-        self.say(t(
-            "say_update_ready",
-            version=manifest.version,
-            files=len(items),
-            unit=plural(len(items), t("file_one"), t("file_few"), t("file_many")),
-            size=human_size(total),
-        ))
+        updater = getattr(self, "updater", None)
+        if updater is None:
+            updater = UpdateCoordinator(self)
+            self.updater = updater
+        updater.offer_update(manifest, items)
 
     async def _apply_update(self) -> None:
-        from core import update
+        updater = getattr(self, "updater", None)
+        if updater is None:
+            updater = UpdateCoordinator(self)
+            self.updater = updater
+        await updater.apply_update()
 
-        if not update.can_apply():
-            self.events.emit(UpdateFailed(reason="оновлення лише для зібраного .exe"))
-            self.say(t("say_update_source"))
-            return
-        # Вікно й Telegram — два рівноправні входи до однієї дії, тож натиснути
-        # можна двічі. 18.08 два завантаження зійшлись на одному стейджі й дали
-        # «WinError 32: .part -> .exe»: перше ще тримало файл, друге вже його
-        # перейменовувало.
-        if self._updating:
-            self.say(t("say_update_busy"))
-            return
-        plan = self._update_plan
-        if plan is None:
-            self.say(t("say_update_none"))
-            return
-        self._updating = True
-        manifest, items = plan
-        try:
-            if items:
-                import aiohttp
-                # Недокачані хвости від перерваної спроби: інакше `.part`
-                # лишається зайнятим і наступний захід падає на перейменуванні.
-                for leftover in update.STAGE_DIR.glob("*.part"):
-                    leftover.unlink(missing_ok=True)
-                async with aiohttp.ClientSession() as session:
-                    for item in items:
-                        self.events.status(t("status_download", path=item.spec.path))
-                        await update.download_item(session, item)
-                update.verify_staged(items)
-            from core.config import APP_DIR
-            script = update.write_apply_script()
-            update.launch_apply(
-                script,
-                exe=APP_DIR / "TwitchDropFarm.exe",
-                dest=APP_DIR,
-                pid=os.getpid(),
-                args=" ".join(sys.argv[1:]),
-            )
-        except Exception as error:
-            self._updating = False
-            self.events.emit(UpdateFailed(reason=str(error)))
-            self.say(t("say_update_fail", error=error))
-            return
-        # ⚠️ Саме `request_stop()` без `reboot_requested`. Новий екземпляр
-        # підніме скрипт підміни — після того, як замінить файли. Якщо
-        # перезапуститись самим, перезапускають ДВОЄ: програма піднімає стару
-        # збірку, скрипт бачить, що ім'я процесу знову зайняте, і чекає його
-        # зникнення вічно. 18.08 оновлення двічі не встало саме через це:
-        # спершу «Sharing violation» (новий процес тримав файл), потім тиха
-        # вічна пауза на «waiting for pid … and image …».
-        self.say(t("say_update_exit", version=manifest.version))
-        self.request_stop()
+
 
     def _drop_stale_channels(self) -> None:
         self.events.status(t("status_cleanup"))

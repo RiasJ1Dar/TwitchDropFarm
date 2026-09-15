@@ -80,6 +80,7 @@ from core.toolbox import (
     plural,
     rotating_log_handler,
 )
+from core.update_manager import UpdateCoordinator
 from gui.app import DARK, GUI, rounded_points
 from gui.icon import profile_photo_jpeg
 from gui.pulse import rainbow
@@ -1596,39 +1597,48 @@ def update_checks() -> None:
         check("теку поточного запуску не чіпає", current.exists())
         check("осиротілу нашу теку прибрано", gone == 1 and not orphan.exists())
 
-    fake = miner_stub(
-        _update_plan=None, update_postponed=False, events=Bus(),
-        say=lambda text: None,
-    )
+    # Логіка пропозиції переїхала з `Miner` в `UpdateCoordinator`, і перевірки
+    # їдуть за нею. Звірена заглушка лишається: координатор говорить із
+    # майнером, і поле, якого в справжньому класі немає, має валити перевірку.
+    fake = miner_stub(update_postponed=False, events=Bus(), say=lambda text: None)
+    updater = UpdateCoordinator(fake)
     blob = types.SimpleNamespace(spec=types.SimpleNamespace(size=100))
     ver = types.SimpleNamespace(version="1.0.7")
-    Miner._offer_update(fake, ver, [blob])
+    updater.offer_update(ver, [blob])
     first = [e for e in fake.events.sent if isinstance(e, UpdateAvailable)]
-    Miner._offer_update(fake, ver, [blob])
+    updater.offer_update(ver, [blob])
     again = [e for e in fake.events.sent if isinstance(e, UpdateAvailable)]
     check("перша поява оновлення — подія", len(first) == 1)
     check("та сама версія вдруге не нагадує", len(again) == 1)
     fake.update_postponed = True
-    Miner._offer_update(fake, types.SimpleNamespace(version="1.0.8"), [blob])
+    updater.offer_update(types.SimpleNamespace(version="1.0.8"), [blob])
     later = [e for e in fake.events.sent if isinstance(e, UpdateAvailable)]
     check("відкладене не нагадує до перезапуску", len(later) == 1)
 
     # ⚠️ Провал перевірки мусить бути ЧУТНИМ. Зламаний підпис манифесту два
     # тижні не давав оновитись, і про це не знав ніхто: у вікні порожньо, у
     # Telegram порожньо, а журнал тоді вівся лише з `--log`.
-    quiet = miner_stub(events=Bus(), _update_problem=None)
-    Miner._update_check_failed(quiet, ValueError("підпис манифесту недійсний"))
-    said = [e for e in quiet.events.sent if isinstance(e, UpdateFailed)]
+    quiet = UpdateCoordinator(miner_stub(events=Bus()))
+    quiet._update_check_failed(ValueError("підпис манифесту недійсний"))
+    said = [e for e in quiet.miner.events.sent if isinstance(e, UpdateFailed)]
     check("зламаний підпис — подія, а не тільки журнал", len(said) == 1)
-    Miner._update_check_failed(quiet, ValueError("підпис манифесту недійсний"))
+    quiet._update_check_failed(ValueError("підпис манифесту недійсний"))
     check("та сама причина вдруге не повторюється",
-          len([e for e in quiet.events.sent if isinstance(e, UpdateFailed)]) == 1)
-    Miner._update_check_failed(quiet, OSError("мережа впала"))
+          len([e for e in quiet.miner.events.sent if isinstance(e, UpdateFailed)]) == 1)
+    quiet._update_check_failed(OSError("мережа впала"))
     check("обірвана мережа людину не смикає",
-          len([e for e in quiet.events.sent if isinstance(e, UpdateFailed)]) == 1)
-    Miner._update_check_failed(quiet, ValueError("манифест 404 з https://…"))
+          len([e for e in quiet.miner.events.sent if isinstance(e, UpdateFailed)]) == 1)
+    quiet._update_check_failed(ValueError("манифест 404 з https://…"))
     check("404 — це «релізу ще немає», не поломка",
-          len([e for e in quiet.events.sent if isinstance(e, UpdateFailed)]) == 1)
+          len([e for e in quiet.miner.events.sent if isinstance(e, UpdateFailed)]) == 1)
+
+    # Стан не роздвоєний: майнер віддає те саме, що тримає координатор.
+    check("майнер читає план у координатора", Miner._update_plan.fget is not None)
+    live = miner_stub(update_postponed=False, events=Bus(), say=lambda text: None)
+    live.updater = UpdateCoordinator(live)
+    live.updater.offer_update(ver, [blob])
+    check("план видно через старе ім'я",
+          Miner._update_plan.fget(live) is live.updater.plan)
 
 
 # --------------------------------------------------- маршрути показу подій

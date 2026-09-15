@@ -460,6 +460,18 @@ def save_json(path: Path, payload: Mapping[str, Any]) -> None:
     staging.replace(path)
 
 
+def atomic_write_text(path: Path, content: str, *, encoding: str = "utf-8") -> None:
+    """Те саме, що `save_json`, але для готового тексту.
+
+    Сенс той самий: обірваний запис не лишає половини файла на місці цілого.
+    Раптове знеструмлення посеред `write_text` дає обрізаний файл, і людина
+    втрачає те, що там лежало, — а `replace` на NTFS або відбувається, або ні.
+    """
+    staging = path.with_suffix(path.suffix + ".new")
+    staging.write_text(content, encoding=encoding)
+    staging.replace(path)
+
+
 # ---------------------------------------------------------------- гра
 
 class Game:
@@ -502,7 +514,7 @@ class Game:
 
 __all__ = [
     "ALPHANUMERIC", "HEX_LOWER", "AsyncIterator", "Backoff", "Game", "Slot",
-    "TaskKeeper", "Throttle", "batched", "claim_single_instance",
+    "TaskKeeper", "Throttle", "atomic_write_text", "batched", "claim_single_instance",
     "describe_exception", "forget_cached", "guard_task", "load_json",
     "parse_timestamp", "race", "random_token", "register_enum", "save_json",
     "sleep_unless",
