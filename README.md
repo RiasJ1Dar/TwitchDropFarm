@@ -11,9 +11,10 @@
 канал і доставляє Twitch перегляд — а забрані нагороди показує у вікні, в треї
 й у Telegram.
 
-Один `.exe`, ніяких рантаймів поруч: ні Node.js, ні Playwright, ні окремого
-браузера в комплекті. Для входу використовується той браузер, який уже стоїть
-у системі (Edge або Chrome).
+Один бінарник на платформу (Windows `.exe`, Linux, macOS), ніяких рантаймів
+поруч: ні Node.js, ні Playwright, ні окремого браузера в комплекті. Для входу
+використовується той браузер, який уже стоїть у системі (Edge, Chrome або
+Chromium). Автооновлення — лише для Windows `.exe`.
 
 ## Що вміє
 
@@ -39,10 +40,10 @@
 
 ## Вимоги
 
-- Windows 10/11 — повна підтримка (вікно, трей, `.exe`, автозапуск)
-- Linux / macOS — експериментально з вихідників: `--console` або GUI+трей
-  (`pystray`; автозапуск — вручну, див. [docs/autostart-linux-macos.md](docs/autostart-linux-macos.md))
-- Python 3.10+ — щоб запускати з вихідників або збирати `.exe`
+- Windows 10/11 — повна підтримка (вікно, трей, `.exe`, автозапуск, автооновлення)
+- Linux / macOS — GUI+трей з бінарника або з вихідників; автозапуск вручну
+  (див. [docs/autostart-linux-macos.md](docs/autostart-linux-macos.md)); без автооновлення
+- Python 3.10+ — щоб запускати з вихідників або збирати бінарник
 - Edge, Chrome або Chromium — лише для першого входу
 
 ## Запуск
@@ -55,10 +56,15 @@ env\Scripts\pip install -r requirements.txt
 env\Scripts\python main.py
 ```
 
-Зібраний `.exe`:
+Зібраний бінарник:
 
 ```bash
+# Windows
 dist\TwitchDropFarm.exe
+# Linux
+./dist/TwitchDropFarm-linux-x86_64
+# macOS (архітектура раннера CI, зараз Apple Silicon)
+./dist/TwitchDropFarm-macos
 ```
 
 При першому запуску програма відкриє сторінку Twitch із кодом підтвердження.
@@ -147,18 +153,22 @@ browser_profile  профіль браузера для входу
 
 Тека стану одна на користувача, а не поруч із програмою — інакше кожна нова
 копія просила б вхід заново. Щоб зробити навпаки (флешка, чужий комп'ютер),
-покладіть порожній файл `portable.txt` поруч із `.exe`: тоді стан житиме там.
+покладіть порожній файл `portable.txt` поруч із бінарником: тоді стан житиме там.
 
 ## Збірка
 
 ```bash
-env\Scripts\python.exe -m PyInstaller build.spec --noconfirm
+python -m PyInstaller build.spec --noconfirm
 ```
+
+На Windows зручно через venv: `env\Scripts\python.exe -m PyInstaller …`.
+Релізний CI збирає три артефакти: `TwitchDropFarm.exe`, `TwitchDropFarm-linux-x86_64`,
+`TwitchDropFarm-macos`.
 
 Три речі, на яких легко обпектися:
 
-- **Зупиніть запущений `.exe`** перед збіркою, інакше `PermissionError`.
-- **Не переривайте збірку.** Обірваний PyInstaller лишає обрізаний `.exe`, який
+- **Зупиніть запущений бінарник** перед збіркою, інакше `PermissionError` (Windows).
+- **Не переривайте збірку.** Обірваний PyInstaller лишає обрізаний файл, який
   падає з `DLL load failed while importing _tkinter`. Виглядає як дефект коду,
   але ним не є.
 - **Не додавайте `--clean`** без потреби — довше й без користі.
