@@ -39,8 +39,9 @@
 
 ## Вимоги
 
-- Windows 10/11 — повна підтримка (вікно, трей, `.exe`)
-- Linux / macOS — експериментально: `python main.py --console` з вихідників
+- Windows 10/11 — повна підтримка (вікно, трей, `.exe`, автозапуск)
+- Linux / macOS — експериментально з вихідників: `--console` або GUI+трей
+  (`pystray`; автозапуск — вручну, див. [docs/autostart-linux-macos.md](docs/autostart-linux-macos.md))
 - Python 3.10+ — щоб запускати з вихідників або збирати `.exe`
 - Edge, Chrome або Chromium — лише для першого входу
 
@@ -199,8 +200,9 @@ GraphQL, формат події `minute-watched`, назви топіків), `
 
 ## Обмеження
 
-- Повний GUI, трей і автозапуск — під Windows. Linux/macOS: `--console`
-  (шляхи стану й пошук Chrome/Chromium уже є); трей і збірка бінарника — пізніше.
+- Автозапуск з GUI — лише Windows. Linux/macOS: трей через `pystray` уже є;
+  автозапуск — [docs/autostart-linux-macos.md](docs/autostart-linux-macos.md).
+  Збірка бінарника під Linux/macOS — пізніше.
 - Snap Chromium на Linux часто не стартує з нашим `--user-data-dir`. Краще
   Google Chrome, пакетний (не-snap) Chromium або явний `browser_path`.
 - Twitch не гарантує, що приватний API лишиться незмінним. Якщо хеші
