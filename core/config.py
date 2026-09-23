@@ -42,11 +42,25 @@ def _pick_state_dir() -> Path:
     Інакше стан дублюється на кожну теку запуску (вихідники, збірка, будь-яка
     копія), і кожен новий шлях вимагає повторного входу. Файл `portable.txt`
     поруч із програмою повертає стан до неї — для флешки чи чужого комп'ютера.
+
+    Windows: ``%LOCALAPPDATA%/TwitchDropFarm``.
+    macOS: `~/Library/Application Support/TwitchDropFarm`.
+    Linux: `$XDG_STATE_HOME/TwitchDropFarm` або `~/.local/state/TwitchDropFarm`.
     """
     if (APP_DIR / "portable.txt").exists():
         return APP_DIR
-    base = os.environ.get("LOCALAPPDATA") or os.environ.get("XDG_STATE_HOME")
-    return Path(base) / "TwitchDropFarm" if base else Path.home() / ".twitch_drop_farm"
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA")
+        if base:
+            return Path(base) / "TwitchDropFarm"
+    elif sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "TwitchDropFarm"
+    else:
+        base = os.environ.get("XDG_STATE_HOME")
+        if base:
+            return Path(base) / "TwitchDropFarm"
+        return Path.home() / ".local" / "state" / "TwitchDropFarm"
+    return Path.home() / ".twitch_drop_farm"
 
 
 STATE_DIR = _pick_state_dir()
@@ -267,11 +281,32 @@ FILE_LOG_FORMAT = logging.Formatter(
 )
 CONSOLE_LOG_FORMAT = logging.Formatter("{levelname}: {message}", style="{")
 
-# Де шукати браузер для входу, у порядку переваги
-BROWSER_LOCATIONS: tuple[str, ...] = (
-    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-    os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
-)
+def _browser_locations() -> tuple[str, ...]:
+    """Де шукати браузер для входу, у порядку переваги на цій ОС."""
+    if sys.platform == "win32":
+        return (
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
+        )
+    if sys.platform == "darwin":
+        return (
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        )
+    return (
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/google-chrome",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/chromium",
+        "/snap/bin/chromium",
+        "/usr/bin/microsoft-edge-stable",
+        "/usr/bin/microsoft-edge",
+        "/usr/bin/brave-browser",
+    )
+
+
+BROWSER_LOCATIONS: tuple[str, ...] = _browser_locations()
