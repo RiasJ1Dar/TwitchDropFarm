@@ -39,9 +39,10 @@
 
 ## Вимоги
 
-- Windows 10/11
-- Python 3.10+ — лише щоб запускати з вихідників або збирати `.exe`
-- Edge або Chrome — лише для першого входу
+- Windows 10/11 — повна підтримка (вікно, трей, `.exe`)
+- Linux / macOS — експериментально: `python main.py --console` з вихідників
+- Python 3.10+ — щоб запускати з вихідників або збирати `.exe`
+- Edge, Chrome або Chromium — лише для першого входу
 
 ## Запуск
 
@@ -130,7 +131,9 @@ dist\TwitchDropFarm.exe
 
 ## Де лежить стан
 
-`%LOCALAPPDATA%\TwitchDropFarm\`
+- Windows: `%LOCALAPPDATA%\TwitchDropFarm\`
+- macOS: `~/Library/Application Support/TwitchDropFarm/`
+- Linux: `$XDG_STATE_HOME/TwitchDropFarm/` або `~/.local/state/TwitchDropFarm/`
 
 ```
 auth.json        токен Twitch
@@ -196,8 +199,10 @@ GraphQL, формат події `minute-watched`, назви топіків), `
 
 ## Обмеження
 
-- Тільки Windows. Ніщо в архітектурі цьому не заважає, але шляхи браузера,
-  трей і автозапуск написані під Windows.
+- Повний GUI, трей і автозапуск — під Windows. Linux/macOS: `--console`
+  (шляхи стану й пошук Chrome/Chromium уже є); трей і збірка бінарника — пізніше.
+- Snap Chromium на Linux часто не стартує з нашим `--user-data-dir`. Краще
+  Google Chrome, пакетний (не-snap) Chromium або явний `browser_path`.
 - Twitch не гарантує, що приватний API лишиться незмінним. Якщо хеші
   persisted-запитів зміняться, лагодити доведеться `core/protocol.py`.
 - Один акаунт на процес.

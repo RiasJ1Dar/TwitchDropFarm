@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import shutil
 import socket
 import subprocess
 from contextlib import suppress
@@ -23,19 +24,63 @@ from core.exceptions import BrowserException
 logger = logging.getLogger("TwitchDrops")
 
 
+def _is_snap_browser(path: Path) -> bool:
+    """Snap Chromium не вміє чужий --user-data-dir через confinement."""
+    parts = path.resolve().parts
+    return "snap" in parts
+
+
 def find_browser(preferred: str = "") -> Path:
-    """Знаходить виконуваний файл браузера. `preferred` — шлях із налаштувань."""
+    """Знаходить виконуваний файл браузера. `preferred` — шлях із налаштувань.
+
+    Snap Chromium пропускаємо (крім явного `browser_path`): CDP-профіль у
+    нашій теці стану snap не пускає.
+    """
     if preferred:
         path = Path(preferred)
         if path.is_file():
             return path
         raise BrowserException(f"Вказаний браузер не знайдено: {preferred}")
+
+    snap_hit: Path | None = None
+
+    def _accept(path: Path) -> Path | None:
+        nonlocal snap_hit
+        if _is_snap_browser(path):
+            snap_hit = snap_hit or path
+            return None
+        return path
+
     for candidate in BROWSER_CANDIDATES:
         if candidate and os.path.isfile(candidate):
-            return Path(candidate)
+            chosen = _accept(Path(candidate))
+            if chosen is not None:
+                return chosen
+    # На Linux/macOS браузер часто лише в PATH (пакетний менеджер, Homebrew).
+    for name in (
+        "google-chrome-stable",
+        "google-chrome",
+        "microsoft-edge",
+        "microsoft-edge-stable",
+        "msedge",
+        "chromium",
+        "chromium-browser",
+        "brave-browser",
+    ):
+        found = shutil.which(name)
+        if found:
+            chosen = _accept(Path(found))
+            if chosen is not None:
+                return chosen
+    if snap_hit is not None:
+        raise BrowserException(
+            "Знайдено лише snap Chromium — він ламається на --user-data-dir "
+            "поза своїм confinement. Постав Chrome / не-snap Chromium або "
+            "вкажи browser_path у settings.json."
+        )
     raise BrowserException(
-        "Не знайдено ні Edge, ні Chrome. Вкажи шлях до браузера в налаштуваннях "
-        "(browser_path у settings.json)."
+        "Не знайдено Edge, Chrome чи Chromium. Вкажи шлях до браузера в "
+        "налаштуваннях (browser_path у settings.json)."
     )
 
 
