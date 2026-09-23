@@ -82,7 +82,7 @@ a = Analysis(
 JUNK = ("_tcl_data/tzdata", "_tcl_data/msgs", "_tk_data/msgs")
 a.datas = [
     entry for entry in a.datas
-    if not entry[0].replace("\", "/").startswith(JUNK)
+    if not entry[0].replace("\\", "/").startswith(JUNK)
 ]
 
 pyz = PYZ(a.pure)
