@@ -12,9 +12,9 @@ Bildschirm. Das Programm liest das Inventar selbst, entscheidet, was sich zu
 farmen lohnt, sucht einen passenden Kanal und liefert Twitch die Zuschauzeit —
 eingesammelte Belohnungen zeigt es im Fenster, im Infobereich und in Telegram.
 
-Eine einzige `.exe`, keine Laufzeitumgebungen daneben: kein Node.js, kein
-Playwright, kein mitgelieferter Browser. Für die Anmeldung wird der Browser
-genutzt, der ohnehin im System steckt (Edge oder Chrome).
+Ein Binary pro Plattform (Windows `.exe`, Linux, macOS), keine Laufzeitumgebungen
+daneben: kein Node.js, kein Playwright, kein mitgelieferter Browser. Anmeldung
+über Edge, Chrome oder Chromium. Auto-Update nur für Windows `.exe`.
 
 ## Was es kann
 
@@ -42,9 +42,22 @@ genutzt, der ohnehin im System steckt (Edge oder Chrome).
 
 ## Voraussetzungen
 
-- Windows 10/11
-- Python 3.10+ — nur zum Ausführen aus dem Quelltext oder zum Bauen der `.exe`
-- Edge oder Chrome — nur für die erste Anmeldung
+- Windows 10/11 — volle Unterstützung (Fenster, Tray, `.exe`, Autostart, Auto-Update)
+- Linux / macOS — GUI+Tray aus dem Binary oder Quelltext; Autostart manuell ([docs/autostart-linux-macos.md](docs/autostart-linux-macos.md)); kein Auto-Update
+- Python 3.10+ — Quelltext oder Binary bauen
+- Edge, Chrome oder Chromium — nur für die erste Anmeldung
+
+## Download (v1.2)
+
+Release: [v1.2](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/tag/v1.2).
+
+| Plattform | Datei |
+|---|---|
+| Windows | [TwitchDropFarm.exe](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm.exe) (Auto-Update) |
+| Linux x86_64 | [TwitchDropFarm-linux-x86_64](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-linux-x86_64) |
+| macOS | [TwitchDropFarm-macos](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-macos) |
+
+`manifest.json` nur für Windows-Auto-Update. Linux/macOS ohne Auto-Update. Autostart manuell: [docs/autostart-linux-macos.md](docs/autostart-linux-macos.md).
 
 ## Ausführen
 

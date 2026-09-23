@@ -12,9 +12,9 @@ programa lê o seu inventário sozinho, decide o que vale a pena farmar, encontr
 um canal adequado e entrega tempo de exibição à Twitch — e mostra as recompensas
 resgatadas na janela, na bandeja do sistema e no Telegram.
 
-Um único `.exe`, sem runtimes ao lado: sem Node.js, sem Playwright, sem navegador
-embutido. O login usa o navegador que já está instalado no sistema (Edge ou
-Chrome).
+Um binário por plataforma (Windows `.exe`, Linux, macOS), sem runtimes ao lado:
+sem Node.js, sem Playwright, sem navegador embutido. O login usa Edge, Chrome ou
+Chromium. Atualização automática só no `.exe` Windows.
 
 ## O que ele faz
 
@@ -42,9 +42,22 @@ Chrome).
 
 ## Requisitos
 
-- Windows 10/11
-- Python 3.10+ — apenas para rodar a partir do código ou compilar o `.exe`
-- Edge ou Chrome — apenas para o primeiro login
+- Windows 10/11 — suporte completo (janela, bandeja, `.exe`, inicialização automática, atualização automática)
+- Linux / macOS — GUI+bandeja a partir do binário ou do código; inicialização automática manual ([docs/autostart-linux-macos.md](docs/autostart-linux-macos.md)); sem atualização automática
+- Python 3.10+ — código-fonte ou construir o binário
+- Edge, Chrome ou Chromium — apenas para o primeiro login
+
+## Download (v1.2)
+
+Release: [v1.2](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/tag/v1.2).
+
+| Plataforma | Arquivo |
+|---|---|
+| Windows | [TwitchDropFarm.exe](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm.exe) (atualização automática) |
+| Linux x86_64 | [TwitchDropFarm-linux-x86_64](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-linux-x86_64) |
+| macOS | [TwitchDropFarm-macos](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-macos) |
+
+`manifest.json` só para atualização automática no Windows. Linux/macOS sem atualização automática. Inicialização automática manual: [docs/autostart-linux-macos.md](docs/autostart-linux-macos.md).
 
 ## Execução
 
