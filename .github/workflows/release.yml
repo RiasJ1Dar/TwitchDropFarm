@@ -29,9 +29,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            asset: TwitchDropFarm.exe
-            kind: windows
           - os: ubuntu-latest
             asset: TwitchDropFarm-linux-x86_64
             kind: linux
@@ -154,22 +151,17 @@ jobs:
           name: manifest-${{ github.sha }}
           path: dist/manifest.json
 
-      - name: Прикріпити до релізу (тег)
-        if: github.ref_type == 'tag'
+      - name: Прикріпити Linux/macOS до релізу v1.2
+        # Windows не чіпаємо — лише ці два файли, .exe/manifest не чіпаємо.
+        if: github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
-          tag="${{ github.ref_name }}"
-          if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" --draft --title "$tag" --notes "Опис допишеться."
-          fi
-          files=("dist/${{ matrix.asset }}")
-          if [ "${{ matrix.kind }}" = "windows" ]; then
-            files+=("dist/manifest.json")
-          fi
-          gh release upload "$tag" "${files[@]}" --clobber
+          tag="v1.2"
+          gh release view "$tag" >/dev/null
+          gh release upload "$tag" "dist/${{ matrix.asset }}" --clobber
           # Підписи в UI: REST id, не GraphQL node id (див. історію v1.0.6.x).
           rel="$(gh api "repos/${{ github.repository }}/releases" --paginate \
             | python -c "import json,sys; tag=sys.argv[1]; data=json.load(sys.stdin); print(next(r['id'] for r in data if r['tag_name']==tag))" "$tag")"
