@@ -5,10 +5,14 @@
 # й перезалили руками, але механізм, де таке неможливе, кращий за уважність.
 #
 # Два входи:
-#   тег v*            — збирає й прикріплює .exe та manifest.json до релізу;
-#   запуск руками     — лише збирає й кладе артефакт в Actions, нічого не
+#   тег v*            — збирає й прикріплює бінарники (+ Windows manifest) до релізу;
+#   запуск руками     — лише збирає й кладе артефакти в Actions, нічого не
 #                       публікуючи. Так механізм можна перевірити, не займаючи
 #                       версію.
+#
+# Матриця: Windows (.exe + автооновлення), Linux x86_64, macOS (архітектура
+# раннера). Автооновлення лишається Windows-only: core/update.py орієнтований
+# на .exe і cmd-підміну.
 name: Реліз
 
 on:
@@ -21,8 +25,21 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
-    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: TwitchDropFarm.exe
+            kind: windows
+          - os: ubuntu-latest
+            asset: TwitchDropFarm-linux-x86_64
+            kind: linux
+          - os: macos-latest
+            asset: TwitchDropFarm-macos
+            kind: macos
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
 
     steps:
       - uses: actions/checkout@v7
@@ -31,9 +48,17 @@ jobs:
         with:
           # Та сама лінія, на якій збирається локально. Перевірки ганяються на
           # 3.10 (мінімум із README) навмисно — там важлива сумісність
-          # синтаксису, а тут важливо, щоб .exe вийшов таким самим.
+          # синтаксису, а тут важливо, щоб бінарник вийшов таким самим.
           python-version: "3.14"
           cache: pip
+
+      - name: Системні залежності (Linux)
+        if: matrix.kind == 'linux'
+        run: |
+          sudo apt-get update
+          # tk для CustomTkinter; індикатор трею — щоб pystray зібрався з
+          # реальним бекендом, а не лише з імпортом-заглушкою.
+          sudo apt-get install -y python3-tk libayatana-appindicator3-dev libgtk-3-dev
 
       - name: Залежності
         run: |
@@ -54,14 +79,12 @@ jobs:
       # лежить, і механізм оновлення порівнюватиме не те з не тим.
       - name: Тег і версія в коді збігаються
         if: startsWith(github.ref, 'refs/tags/')
-        shell: pwsh
+        shell: bash
         run: |
-          $tag = "${{ github.ref_name }}" -replace '^v', ''
-          $code = python -c "from core.config import VERSION; print(VERSION)"
-          "тег: $tag; у коді: $code"
-          if ($tag -ne $code) {
-            throw "Тег $tag не збігається з VERSION $code у core/config.py"
-          }
+          tag="${GITHUB_REF_NAME#v}"
+          code="$(python -c 'from core.config import VERSION; print(VERSION)')"
+          echo "тег: $tag; у коді: $code"
+          test "$tag" = "$code"
 
       # Через модуль, а не через pyinstaller.exe: обгортки консольних скриптів
       # містять вшитий абсолютний шлях до інтерпретатора. На CI це не болить, але
@@ -69,7 +92,22 @@ jobs:
       - name: Збірка
         run: python -m PyInstaller build.spec --noconfirm
 
-      - name: Манифест оновлення
+      - name: Ім'я артефакту
+        shell: bash
+        run: |
+          set -e
+          if [ "${{ matrix.kind }}" = "windows" ]; then
+            test -f dist/TwitchDropFarm.exe
+          else
+            src=dist/TwitchDropFarm
+            test -f "$src"
+            mv "$src" "dist/${{ matrix.asset }}"
+            chmod +x "dist/${{ matrix.asset }}"
+          fi
+          ls -la dist/
+
+      - name: Манифест оновлення (лише Windows)
+        if: matrix.kind == 'windows'
         shell: pwsh
         env:
           MANIFEST_SIGNING_KEY: ${{ secrets.MANIFEST_SIGNING_KEY }}
@@ -81,69 +119,78 @@ jobs:
           # тега це справжній URL релізу; при ручному запуску там опиниться
           # назва гілки, але той манифест нікуди й не публікується.
           $base = "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/"
-          python tools/write_manifest.py dist $version $base
+          # Манифест лише для .exe: Linux/macOS бінарники в dist/ не чіпаємо —
+          # автооновлення Windows шукає TwitchDropFarm.exe.
+          New-Item -ItemType Directory -Force -Path dist/win-manifest | Out-Null
+          Copy-Item dist/TwitchDropFarm.exe dist/win-manifest/
+          python tools/write_manifest.py dist/win-manifest $version $base
+          Copy-Item dist/win-manifest/manifest.json dist/manifest.json
           Get-Content dist/manifest.json
           if ($env:REQUIRE_MANIFEST_SIGNATURE -and -not $env:MANIFEST_SIGNING_KEY) {
             throw "немає секрету MANIFEST_SIGNING_KEY — тег без підпису не публікуємо"
           }
 
-      - name: Перевірити, що .exe узагалі запускається
-        shell: pwsh
+      - name: Перевірити бінарник (--help)
+        shell: bash
         run: |
-          # --probe-protocol без токена не пройде авторизацію, тож беремо --help:
-          # він доводить, що бінарник цілий і бутлоадер піднявся. Обрізаний .exe
-          # (перерваний PyInstaller) падає тут із «DLL load failed».
-          $p = Start-Process -FilePath dist/TwitchDropFarm.exe -ArgumentList "--help" `
-               -PassThru -Wait -NoNewWindow
-          if ($p.ExitCode -ne 0) { throw "exe не запустився, код $($p.ExitCode)" }
-          "exe відповів на --help"
+          set -e
+          bin="dist/${{ matrix.asset }}"
+          # --help доводить, що бутлоадер і Tcl/Tk піднялись. Обрізаний
+          # бінарник (перерваний PyInstaller) падає тут.
+          "$bin" --help
+          echo "бінарник відповів на --help"
 
       - name: Артефакт (запуск руками)
         if: github.ref_type != 'tag'
         uses: actions/upload-artifact@v4
         with:
-          name: TwitchDropFarm-${{ github.sha }}
-          path: |
-            dist/TwitchDropFarm.exe
-            dist/manifest.json
+          name: ${{ matrix.asset }}-${{ github.sha }}
+          path: dist/${{ matrix.asset }}
+
+      - name: Артефакт manifest (Windows, запуск руками)
+        if: github.ref_type != 'tag' && matrix.kind == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: manifest-${{ github.sha }}
+          path: dist/manifest.json
 
       - name: Прикріпити до релізу (тег)
         if: github.ref_type == 'tag'
-        shell: pwsh
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Реліз може ще не існувати — тоді створюємо чернетку, щоб опис
-          # дописала людина. Публікація одним рухом тут навмисно не робиться:
-          # опис у нас багатомовний і пишеться руками.
-          $tag = "${{ github.ref_name }}"
-          if (-not (gh release view $tag 2>$null)) {
-            gh release create $tag --draft --title $tag --notes "Опис допишеться."
+          set -e
+          tag="${{ github.ref_name }}"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --draft --title "$tag" --notes "Опис допишеться."
+          fi
+          files=("dist/${{ matrix.asset }}")
+          if [ "${{ matrix.kind }}" = "windows" ]; then
+            files+=("dist/manifest.json")
+          fi
+          gh release upload "$tag" "${files[@]}" --clobber
+          # Підписи в UI: REST id, не GraphQL node id (див. історію v1.0.6.x).
+          rel="$(gh api "repos/${{ github.repository }}/releases" --paginate \
+            | python -c "import json,sys; tag=sys.argv[1]; data=json.load(sys.stdin); print(next(r['id'] for r in data if r['tag_name']==tag))" "$tag")"
+          assets="$(gh api "repos/${{ github.repository }}/releases/$rel/assets")"
+          python - <<'PY' "$assets"
+          import json, os, subprocess, sys
+          assets = json.loads(sys.argv[1])
+          labels = {
+              "manifest.json": "автооновлення — не скачувати",
+              "TwitchDropFarm.exe": "TwitchDropFarm.exe — Windows",
+              "TwitchDropFarm-linux-x86_64": "Linux x86_64",
+              "TwitchDropFarm-macos": "macOS",
           }
-          gh release upload $tag dist/TwitchDropFarm.exe dist/manifest.json --clobber
-          # У списку файлів GitHub сортує за іменем: manifest.json стоїть
-          # вище за .exe, і його вже качали частіше за програму. Підпис у
-          # UI каже, що качати треба .exe; json лишаємо — старі версії
-          # шукають саме .../download/manifest.json.
-          # Чернетка не віддається через /releases/tags/{tag} (404), тому
-          # шукаємо реліз у загальному списку — він чернетки показує.
-          #
-          # ⚠️ Саме REST, а не `gh release view --json assets`. Той повертає
-          # GraphQL node ID («RA_kwDOT1MFqs4fzRT3»), а ендпоінт
-          # /releases/assets/{id} чекає числовий REST id — і мовчки відповідає
-          # 404. Через це крок падав на v1.0.6.1 і v1.0.6.2, хоч файли до
-          # релізу прикріплювались нормально: помилка виглядала як проблема
-          # доступу, а була підміною типу ідентифікатора.
-          $rel = gh api "repos/${{ github.repository }}/releases" --paginate `
-            | ConvertFrom-Json `
-            | Where-Object { $_.tag_name -eq $tag } `
-            | Select-Object -First 1
-          foreach ($asset in $rel.assets) {
-            if ($asset.name -eq "manifest.json") {
-              gh api -X PATCH "repos/${{ github.repository }}/releases/assets/$($asset.id)" `
-                -f label="автооновлення — не скачувати"
-            } elseif ($asset.name -eq "TwitchDropFarm.exe") {
-              gh api -X PATCH "repos/${{ github.repository }}/releases/assets/$($asset.id)" `
-                -f label="TwitchDropFarm.exe — програма"
-            }
-          }
+          repo = os.environ["GITHUB_REPOSITORY"]
+          for asset in assets:
+              label = labels.get(asset["name"])
+              if not label:
+                  continue
+              subprocess.check_call([
+                  "gh", "api", "-X", "PATCH",
+                  f"repos/{repo}/releases/assets/{asset['id']}",
+                  "-f", f"label={label}",
+              ])
+          PY
