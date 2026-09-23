@@ -297,14 +297,15 @@ def _browser_locations() -> tuple[str, ...]:
             "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
             "/Applications/Chromium.app/Contents/MacOS/Chromium",
         )
+    # Snap Chromium свідомо не в списку: --user-data-dir поза confinement
+    # ламає запуск. Див. find_browser і README.
     return (
         "/usr/bin/google-chrome-stable",
         "/usr/bin/google-chrome",
-        "/usr/bin/chromium-browser",
-        "/usr/bin/chromium",
-        "/snap/bin/chromium",
         "/usr/bin/microsoft-edge-stable",
         "/usr/bin/microsoft-edge",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/chromium",
         "/usr/bin/brave-browser",
     )
 

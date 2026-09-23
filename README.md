@@ -201,6 +201,8 @@ GraphQL, формат події `minute-watched`, назви топіків), `
 
 - Повний GUI, трей і автозапуск — під Windows. Linux/macOS: `--console`
   (шляхи стану й пошук Chrome/Chromium уже є); трей і збірка бінарника — пізніше.
+- Snap Chromium на Linux часто не стартує з нашим `--user-data-dir`. Краще
+  Google Chrome, пакетний (не-snap) Chromium або явний `browser_path`.
 - Twitch не гарантує, що приватний API лишиться незмінним. Якщо хеші
   persisted-запитів зміняться, лагодити доведеться `core/protocol.py`.
 - Один акаунт на процес.
