@@ -1184,9 +1184,11 @@ class GUI:
                      self._misc_changed).pack(anchor="w", pady=3)
         # Стан читаємо з реєстру, а не з налаштувань: запис могли зняти ззовні —
         # диспетчером завдань, чистилкою автозавантаження чи іншою збіркою.
+        # Поза Windows галочку ховаємо: systemd/LaunchAgent — у docs/.
         self.boot_var = tk.BooleanVar(value=autostart.is_enabled())
-        self._switch(misc, t("autostart"), self.boot_var,
-                     self._autostart_changed).pack(anchor="w", pady=3)
+        if autostart.is_supported():
+            self._switch(misc, t("autostart"), self.boot_var,
+                         self._autostart_changed).pack(anchor="w", pady=3)
         self.images_var = tk.BooleanVar(value=settings.drop_images)
         self._switch(misc, t("drop_images"), self.images_var,
                      self._misc_changed).pack(anchor="w", pady=3)
