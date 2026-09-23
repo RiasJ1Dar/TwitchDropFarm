@@ -169,11 +169,10 @@ jobs:
           python - <<'PY' "$assets"
           import json, os, subprocess, sys
           assets = json.loads(sys.argv[1])
+          # Лише Linux/macOS — Windows assets не чіпаємо (навіть підпис).
           labels = {
-              "manifest.json": "автооновлення — не скачувати",
-              "TwitchDropFarm.exe": "TwitchDropFarm.exe — Windows",
-              "TwitchDropFarm-linux-x86_64": "Linux x86_64",
-              "TwitchDropFarm-macos": "macOS",
+              "TwitchDropFarm-linux-x86_64": "Linux x86_64 — 1.2",
+              "TwitchDropFarm-macos": "macOS — 1.2",
           }
           repo = os.environ["GITHUB_REPOSITORY"]
           for asset in assets:
