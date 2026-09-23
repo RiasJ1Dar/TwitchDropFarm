@@ -12,9 +12,9 @@ açmadan. Program envanteri kendi okur, neyi toplamaya değeceğine karar verir,
 uygun bir kanal bulur ve Twitch'e izlenme süresi iletir; alınan ödülleri de
 penceresinde, sistem tepsisinde ve Telegram'da gösterir.
 
-Tek bir `.exe`, yanında hiçbir çalışma ortamı yok: ne Node.js, ne Playwright, ne
-de paketlenmiş bir tarayıcı. Giriş için sistemde zaten kurulu olan tarayıcı
-kullanılır (Edge veya Chrome).
+Platform başına bir ikili (Windows `.exe`, Linux, macOS); yanında çalışma ortamı yok:
+ne Node.js, ne Playwright, ne paketlenmiş tarayıcı. Giriş Edge, Chrome veya Chromium ile.
+Otomatik güncelleme yalnızca Windows `.exe` için.
 
 ## Neler yapar
 
@@ -40,9 +40,22 @@ kullanılır (Edge veya Chrome).
 
 ## Gereksinimler
 
-- Windows 10/11
-- Python 3.10+ — yalnızca kaynaktan çalıştırmak veya `.exe` derlemek için
-- Edge veya Chrome — yalnızca ilk giriş için
+- Windows 10/11 — tam destek (pencere, tepsi, `.exe`, otomatik başlatma, otomatik güncelleme)
+- Linux / macOS — ikili veya kaynaktan GUI+tepsi; elle otomatik başlatma ([docs/autostart-linux-macos.md](docs/autostart-linux-macos.md)); otomatik güncelleme yok
+- Python 3.10+ — kaynak veya ikili derleme
+- Edge, Chrome veya Chromium — yalnızca ilk giriş için
+
+## İndirme (v1.2)
+
+Sürüm: [v1.2](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/tag/v1.2).
+
+| Platform | Dosya |
+|---|---|
+| Windows | [TwitchDropFarm.exe](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm.exe) (otomatik güncelleme) |
+| Linux x86_64 | [TwitchDropFarm-linux-x86_64](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-linux-x86_64) |
+| macOS | [TwitchDropFarm-macos](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-macos) |
+
+`manifest.json` yalnızca Windows otomatik güncellemesi içindir. Linux/macOS’ta otomatik güncelleme yok. Elle otomatik başlatma: [docs/autostart-linux-macos.md](docs/autostart-linux-macos.md).
 
 ## Çalıştırma
 

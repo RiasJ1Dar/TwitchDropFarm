@@ -12,9 +12,10 @@ screen. The program reads your inventory itself, decides what is worth farming,
 finds a suitable channel and delivers watch time to Twitch — then shows claimed
 rewards in its window, in the tray and in Telegram.
 
-A single `.exe`, no runtimes alongside it: no Node.js, no Playwright, no bundled
-browser. Sign-in uses the browser already installed on your system (Edge or
-Chrome).
+One binary per platform (Windows `.exe`, Linux, macOS), no runtimes alongside
+it: no Node.js, no Playwright, no bundled browser. Sign-in uses the browser
+already installed on your system (Edge, Chrome, or Chromium). Auto-update is
+Windows `.exe` only.
 
 ## What it does
 
@@ -26,7 +27,8 @@ Chrome).
   stream goes down.
 - **Claims drops automatically** and moves straight on to the next one.
 - **A window** with four tabs: Mining, Channels, Inventory, Settings.
-- **Tray**: minimise, notifications, start with Windows.
+- **Tray**: minimise, notifications; start with the OS — on Windows from the
+  GUI, on Linux/macOS manually ([docs/autostart-linux-macos.md](docs/autostart-linux-macos.md)).
 - **Telegram bot**: status, inventory, campaigns, pause/resume, channel
   switching, priority management, full restart — by buttons or commands.
 - **Survives failures**: network loss, DNS disappearing, the computer sleeping,
@@ -40,9 +42,25 @@ Chrome).
 
 ## Requirements
 
-- Windows 10/11
-- Python 3.10+ — only to run from source or build the `.exe`
-- Edge or Chrome — only for the first sign-in
+- Windows 10/11 — full support (window, tray, `.exe`, autostart, auto-update)
+- Linux / macOS — GUI+tray from the binary or from source; autostart manually
+  (see [docs/autostart-linux-macos.md](docs/autostart-linux-macos.md)); no auto-update
+- Python 3.10+ — to run from source or build a binary
+- Edge, Chrome, or Chromium — only for the first sign-in
+
+## Download (v1.2)
+
+Release: [v1.2](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/tag/v1.2).
+
+| Platform | File |
+|---|---|
+| Windows | [TwitchDropFarm.exe](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm.exe) (auto-update) |
+| Linux x86_64 | [TwitchDropFarm-linux-x86_64](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-linux-x86_64) |
+| macOS | [TwitchDropFarm-macos](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-macos) (CI arch, currently Apple Silicon) |
+
+`manifest.json` in the release is for Windows auto-update only — do not download it
+by hand. Linux/macOS have no auto-update. On macOS, open an unsigned binary via
+Finder → Open the first time (Gatekeeper).
 
 ## Running
 
@@ -54,10 +72,15 @@ env\Scripts\pip install -r requirements.txt
 env\Scripts\python main.py
 ```
 
-The built `.exe`:
+Built binary (local build or from the release):
 
 ```bash
-dist\TwitchDropFarm.exe
+# Windows
+TwitchDropFarm.exe
+# Linux
+chmod +x TwitchDropFarm-linux-x86_64 && ./TwitchDropFarm-linux-x86_64
+# macOS
+chmod +x TwitchDropFarm-macos && ./TwitchDropFarm-macos
 ```
 
 On first launch the program opens a Twitch page with a confirmation code. After
@@ -133,7 +156,9 @@ buttons.
 
 ## Where the state lives
 
-`%LOCALAPPDATA%\TwitchDropFarm\`
+- Windows: `%LOCALAPPDATA%\TwitchDropFarm\`
+- macOS: `~/Library/Application Support/TwitchDropFarm/`
+- Linux: `$XDG_STATE_HOME/TwitchDropFarm/` or `~/.local/state/TwitchDropFarm/`
 
 ```
 auth.json        Twitch token
@@ -146,20 +171,24 @@ browser_profile  browser profile used for sign-in
 
 The state directory is one per user rather than next to the program — otherwise
 every new copy would ask you to sign in again. To do the opposite (a USB stick,
-someone else's computer), put an empty `portable.txt` file next to the `.exe`:
+someone else's computer), put an empty `portable.txt` file next to the binary:
 the state will then live there.
 
 ## Building
 
 ```bash
-env\Scripts\python.exe -m PyInstaller build.spec --noconfirm
+python -m PyInstaller build.spec --noconfirm
 ```
+
+On Windows a venv path works too: `env\Scripts\python.exe -m PyInstaller …`.
+Release CI builds three artifacts: `TwitchDropFarm.exe`,
+`TwitchDropFarm-linux-x86_64`, `TwitchDropFarm-macos`.
 
 Three easy ways to get burned:
 
-- **Stop the running `.exe`** before building, otherwise `PermissionError`.
+- **Stop the running binary** before building, otherwise `PermissionError` (Windows).
 - **Do not interrupt the build.** An aborted PyInstaller leaves a truncated
-  `.exe` that dies with `DLL load failed while importing _tkinter`. It looks
+  file that dies with `DLL load failed while importing _tkinter`. It looks
   like a code defect but is not one.
 - **Do not add `--clean`** without a reason — slower, no benefit.
 
@@ -197,12 +226,15 @@ you are allowed to change.
 
 Browser control is a custom Chrome DevTools Protocol client on top of `aiohttp`.
 Playwright and Selenium are deliberately not used: both drag in runtimes of
-their own, and the project's requirement is a single self-contained `.exe`.
+their own, and the project's requirement is one self-contained binary per platform.
 
 ## Limitations
 
-- Windows only. Nothing in the architecture prevents a port, but browser paths,
-  the tray and autostart are written for Windows.
+- Autostart from the GUI is Windows-only. Linux/macOS: GUI+tray via the v1.2
+  binary; manual autostart — [docs/autostart-linux-macos.md](docs/autostart-linux-macos.md);
+  no auto-update.
+- Snap Chromium on Linux often fails with our `--user-data-dir`. Prefer Google
+  Chrome, non-snap Chromium, or an explicit `browser_path`.
 - Twitch makes no promise that its private API stays put. If persisted-query
   hashes change, `core/protocol.py` is what needs fixing.
 - One account per process.
