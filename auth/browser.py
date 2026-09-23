@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import shutil
 import socket
 import subprocess
 from contextlib import suppress
@@ -33,9 +34,23 @@ def find_browser(preferred: str = "") -> Path:
     for candidate in BROWSER_CANDIDATES:
         if candidate and os.path.isfile(candidate):
             return Path(candidate)
+    # На Linux/macOS браузер часто лише в PATH (пакетний менеджер, Homebrew).
+    for name in (
+        "google-chrome-stable",
+        "google-chrome",
+        "chromium",
+        "chromium-browser",
+        "microsoft-edge",
+        "microsoft-edge-stable",
+        "msedge",
+        "brave-browser",
+    ):
+        found = shutil.which(name)
+        if found:
+            return Path(found)
     raise BrowserException(
-        "Не знайдено ні Edge, ні Chrome. Вкажи шлях до браузера в налаштуваннях "
-        "(browser_path у settings.json)."
+        "Не знайдено Edge, Chrome чи Chromium. Вкажи шлях до браузера в "
+        "налаштуваннях (browser_path у settings.json)."
     )
 
 
