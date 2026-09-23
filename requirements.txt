@@ -14,7 +14,7 @@ pystray
 # їх зібрати: без цього .exe падає на старті, хоч локально все працює.
 customtkinter
 
-# сповіщення трею на Windows
+# бекенд сповіщень pystray лише на Windows; Linux/macOS — без цієї залежності
 pywin32; sys_platform == "win32"
 
 # підпис манифесту оновлень (Ed25519)
