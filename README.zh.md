@@ -11,8 +11,8 @@
 判断什么值得刷，找到合适的频道并向 Twitch 投递观看时长；领到的奖励会显示在窗口、系统托盘
 和 Telegram 里。
 
-只有一个 `.exe`，旁边不带任何运行时：没有 Node.js，没有 Playwright，也不捆绑浏览器。登录
-时使用系统里已经装好的浏览器（Edge 或 Chrome）。
+每个平台一个二进制（Windows `.exe`、Linux、macOS），不附带运行时：没有 Node.js、没有 Playwright、也不捆绑浏览器。登录
+时使用系统里已经装好的 Edge、Chrome 或 Chromium。自动更新仅限 Windows `.exe`。
 
 ## 功能
 
@@ -34,9 +34,22 @@
 
 ## 环境要求
 
-- Windows 10/11
-- Python 3.10+ —— 仅用于从源码运行或构建 `.exe`
-- Edge 或 Chrome —— 仅用于首次登录
+- Windows 10/11 —— 完整支持（窗口、托盘、`.exe`、开机启动、自动更新）
+- Linux / macOS —— 可用二进制或源码运行 GUI+托盘；开机启动需手动（见 [docs/autostart-linux-macos.md](docs/autostart-linux-macos.md)）；无自动更新
+- Python 3.10+ —— 从源码运行或构建二进制
+- Edge、Chrome 或 Chromium —— 仅用于首次登录
+
+## 下载（v1.2）
+
+发布页：[v1.2](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/tag/v1.2)。
+
+| 平台 | 文件 |
+|---|---|
+| Windows | [TwitchDropFarm.exe](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm.exe)（自动更新） |
+| Linux x86_64 | [TwitchDropFarm-linux-x86_64](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-linux-x86_64) |
+| macOS | [TwitchDropFarm-macos](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-macos) |
+
+`manifest.json` 仅用于 Windows 自动更新。Linux/macOS 无自动更新。手动开机启动见 [docs/autostart-linux-macos.md](docs/autostart-linux-macos.md)。
 
 ## 运行
 

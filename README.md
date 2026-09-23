@@ -26,7 +26,8 @@ Chromium). Автооновлення — лише для Windows `.exe`.
   стрім гасне.
 - **Забирає дропи автоматично** й одразу переходить до наступного.
 - **Вікно** з чотирма вкладками: Майнінг, Канали, Інвентар, Налаштування.
-- **Трей**: згортання, сповіщення, запуск разом із Windows.
+- **Трей**: згортання, сповіщення; автозапуск разом із системою — на Windows
+  з GUI, на Linux/macOS вручну ([docs/autostart-linux-macos.md](docs/autostart-linux-macos.md)).
 - **Telegram-бот**: стан, інвентар, кампанії, пауза/продовження, перемикання
   каналу, керування пріоритетом, повний перезапуск — кнопками або командами.
 - **Переживає збої**: обрив мережі, зникнення DNS, сон комп'ютера, транзиторні
@@ -46,6 +47,20 @@ Chromium). Автооновлення — лише для Windows `.exe`.
 - Python 3.10+ — щоб запускати з вихідників або збирати бінарник
 - Edge, Chrome або Chromium — лише для першого входу
 
+## Завантаження (v1.2)
+
+Реліз: [v1.2](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/tag/v1.2).
+
+| Платформа | Файл |
+|---|---|
+| Windows | [TwitchDropFarm.exe](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm.exe) (автооновлення) |
+| Linux x86_64 | [TwitchDropFarm-linux-x86_64](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-linux-x86_64) |
+| macOS | [TwitchDropFarm-macos](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-macos) (архітектура CI, зараз Apple Silicon) |
+
+`manifest.json` у релізі — лише для автооновлення Windows; його не треба качати вручну.
+Linux/macOS без автооновлення. На macOS перший запуск непідписаного бінарника —
+через «Відкрити» в Finder (Gatekeeper).
+
 ## Запуск
 
 З вихідників:
@@ -56,15 +71,15 @@ env\Scripts\pip install -r requirements.txt
 env\Scripts\python main.py
 ```
 
-Зібраний бінарник:
+Зібраний бінарник (локальна збірка або з релізу):
 
 ```bash
 # Windows
-dist\TwitchDropFarm.exe
+TwitchDropFarm.exe
 # Linux
-./dist/TwitchDropFarm-linux-x86_64
-# macOS (архітектура раннера CI, зараз Apple Silicon)
-./dist/TwitchDropFarm-macos
+chmod +x TwitchDropFarm-linux-x86_64 && ./TwitchDropFarm-linux-x86_64
+# macOS
+chmod +x TwitchDropFarm-macos && ./TwitchDropFarm-macos
 ```
 
 При першому запуску програма відкриє сторінку Twitch із кодом підтвердження.
@@ -206,13 +221,13 @@ GraphQL, формат події `minute-watched`, назви топіків), `
 
 Керування браузером зроблене власним клієнтом Chrome DevTools Protocol поверх
 `aiohttp`. Playwright і Selenium свідомо не використовуються: обидва тягнуть
-власні рантайми, а вимога проєкту — один самодостатній `.exe`.
+власні рантайми, а вимога проєкту — один самодостатній бінарник на платформу.
 
 ## Обмеження
 
-- Автозапуск з GUI — лише Windows. Linux/macOS: трей через `pystray` уже є;
-  автозапуск — [docs/autostart-linux-macos.md](docs/autostart-linux-macos.md).
-  Збірка бінарника під Linux/macOS — пізніше.
+- Автозапуск з GUI — лише Windows. Linux/macOS: GUI+трей з бінарника v1.2;
+  автозапуск вручну — [docs/autostart-linux-macos.md](docs/autostart-linux-macos.md);
+  автооновлення немає.
 - Snap Chromium на Linux часто не стартує з нашим `--user-data-dir`. Краще
   Google Chrome, пакетний (не-snap) Chromium або явний `browser_path`.
 - Twitch не гарантує, що приватний API лишиться незмінним. Якщо хеші

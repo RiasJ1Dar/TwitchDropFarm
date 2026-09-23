@@ -12,9 +12,9 @@ pantalla. El programa lee tu inventario, decide qué merece la pena farmear,
 encuentra un canal adecuado y entrega tiempo de visionado a Twitch — y muestra
 las recompensas obtenidas en su ventana, en la bandeja del sistema y en Telegram.
 
-Un único `.exe`, sin runtimes al lado: ni Node.js, ni Playwright, ni un navegador
-incluido. Para iniciar sesión usa el navegador que ya tengas instalado (Edge o
-Chrome).
+Un binario por plataforma (Windows `.exe`, Linux, macOS), sin runtimes al lado:
+ni Node.js, ni Playwright, ni navegador incluido. El inicio de sesión usa Edge,
+Chrome o Chromium. La actualización automática es solo para el `.exe` de Windows.
 
 ## Qué hace
 
@@ -43,9 +43,22 @@ Chrome).
 
 ## Requisitos
 
-- Windows 10/11
-- Python 3.10+ — solo para ejecutar desde el código o compilar el `.exe`
-- Edge o Chrome — solo para el primer inicio de sesión
+- Windows 10/11 — soporte completo (ventana, bandeja, `.exe`, inicio automático, actualización automática)
+- Linux / macOS — GUI+bandeja desde el binario o el código; inicio automático manual ([docs/autostart-linux-macos.md](docs/autostart-linux-macos.md)); sin actualización automática
+- Python 3.10+ — código fuente o construir el binario
+- Edge, Chrome o Chromium — solo para el primer inicio de sesión
+
+## Descarga (v1.2)
+
+Release: [v1.2](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/tag/v1.2).
+
+| Plataforma | Archivo |
+|---|---|
+| Windows | [TwitchDropFarm.exe](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm.exe) (actualización automática) |
+| Linux x86_64 | [TwitchDropFarm-linux-x86_64](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-linux-x86_64) |
+| macOS | [TwitchDropFarm-macos](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-macos) |
+
+`manifest.json` solo para autoactualización en Windows. Linux/macOS sin autoactualización. Arranque automático manual: [docs/autostart-linux-macos.md](docs/autostart-linux-macos.md).
 
 ## Ejecución
 

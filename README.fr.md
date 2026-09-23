@@ -13,9 +13,9 @@ farmé, trouve une chaîne appropriée et livre du temps de visionnage à Twitch
 puis affiche les récompenses récupérées dans sa fenêtre, dans la zone de
 notification et sur Telegram.
 
-Un seul `.exe`, sans environnement d'exécution à côté : ni Node.js, ni
-Playwright, ni navigateur embarqué. La connexion utilise le navigateur déjà
-installé sur le système (Edge ou Chrome).
+Un binaire par plateforme (Windows `.exe`, Linux, macOS), sans runtime à côté :
+ni Node.js, ni Playwright, ni navigateur embarqué. Connexion via Edge, Chrome ou
+Chromium. Mise à jour automatique uniquement pour le `.exe` Windows.
 
 ## Ce qu'il fait
 
@@ -43,9 +43,22 @@ installé sur le système (Edge ou Chrome).
 
 ## Prérequis
 
-- Windows 10/11
-- Python 3.10+ — uniquement pour lancer depuis les sources ou compiler le `.exe`
-- Edge ou Chrome — uniquement pour la première connexion
+- Windows 10/11 — support complet (fenêtre, barre d’état, `.exe`, démarrage auto, mise à jour auto)
+- Linux / macOS — GUI+barre d’état depuis le binaire ou les sources ; démarrage auto manuel ([docs/autostart-linux-macos.md](docs/autostart-linux-macos.md)) ; pas de mise à jour auto
+- Python 3.10+ — sources ou construction du binaire
+- Edge, Chrome ou Chromium — uniquement pour la première connexion
+
+## Téléchargement (v1.2)
+
+Release : [v1.2](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/tag/v1.2).
+
+| Plateforme | Fichier |
+|---|---|
+| Windows | [TwitchDropFarm.exe](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm.exe) (mise à jour auto) |
+| Linux x86_64 | [TwitchDropFarm-linux-x86_64](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-linux-x86_64) |
+| macOS | [TwitchDropFarm-macos](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-macos) |
+
+`manifest.json` uniquement pour la mise à jour auto Windows. Pas de mise à jour auto sous Linux/macOS. Démarrage automatique manuel : [docs/autostart-linux-macos.md](docs/autostart-linux-macos.md).
 
 ## Lancement
 
