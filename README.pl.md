@@ -83,10 +83,12 @@ wymagany.
 |---|---|
 | `--console` | bez okna, sama konsola — dla serwera albo autostartu |
 | `--tray` | start zminimalizowany do zasobnika |
-| `--log` | zapisywanie `log.txt` |
+| `--log` | prowadzić dziennik, nawet gdy jest wyłączony w ustawieniach |
 | `-v`, `-vv`, `-vvv` | więcej szczegółów w dziennikach (można powtarzać) |
 | `--auth-only` | tylko uwierzytelnić się i wyjść |
 | `--dump-inventory` | wypisać wszystkie kampanie i dropy, potem wyjść |
+| `--export` | zapisać historię i ekwipunek jako CSV i HTML w folderze stanu, potem wyjść |
+| `--probe-protocol` | sprawdzić, czy Twitch nadal przyjmuje zapytania programu, potem wyjść |
 | `--test-telegram` | wysłać wiadomość testową i wyjść |
 | `--version` | wersja |
 
@@ -112,6 +114,16 @@ pierwszym uruchomieniu. Wzór:
 | `inventory_view` | `list` — gęsta lista, `tiles` — kafelki z dużymi obrazkami |
 | `browser_path` | ścieżka do przeglądarki, jeśli wykrywanie zawiodło |
 | `proxy` | proxy dla zapytań |
+| `watch_games` | obserwowane gry: powiadomienie, gdy pojawi się nowa kampania |
+| `autostart` | uruchamiać razem z Windows (wpis wraca, jeśli zniknie z rejestru) |
+| `check_updates` | raz na uruchomienie pytać GitHub, czy są nowsze pliki |
+| `skip_hopeless` | pomijać kampanie, w których do końca nie da się zdobyć żadnego dropa |
+| `progress_style` | `rainbow` — mieniący się pasek postępu, `state` — kolor według stanu |
+| `theme_preset` | zestaw kolorów: puste — wbudowany, `ocean`, `forest`, `ember`, `grape`, `mono` |
+| `keep_log` | prowadzić dziennik (domyślnie włączone) |
+| `log_dir` | folder dziennika; puste — `Dokumenty\TwitchDropFarm` |
+| `hint_links` | podpowiadać o kampaniach wymagających powiązania konta (dla gier z `priority` i `watch_games`) |
+| `discord_webhook` | adres webhooka Discord dla ważnych zdarzeń (nagrody, przestój, utracone powiązanie, błędy); puste — wyłączone |
 
 Tryb i priorytet wygodniej zmieniać w zakładce ustawień — resztę ręcznie w
 pliku. Zmiany w pliku działają po restarcie.
@@ -142,8 +154,9 @@ obcy, który znajdzie bota, nie przejmie kontroli nad minerem.
 
 Polecenia: `/status`, `/inventory`, `/campaigns`, `/pause`, `/resume`,
 `/switch <kanał>`, `/priority add|remove <gra>`, `/reload`, `/hide`, `/show`, `/reboot`,
-`/menu`, `/help`. Wszystko poza dwoma przyjmującymi argumenty jest dostępne jako
-przycisk.
+`/watch add|remove <gra>`, `/report [dni]`, `/export`, `/update`, `/menu`, `/help`.
+`/report` podsumowuje ostatnie 90 dni (od 1 do 365), `/update` instaluje znalezioną aktualizację.
+Większość poleceń jest też dostępna jako przyciski w `/menu`.
 
 ## Gdzie leży stan
 
@@ -153,10 +166,17 @@ przycisk.
 auth.json        token Twitcha
 cookies.jar      ciasteczka
 settings.json    ustawienia
-log.txt          dziennik (przy --log)
+history.jsonl    historia dropów (dla /report i eksportu)
+seen-campaigns.json  już widziane kampanie (dla watch_games)
+theme.json       motyw zapisany z okna
+images           pamięć podręczna obrazów nagród
 lock.file        zabezpieczenie przed dwiema kopiami naraz
 browser_profile  profil przeglądarki do logowania
 ```
+
+Dziennik trafia do `Dokumenty\TwitchDropFarm\log.txt` (albo do `log_dir`); gdy nie ma folderu
+Dokumenty — do folderu stanu. Eksport (`--export`, `/export`) zapisuje `history.csv`,
+`history.html`, `inventory.csv` i `inventory.html` w folderze stanu.
 
 Katalog stanu jest jeden na użytkownika, a nie obok programu — inaczej każda nowa
 kopia prosiłaby o logowanie od nowa. Aby było odwrotnie (pendrive, cudzy
