@@ -92,10 +92,12 @@ sign-in the token is stored and never asked for again.
 |---|---|
 | `--console` | no window, console only — for a server or autostart |
 | `--tray` | start minimised to tray |
-| `--log` | write `log.txt` |
+| `--log` | write the log even if it is turned off in the settings |
 | `-v`, `-vv`, `-vvv` | more detail in logs (repeatable) |
 | `--auth-only` | authenticate and exit |
 | `--dump-inventory` | print all campaigns and drops, then exit |
+| `--export` | save history and inventory as CSV and HTML to the state folder, then exit |
+| `--probe-protocol` | check that Twitch still accepts the app's queries, then exit |
 | `--test-telegram` | send a test message and exit |
 | `--version` | version |
 
@@ -121,6 +123,16 @@ automatically on first launch. Sample:
 | `inventory_view` | `list` — dense list, `tiles` — cards with large images |
 | `browser_path` | path to the browser if auto-detection failed |
 | `proxy` | proxy for requests |
+| `watch_games` | watched games: a notification when a new campaign appears for them |
+| `autostart` | start with Windows (the entry is restored if it disappears from the registry) |
+| `check_updates` | ask GitHub once per start whether newer files exist |
+| `skip_hopeless` | skip campaigns where no drop can be finished before they end |
+| `progress_style` | `rainbow` — shimmering progress bar, `state` — colour by state |
+| `theme_preset` | colour set: empty — built-in, `ocean`, `forest`, `ember`, `grape`, `mono` |
+| `keep_log` | keep a log (on by default) |
+| `log_dir` | log folder; empty — `Documents\TwitchDropFarm` |
+| `hint_links` | hint about campaigns that need the account linked (for games in `priority` and `watch_games`) |
+| `discord_webhook` | Discord webhook URL for important events (rewards, stalls, lost link, errors); empty — off |
 
 Mode and priority are easier to change on the Settings tab — the rest by hand in
 the file. Changes to the file take effect after a restart.
@@ -151,8 +163,9 @@ stranger who finds the bot cannot control the miner.
 
 Commands: `/status`, `/inventory`, `/campaigns`, `/pause`, `/resume`,
 `/switch <channel>`, `/priority add|remove <game>`, `/reload`, `/hide`, `/show`, `/reboot`,
-`/menu`, `/help`. Everything except the two that take arguments is available as
-buttons.
+`/watch add|remove <game>`, `/report [days]`, `/export`, `/update`, `/menu`, `/help`.
+`/report` summarises the last 90 days (1 to 365 allowed), `/update` installs a found update.
+Most commands are also available as buttons in `/menu`.
 
 ## Where the state lives
 
@@ -164,10 +177,17 @@ buttons.
 auth.json        Twitch token
 cookies.jar      cookies
 settings.json    settings
-log.txt          log (with --log)
+history.jsonl    drop history (for /report and export)
+seen-campaigns.json  campaigns already seen (for watch_games)
+theme.json       theme saved from the window
+images           reward image cache
 lock.file        guard against two copies at once
 browser_profile  browser profile used for sign-in
 ```
+
+The log goes to `Documents\TwitchDropFarm\log.txt` (or to `log_dir`); if there is no Documents
+folder, to the state folder. Export (`--export`, `/export`) writes `history.csv`, `history.html`,
+`inventory.csv` and `inventory.html` to the state folder.
 
 The state directory is one per user rather than next to the program — otherwise
 every new copy would ask you to sign in again. To do the opposite (a USB stick,

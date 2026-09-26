@@ -75,10 +75,12 @@ dist\TwitchDropFarm.exe
 |---|---|
 | `--console` | 无窗口，只用控制台——适合服务器或开机自启 |
 | `--tray` | 启动时最小化到托盘 |
-| `--log` | 写入 `log.txt` |
+| `--log` | 即使在设置中关闭了日志，也照样写日志 |
 | `-v`、`-vv`、`-vvv` | 日志更详细（可重复） |
 | `--auth-only` | 仅完成认证后退出 |
 | `--dump-inventory` | 打印全部活动与掉落后退出 |
+| `--export` | 把历史和库存以 CSV 和 HTML 保存到状态目录后退出 |
+| `--probe-protocol` | 检查 Twitch 是否仍接受本程序的查询后退出 |
 | `--test-telegram` | 发送一条测试消息后退出 |
 | `--version` | 版本 |
 
@@ -103,6 +105,16 @@ dist\TwitchDropFarm.exe
 | `inventory_view` | `list` —— 紧凑列表，`tiles` —— 大图卡片 |
 | `browser_path` | 自动探测失败时的浏览器路径 |
 | `proxy` | 请求使用的代理 |
+| `watch_games` | 关注的游戏：出现新活动时通知 |
+| `autostart` | 随 Windows 启动（注册表中的条目消失时会自动恢复） |
+| `check_updates` | 每次启动时向 GitHub 询问一次是否有更新的文件 |
+| `skip_hopeless` | 跳过到结束前已来不及完成任何掉落的活动 |
+| `progress_style` | `rainbow` — 流光进度条，`state` — 按状态着色 |
+| `theme_preset` | 配色：留空 — 内置，`ocean`、`forest`、`ember`、`grape`、`mono` |
+| `keep_log` | 记录日志（默认开启） |
+| `log_dir` | 日志目录；留空 — `文档\TwitchDropFarm` |
+| `hint_links` | 提示需要关联账号的活动（针对 `priority` 和 `watch_games` 中的游戏） |
+| `discord_webhook` | 用于重要事件（奖励、停滞、关联丢失、错误）的 Discord webhook 地址；留空 — 关闭 |
 
 模式和优先级在设置标签页里改更方便，其余的手工改文件。改动文件后需重启才生效。
 
@@ -132,7 +144,9 @@ dist\TwitchDropFarm.exe
 
 命令：`/status`、`/inventory`、`/campaigns`、`/pause`、`/resume`、
 `/switch <频道>`、`/priority add|remove <游戏>`、`/reload`、`/hide`、`/show`、`/reboot`、
-`/menu`、`/help`。除了带参数的那两个，其余都有按钮。
+`/watch add|remove <游戏>`、`/report [天数]`、`/export`、`/update`、`/menu`、`/help`。
+`/report` 汇总最近 90 天（可设 1–365），`/update` 安装找到的更新。
+大多数命令在 `/menu` 中也有按钮。
 
 ## 状态存放在哪里
 
@@ -142,10 +156,17 @@ dist\TwitchDropFarm.exe
 auth.json        Twitch 令牌
 cookies.jar      cookie
 settings.json    配置
-log.txt          日志（配合 --log）
+history.jsonl    掉落历史（用于 /report 和导出）
+seen-campaigns.json  已见过的活动（用于 watch_games）
+theme.json       从窗口保存的主题
+images           奖励图片缓存
 lock.file        防止同时运行两份
 browser_profile  用于登录的浏览器配置文件
 ```
+
+日志写入 `文档\TwitchDropFarm\log.txt`（或 `log_dir`）；没有“文档”目录时写入状态目录。
+导出（`--export`、`/export`）会在状态目录写入 `history.csv`、`history.html`、`inventory.csv`
+和 `inventory.html`。
 
 状态目录按用户存放，而不是放在程序旁边——否则每复制一份都得重新登录。若要反过来
 （U 盘、别人的电脑），在 `.exe` 旁放一个空的 `portable.txt`：状态就会存在那里。

@@ -82,10 +82,12 @@ yapıldıktan sonra belirteç saklanır ve bir daha sorulmaz.
 |---|---|
 | `--console` | pencere yok, yalnızca konsol — sunucu veya otomatik başlatma için |
 | `--tray` | tepsiye küçültülmüş olarak başla |
-| `--log` | `log.txt` yaz |
+| `--log` | ayarlarda kapalı olsa bile günlük tut |
 | `-v`, `-vv`, `-vvv` | günlüklerde daha çok ayrıntı (tekrarlanabilir) |
 | `--auth-only` | yalnızca kimlik doğrula ve çık |
 | `--dump-inventory` | tüm kampanyaları ve dropları yaz, sonra çık |
+| `--export` | geçmişi ve envanteri CSV ve HTML olarak durum klasörüne kaydet, sonra çık |
+| `--probe-protocol` | Twitch'in programın sorgularını hâlâ kabul edip etmediğini denetle, sonra çık |
 | `--test-telegram` | deneme iletisi gönder ve çık |
 | `--version` | sürüm |
 
@@ -110,6 +112,16 @@ oluşur. Örnek: [`settings.example.json`](settings.example.json).
 | `inventory_view` | `list` — yoğun liste, `tiles` — büyük görselli kartlar |
 | `browser_path` | otomatik bulma başarısız olursa tarayıcı yolu |
 | `proxy` | istekler için vekil sunucu |
+| `watch_games` | izlenen oyunlar: yeni kampanya çıktığında bildirim |
+| `autostart` | Windows ile başlat (kayıt defterinden silinirse kayıt geri eklenir) |
+| `check_updates` | her açılışta bir kez GitHub'a daha yeni dosya olup olmadığını sor |
+| `skip_hopeless` | bitişe kadar hiçbir dropun yetişmeyeceği kampanyaları atla |
+| `progress_style` | `rainbow` — yanardöner ilerleme çubuğu, `state` — duruma göre renk |
+| `theme_preset` | renk takımı: boş — yerleşik, `ocean`, `forest`, `ember`, `grape`, `mono` |
+| `keep_log` | günlük tut (varsayılan olarak açık) |
+| `log_dir` | günlük klasörü; boş — `Belgeler\TwitchDropFarm` |
+| `hint_links` | hesap bağlantısı gereken kampanyalar için ipucu ver (`priority` ve `watch_games` oyunları için) |
+| `discord_webhook` | önemli olaylar (ödüller, takılma, kopan bağlantı, hatalar) için Discord webhook adresi; boş — kapalı |
 
 Kip ve öncelik, ayarlar sekmesinden değiştirmek daha rahattır; gerisi dosyada
 elle. Dosyadaki değişiklikler yeniden başlatmadan sonra geçerli olur.
@@ -141,7 +153,9 @@ yabancı miner'ı yönetemez.
 
 Komutlar: `/status`, `/inventory`, `/campaigns`, `/pause`, `/resume`,
 `/switch <kanal>`, `/priority add|remove <oyun>`, `/reload`, `/hide`, `/show`, `/reboot`,
-`/menu`, `/help`. Argüman alan ikisi dışında hepsi düğme olarak da vardır.
+`/watch add|remove <oyun>`, `/report [gün]`, `/export`, `/update`, `/menu`, `/help`.
+`/report` son 90 günü özetler (1–365 arası), `/update` bulunan güncellemeyi kurar.
+Komutların çoğu `/menu` içinde düğme olarak da vardır.
 
 ## Durum nerede tutulur
 
@@ -151,10 +165,17 @@ Komutlar: `/status`, `/inventory`, `/campaigns`, `/pause`, `/resume`,
 auth.json        Twitch belirteci
 cookies.jar      çerezler
 settings.json    ayarlar
-log.txt          günlük (--log ile)
+history.jsonl    drop geçmişi (/report ve dışa aktarma için)
+seen-campaigns.json  daha önce görülen kampanyalar (watch_games için)
+theme.json       pencereden kaydedilen tema
+images           ödül resimleri önbelleği
 lock.file        aynı anda iki kopyaya karşı koruma
 browser_profile  giriş için kullanılan tarayıcı profili
 ```
+
+Günlük `Belgeler\TwitchDropFarm\log.txt` dosyasına (ya da `log_dir` klasörüne) yazılır; Belgeler
+klasörü yoksa durum klasörüne. Dışa aktarma (`--export`, `/export`) durum klasörüne `history.csv`,
+`history.html`, `inventory.csv` ve `inventory.html` yazar.
 
 Durum dizini programın yanında değil, kullanıcı başına birdir — aksi hâlde her
 yeni kopya yeniden giriş isterdi. Tersini istiyorsanız (USB bellek, başkasının

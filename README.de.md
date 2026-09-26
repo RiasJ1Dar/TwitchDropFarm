@@ -85,10 +85,12 @@ abgefragt.
 |---|---|
 | `--console` | kein Fenster, nur Konsole — für Server oder Autostart |
 | `--tray` | minimiert im Infobereich starten |
-| `--log` | `log.txt` schreiben |
+| `--log` | Protokoll schreiben, auch wenn es in den Einstellungen ausgeschaltet ist |
 | `-v`, `-vv`, `-vvv` | mehr Details im Protokoll (wiederholbar) |
 | `--auth-only` | nur anmelden und beenden |
 | `--dump-inventory` | alle Kampagnen und Drops ausgeben und beenden |
+| `--export` | Verlauf und Inventar als CSV und HTML in den Zustandsordner speichern und beenden |
+| `--probe-protocol` | prüfen, ob Twitch die Anfragen des Programms noch annimmt, und beenden |
 | `--test-telegram` | Testnachricht senden und beenden |
 | `--version` | Version |
 
@@ -114,6 +116,16 @@ Start selbst angelegt. Vorlage:
 | `inventory_view` | `list` — dichte Liste, `tiles` — Karten mit großen Bildern |
 | `browser_path` | Pfad zum Browser, falls die Erkennung fehlschlägt |
 | `proxy` | Proxy für Anfragen |
+| `watch_games` | beobachtete Spiele: Benachrichtigung, sobald eine neue Kampagne erscheint |
+| `autostart` | mit Windows starten (der Eintrag wird wiederhergestellt, wenn er aus der Registry verschwindet) |
+| `check_updates` | einmal pro Start bei GitHub nach neueren Dateien fragen |
+| `skip_hopeless` | Kampagnen überspringen, in denen bis zum Ende kein Drop mehr zu schaffen ist |
+| `progress_style` | `rainbow` — schillernder Fortschrittsbalken, `state` — Farbe nach Zustand |
+| `theme_preset` | Farbschema: leer — eingebaut, `ocean`, `forest`, `ember`, `grape`, `mono` |
+| `keep_log` | Protokoll führen (standardmäßig an) |
+| `log_dir` | Protokollordner; leer — `Dokumente\TwitchDropFarm` |
+| `hint_links` | auf Kampagnen hinweisen, für die das Konto verknüpft werden muss (für Spiele aus `priority` und `watch_games`) |
+| `discord_webhook` | Discord-Webhook-Adresse für wichtige Ereignisse (Belohnungen, Stillstand, verlorene Verknüpfung, Fehler); leer — aus |
 
 Modus und Priorität lassen sich bequemer im Einstellungsreiter ändern, den Rest
 von Hand in der Datei. Änderungen an der Datei greifen nach einem Neustart.
@@ -144,7 +156,9 @@ ein Fremder, der den Bot findet, kann den Miner also nicht steuern.
 
 Befehle: `/status`, `/inventory`, `/campaigns`, `/pause`, `/resume`,
 `/switch <Kanal>`, `/priority add|remove <Spiel>`, `/reload`, `/hide`, `/show`, `/reboot`,
-`/menu`, `/help`. Alles außer den beiden mit Argumenten gibt es als Schaltfläche.
+`/watch add|remove <Spiel>`, `/report [Tage]`, `/export`, `/update`, `/menu`, `/help`.
+`/report` fasst die letzten 90 Tage zusammen (1 bis 365 möglich), `/update` installiert ein gefundenes Update.
+Die meisten Befehle gibt es auch als Schaltflächen in `/menu`.
 
 ## Wo der Zustand liegt
 
@@ -154,10 +168,17 @@ Befehle: `/status`, `/inventory`, `/campaigns`, `/pause`, `/resume`,
 auth.json        Twitch-Token
 cookies.jar      Cookies
 settings.json    Einstellungen
-log.txt          Protokoll (mit --log)
+history.jsonl    Drop-Verlauf (für /report und Export)
+seen-campaigns.json  bereits gesehene Kampagnen (für watch_games)
+theme.json       aus dem Fenster gespeichertes Theme
+images           Cache der Belohnungsbilder
 lock.file        Schutz vor zwei Kopien gleichzeitig
 browser_profile  Browserprofil für die Anmeldung
 ```
+
+Das Protokoll landet in `Dokumente\TwitchDropFarm\log.txt` (oder in `log_dir`); gibt es keinen
+Dokumente-Ordner, im Zustandsordner. Der Export (`--export`, `/export`) schreibt `history.csv`,
+`history.html`, `inventory.csv` und `inventory.html` in den Zustandsordner.
 
 Das Zustandsverzeichnis gibt es einmal pro Benutzer statt neben dem Programm —
 sonst würde jede neue Kopie erneut nach der Anmeldung fragen. Für den
