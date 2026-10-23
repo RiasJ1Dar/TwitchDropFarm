@@ -48,15 +48,16 @@ Chromium. Mise à jour automatique uniquement pour le `.exe` Windows.
 - Python 3.10+ — sources ou construction du binaire
 - Edge, Chrome ou Chromium — uniquement pour la première connexion
 
-## Téléchargement (v1.2)
+## Téléchargement (v1.3.1)
 
-Release : [v1.2](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/tag/v1.2).
+Release : [v1.3.1](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/tag/v1.3.1).
 
 | Plateforme | Fichier |
 |---|---|
-| Windows | [TwitchDropFarm.exe](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm.exe) (mise à jour auto) |
-| Linux x86_64 | [TwitchDropFarm-linux-x86_64](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-linux-x86_64) |
-| macOS | [TwitchDropFarm-macos](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-macos) |
+| Windows — installateur | [TwitchDropFarm-Setup-1.3.1.exe](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.3.1/TwitchDropFarm-Setup-1.3.1.exe) |
+| Windows | [TwitchDropFarm.exe](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.3.1/TwitchDropFarm.exe) (mise à jour auto) |
+| Linux x86_64 | [TwitchDropFarm-linux-x86_64](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.3.1/TwitchDropFarm-linux-x86_64) |
+| macOS | [TwitchDropFarm-macos](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.3.1/TwitchDropFarm-macos) |
 
 `manifest.json` uniquement pour la mise à jour auto Windows. Pas de mise à jour auto sous Linux/macOS. Démarrage automatique manuel : [docs/autostart-linux-macos.md](docs/autostart-linux-macos.md).
 

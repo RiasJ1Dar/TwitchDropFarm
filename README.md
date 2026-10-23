@@ -47,19 +47,24 @@ Chromium). Автооновлення — лише для Windows `.exe`.
 - Python 3.10+ — щоб запускати з вихідників або збирати бінарник
 - Edge, Chrome або Chromium — лише для першого входу
 
-## Завантаження (v1.2)
+## Завантаження (v1.3.1)
 
-Реліз: [v1.2](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/tag/v1.2).
+Реліз: [v1.3.1](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/tag/v1.3.1).
 
 | Платформа | Файл |
 |---|---|
-| Windows | [TwitchDropFarm.exe](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm.exe) (автооновлення) |
-| Linux x86_64 | [TwitchDropFarm-linux-x86_64](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-linux-x86_64) |
-| macOS | [TwitchDropFarm-macos](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-macos) (архітектура CI, зараз Apple Silicon) |
+| Windows — установник | [TwitchDropFarm-Setup-1.3.1.exe](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.3.1/TwitchDropFarm-Setup-1.3.1.exe) |
+| Windows | [TwitchDropFarm.exe](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.3.1/TwitchDropFarm.exe) (автооновлення) |
+| Linux x86_64 | [TwitchDropFarm-linux-x86_64](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.3.1/TwitchDropFarm-linux-x86_64) |
+| macOS | [TwitchDropFarm-macos](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.3.1/TwitchDropFarm-macos) (архітектура CI, зараз Apple Silicon) |
 
 `manifest.json` у релізі — лише для автооновлення Windows; його не треба качати вручну.
 Linux/macOS без автооновлення. На macOS перший запуск непідписаного бінарника —
 через «Відкрити» в Finder (Gatekeeper).
+
+Установник Windows працює без прав адміністратора, додає ярлик у меню «Пуск»
+і за бажанням — на робочий стіл. Для оновлення спершу вийдіть із програми
+через меню трею. Видалення програми зберігає налаштування й авторизацію.
 
 ## Запуск
 
@@ -225,7 +230,7 @@ GraphQL, формат події `minute-watched`, назви топіків), `
 
 ## Обмеження
 
-- Автозапуск з GUI — лише Windows. Linux/macOS: GUI+трей з бінарника v1.2;
+- Автозапуск з GUI — лише Windows. Linux/macOS: GUI+трей з бінарника v1.3.1;
   автозапуск вручну — [docs/autostart-linux-macos.md](docs/autostart-linux-macos.md);
   автооновлення немає.
 - Snap Chromium на Linux часто не стартує з нашим `--user-data-dir`. Краще
@@ -244,3 +249,14 @@ GraphQL, формат події `minute-watched`, назви топіків), `
 ## Ліцензія
 
 MIT — [LICENSE](LICENSE), переклад українською: [LICENSE.uk.md](LICENSE.uk.md).
+
+### Збірка установника Windows
+
+Після перевірки portable exe встановіть Inno Setup 6 або 7 і виконайте:
+
+```powershell
+env\Scripts\python.exe tools\build_installer.py
+```
+
+Якщо компілятор розміщено нестандартно, передайте `--iscc <шлях до ISCC.exe>`.
+Установник з’явиться в `dist\TwitchDropFarm-Setup-1.3.1.exe`; дані користувача до нього не входять.

@@ -39,15 +39,16 @@
 - Python 3.10+ —— 从源码运行或构建二进制
 - Edge、Chrome 或 Chromium —— 仅用于首次登录
 
-## 下载（v1.2）
+## 下载（v1.3.1）
 
-发布页：[v1.2](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/tag/v1.2)。
+发布页：[v1.3.1](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/tag/v1.3.1)。
 
 | 平台 | 文件 |
 |---|---|
-| Windows | [TwitchDropFarm.exe](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm.exe)（自动更新） |
-| Linux x86_64 | [TwitchDropFarm-linux-x86_64](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-linux-x86_64) |
-| macOS | [TwitchDropFarm-macos](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-macos) |
+| Windows — 安装程序 | [TwitchDropFarm-Setup-1.3.1.exe](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.3.1/TwitchDropFarm-Setup-1.3.1.exe) |
+| Windows | [TwitchDropFarm.exe](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.3.1/TwitchDropFarm.exe)（自动更新） |
+| Linux x86_64 | [TwitchDropFarm-linux-x86_64](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.3.1/TwitchDropFarm-linux-x86_64) |
+| macOS | [TwitchDropFarm-macos](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.3.1/TwitchDropFarm-macos) |
 
 `manifest.json` 仅用于 Windows 自动更新。Linux/macOS 无自动更新。手动开机启动见 [docs/autostart-linux-macos.md](docs/autostart-linux-macos.md)。
 

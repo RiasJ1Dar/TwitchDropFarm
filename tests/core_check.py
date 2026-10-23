@@ -32,9 +32,9 @@ from core.config import (
     DEFAULT_IMAGE_SIZE,
     MAX_IMAGE_SIZE,
     MIN_IMAGE_SIZE,
-    SPADE_ATTEMPTS,
     STALL_LIMIT,
     UPDATE_CHECK_EVERY,
+    WATCH_ATTEMPTS,
     clamp_image_size,
     documents_dir,
     log_path,
@@ -526,7 +526,8 @@ def protocol_watch_checks() -> None:
         empty.watching = types.SimpleNamespace(peek=lambda _d: None)
         dead, skipped = asyncio.run(empty.probe_protocol())
         check("без стану частину запитів пропущено",
-              dead == [] and len(skipped) == 5, f"{dead} {skipped}")
+              dead == [] and len(skipped) == 6
+              and protocol.PLAYBACK_ACCESS.operation in skipped, f"{dead} {skipped}")
     finally:
         miner_module.PROTOCOL_PROBE_PAUSE = real_pause
 
@@ -2349,106 +2350,139 @@ def delivery_checks() -> None:
     print("\n[11] Доставка перегляду")
 
     class FakeBackend:
-        def __init__(self, *, post_error=None, post_status=204, gql_ok=True):
-            self.post_error = post_error
-            self.post_status = post_status
-            self.gql_ok = gql_ok
-            self.posts = 0
+        def __init__(self):
             self.gqls = 0
-            self.user_id = 1
-            self.fetch_kwargs: dict = {}
-            self.post_kwargs: dict = {}
-
-        async def fetch_text(self, url, **kwargs):
-            self.fetch_kwargs = kwargs
-            return '"spade_url": "https://spade.twitch.tv/process"'
-
-        async def post_form(self, url, body, **kwargs):
-            self.posts += 1
-            self.post_kwargs = kwargs
-            if self.post_error is not None:
-                raise self.post_error
-            return self.post_status
+            self.gets: list[tuple[str, dict]] = []
+            self.heads: list[tuple[str, dict]] = []
+            self.playlist = "#EXTM3U\n#EXTINF:2,\na.ts\n#EXTINF:2,\nhttps://cdn.example/b.ts\n"
+            self.master = "#EXTM3U\nhttps://cdn.example/high.m3u8\nhttps://cdn.example/low.m3u8\n"
+            self.head_status = 200
+            self.error = None
+            self.payload = None
 
         async def graphql(self, payload):
             self.gqls += 1
-            if not self.gql_ok:
-                raise RuntimeError("gql down")
-            return {"data": {"sendSpadeEvents": {"statusCode": 204}}}
+            self.payload = payload
+            return {"data": {"streamPlaybackAccessToken": {
+                "signature": "a+b/c=", "value": '{"test": "a+b"}',
+            }}}
 
-    stream = types.SimpleNamespace(
-        broadcast_id=99, game=types.SimpleNamespace(id="1", name="гра"),
-    )
-    channel = types.SimpleNamespace(
-        id=1, login="ibeast", name="ibeast",
-        url="https://www.twitch.tv/ibeast", stream=stream,
-    )
-
-    def send(backend: FakeBackend, *, fresh: bool = True) -> bool:
-        # ⚠️ Стан `WatchReporter` спільний на всі канали (адреса spade одна на
-        # весь Twitch), тому кожна перевірка починає з чистого аркуша. Без
-        # цього рядка перевірки нижче ставали фіктивними: фолбек, увімкнений
-        # попередньою, тягнувся далі, і spade вже ніхто не смикав — тест
-        # лишався зеленим, перевіряючи не те, що написано в його назві.
-        if fresh:
-            WatchReporter._spade_url = None
-            WatchReporter._fallback_until = 0.0
-        return asyncio.run(WatchReporter(backend).report(channel))
-
-    ok_spade = FakeBackend()
-    check("живий spade — без GQL", send(ok_spade) and ok_spade.posts == 1
-          and ok_spade.gqls == 0)
-    check("spade не чіпає глобальний індикатор мережі",
-          ok_spade.post_kwargs.get("count_as_network") is False
-          and ok_spade.post_kwargs.get("attempts") == SPADE_ATTEMPTS,
-          str(ok_spade.post_kwargs))
-
-    blocked = FakeBackend(post_error=OSError("sinkhole"))
-    check("заблокований spade падає на GQL",
-          send(blocked) and blocked.posts == 1 and blocked.gqls == 1)
-
-    http_fail = FakeBackend(post_status=403)
-    check("чужий статус spade теж іде на GQL",
-          send(http_fail) and http_fail.gqls == 1)
-
-    both_down = FakeBackend(post_error=OSError("down"), gql_ok=False)
-    check("обидва шляхи мертві — False", not send(both_down))
-
-    # Якщо витяг сторінки впав, раніше метод одразу повертав False і GQL
-    # навіть не пробували. Тепер це теж фолбек.
-    class NoPage(FakeBackend):
         async def fetch_text(self, url, **kwargs):
-            raise OSError("dns")
+            self.gets.append((url, kwargs))
+            if self.error:
+                raise self.error
+            return self.master if 'usher.ttvnw.net' in url else self.playlist
 
-    no_page = NoPage()
-    check("немає сторінки каналу — теж GQL",
-          send(no_page) and no_page.gqls == 1 and no_page.posts == 0)
+        async def head(self, url, **kwargs):
+            self.heads.append((url, kwargs))
+            return self.head_status
 
-    # Адреса spade одна на весь Twitch. Раніше кожен канал шукав її сам і
-    # качав заради цього повну HTML-сторінку; тепер перший знайшов — усі
-    # користуються.
-    WatchReporter._spade_url = None
-    WatchReporter._fallback_until = 0.0
-    first, second = FakeBackend(), FakeBackend()
-    send(first, fresh=False)
-    send(second, fresh=False)
-    check("адресу spade шукають один раз на всіх",
-          first.fetch_kwargs != {} and second.fetch_kwargs == {}
-          and second.posts == 1,
-          f"друга сторінка={second.fetch_kwargs}")
+    stream = types.SimpleNamespace(broadcast_id=99)
+    channel = types.SimpleNamespace(login="ibeast", name="ibeast", stream=stream)
+    backend = FakeBackend()
+    reporter = WatchReporter(backend)
+    check("HLS доставляється", asyncio.run(reporter.report(channel)))
+    check("HEAD іде до кожного сегмента", len(backend.heads) == 2)
+    check("обрано найнижчу якість", backend.gets[1][0].endswith('/low.m3u8'))
+    check("відносні сегменти прив'язані до плейлиста",
+          backend.heads[0][0] == "https://cdn.example/a.ts")
+    check("абсолютні сегменти збережено",
+          backend.heads[1][0] == "https://cdn.example/b.ts")
+    check("CDN не чіпає індикатор загальної мережі",
+          all(k.get("count_as_network") is False for _, k in backend.gets + backend.heads))
+    check("доставка має обмежені повтори",
+          all(k.get("attempts") == WATCH_ATTEMPTS for _, k in backend.gets + backend.heads))
+    check("CDN-плейлист не тримає з'єднання",
+          backend.gets[1][1].get("headers") == {"Connection": "close"})
+    from urllib.parse import parse_qs, urlsplit
+    signed = parse_qs(urlsplit(backend.gets[0][0]).query)
+    check("підпис і токен закодовані без втрати символів",
+          signed['sig'] == ['a+b/c='] and signed['token'] == ['{"test": "a+b"}'])
+    check("playback запитується для обраного каналу",
+          backend.payload['variables']['login'] == 'ibeast')
+    asyncio.run(reporter.report(channel))
+    check("адреса якості кешується між проходами", backend.gqls == 1)
+    stream.broadcast_id = 100
+    asyncio.run(reporter.report(channel))
+    check("новий ефір отримує новий playback-токен", backend.gqls == 2)
+    other = FakeBackend()
+    asyncio.run(WatchReporter(other).report(channel))
+    check("канали не ділять підписаний кеш", other.gqls == 1)
+    backend.head_status = 404
+    check("зниклий сегмент є відмовою доставки", not asyncio.run(reporter.report(channel)))
+    backend.head_status = 200
+    asyncio.run(reporter.report(channel))
+    check("після відмови токен запитується заново", backend.gqls == 3)
+    for label, body in (
+        ("порожній плейлист", "#EXTM3U\n"),
+        ("завершений ефір", "#EXTM3U\na.ts\n#EXT-X-ENDLIST\n"),
+        ("JSON-помилка замість плейлиста", '{"error":"offline"}'),
+    ):
+        bad = FakeBackend()
+        bad.playlist = body
+        check(label + " не є переглядом", not asyncio.run(WatchReporter(bad).report(channel)))
+        check(label + " не надсилає HEAD", not bad.heads)
+    bad_master = FakeBackend()
+    bad_master.master = "#EXTM3U\n"
+    check("без доступної якості немає успіху",
+          not asyncio.run(WatchReporter(bad_master).report(channel)))
+    broken = FakeBackend()
+    broken.error = OSError("network")
+    check("мережевий збій не підміняється успішним spade",
+          not asyncio.run(WatchReporter(broken).report(channel)))
+    offline = types.SimpleNamespace(login="offline", stream=None)
+    unused = FakeBackend()
+    check("офлайн не надсилає запитів",
+          not asyncio.run(WatchReporter(unused).report(offline)) and unused.gqls == 0)
 
-    # Фолбек на GQL мусить бути тимчасовим: вічний прапорець саджав би
-    # програму на запасний шлях через одну випадкову невдачу.
-    WatchReporter._spade_url = None
-    WatchReporter._fallback_until = 0.0
-    send(FakeBackend(post_error=OSError("sinkhole")), fresh=False)
-    check("після збою сидимо на GQL", WatchReporter(FakeBackend())._use_mutation)
-    WatchReporter._fallback_until = monotonic() - 1.0
-    check("фолбек сам гасне з часом",
-          not WatchReporter(FakeBackend())._use_mutation)
-    after = FakeBackend()
-    send(after, fresh=False)
-    check("коли фолбек згас — spade пробують знову", after.posts == 1)
+    # Три швидкі проходи без відповіді Twitch не можуть стати трьома хвилинами.
+    from unittest.mock import patch
+
+    from core import miner as miner_module
+
+    attempts: list[str] = []
+
+    async def take_channel():
+        if attempts.count("confirmed") == 3:
+            raise asyncio.CancelledError
+        return active
+
+    async def failed_delivery():
+        return False
+
+    async def missing_confirmation(_channel):
+        attempts.append("confirmed")
+        return False
+
+    async def no_wait(*_args):
+        return None
+
+    active = types.SimpleNamespace(live=True, report_watching=failed_delivery)
+    loop = miner_stub(
+        watching=types.SimpleNamespace(take=take_channel),
+        _progress_mark=lambda: 0,
+        _confirm_progress=missing_confirmation,
+        _estimate_progress=lambda ch: attempts.append("estimated"),
+        _note_delivery_failed=lambda ch: attempts.append("failed"),
+        _check_stall=lambda before, ch: None,
+        _restart_watch=asyncio.Event(),
+    )
+
+    async def run_loop():
+        try:
+            await Miner._watch_loop(loop)
+        except asyncio.CancelledError:
+            return
+
+    with (
+        patch.object(miner_module, "WATCH_PERIOD", timedelta(0)),
+        patch.object(miner_module, "PROGRESS_GRACE", timedelta(0)),
+        patch.object(miner_module, "sleep_unless", no_wait),
+    ):
+        asyncio.run(run_loop())
+    check("кожен прохід питає підтвердження Twitch", attempts.count("confirmed") == 3)
+    check("невдала доставка лишається відмовою", attempts.count("failed") == 3)
+    check("20-секундні проходи не вигадують хвилини", "estimated" not in attempts)
 
     fake = miner_stub(
         _delivery_failures=0, events=Bus(), _benched={},

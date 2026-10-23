@@ -175,6 +175,7 @@ def build_probe_variables(
         found[protocol.CURRENT_DROP.operation] = {"channelID": str(channel.id)}
         found[protocol.CHANNEL_DROPS.operation] = {"channelID": str(channel.id)}
         found[protocol.STREAM_INFO.operation] = {"channel": channel.login}
+        found[protocol.PLAYBACK_ACCESS.operation] = {"login": channel.login}
     return found
 
 
@@ -215,6 +216,7 @@ async def probe_protocol(
             protocol.CURRENT_DROP.operation,
             protocol.CHANNEL_DROPS.operation,
             protocol.STREAM_INFO.operation,
+            protocol.PLAYBACK_ACCESS.operation,
         }
         if needed and query.operation not in variables:
             skipped.append(query.operation)

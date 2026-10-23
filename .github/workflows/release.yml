@@ -106,6 +106,10 @@ jobs:
           fi
           ls -la dist/
 
+      - name: Установник Windows (Inno Setup)
+        if: matrix.kind == 'windows'
+        run: python tools/build_installer.py
+
       - name: Манифест оновлення (лише Windows)
         if: matrix.kind == 'windows'
         shell: pwsh
@@ -154,6 +158,14 @@ jobs:
           name: manifest-${{ github.sha }}
           path: dist/manifest.json
 
+      - name: Артефакт установника (Windows, запуск руками)
+        if: github.ref_type != 'tag' && matrix.kind == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-Setup-${{ github.sha }}
+          path: dist/TwitchDropFarm-Setup-*.exe
+          if-no-files-found: error
+
       - name: Прикріпити до релізу (тег)
         if: github.ref_type == 'tag'
         shell: bash
@@ -168,6 +180,8 @@ jobs:
           files=("dist/${{ matrix.asset }}")
           if [ "${{ matrix.kind }}" = "windows" ]; then
             files+=("dist/manifest.json")
+            version="$(python -c 'from core.config import VERSION; print(VERSION)')"
+            files+=("dist/TwitchDropFarm-Setup-$version.exe")
           fi
           gh release upload "$tag" "${files[@]}" --clobber
           # Підписи в UI: REST id, не GraphQL node id (див. історію v1.0.6.x).
@@ -186,6 +200,8 @@ jobs:
           repo = os.environ["GITHUB_REPOSITORY"]
           for asset in assets:
               label = labels.get(asset["name"])
+              if asset["name"].startswith("TwitchDropFarm-Setup-"):
+                  label = "Windows — установник"
               if not label:
                   continue
               subprocess.check_call([

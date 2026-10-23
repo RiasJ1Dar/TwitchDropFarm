@@ -48,15 +48,16 @@ Windows `.exe` only.
 - Python 3.10+ — to run from source or build a binary
 - Edge, Chrome, or Chromium — only for the first sign-in
 
-## Download (v1.2)
+## Download (v1.3.1)
 
-Release: [v1.2](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/tag/v1.2).
+Release: [v1.3.1](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/tag/v1.3.1).
 
 | Platform | File |
 |---|---|
-| Windows | [TwitchDropFarm.exe](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm.exe) (auto-update) |
-| Linux x86_64 | [TwitchDropFarm-linux-x86_64](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-linux-x86_64) |
-| macOS | [TwitchDropFarm-macos](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.2/TwitchDropFarm-macos) (CI arch, currently Apple Silicon) |
+| Windows — installer | [TwitchDropFarm-Setup-1.3.1.exe](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.3.1/TwitchDropFarm-Setup-1.3.1.exe) |
+| Windows | [TwitchDropFarm.exe](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.3.1/TwitchDropFarm.exe) (auto-update) |
+| Linux x86_64 | [TwitchDropFarm-linux-x86_64](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.3.1/TwitchDropFarm-linux-x86_64) |
+| macOS | [TwitchDropFarm-macos](https://github.com/RiasJ1Dar/TwitchDropFarm/releases/download/v1.3.1/TwitchDropFarm-macos) (CI arch, currently Apple Silicon) |
 
 `manifest.json` in the release is for Windows auto-update only — do not download it
 by hand. Linux/macOS have no auto-update. On macOS, open an unsigned binary via
@@ -230,7 +231,7 @@ their own, and the project's requirement is one self-contained binary per platfo
 
 ## Limitations
 
-- Autostart from the GUI is Windows-only. Linux/macOS: GUI+tray via the v1.2
+- Autostart from the GUI is Windows-only. Linux/macOS: GUI+tray via the v1.3.1
   binary; manual autostart — [docs/autostart-linux-macos.md](docs/autostart-linux-macos.md);
   no auto-update.
 - Snap Chromium on Linux often fails with our `--user-data-dir`. Prefer Google

@@ -16,9 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import aiohttp
 
-from core.config import TOKEN_FILE
+from core.identity import Identity
 from core.protocol import ANDROID, GQL_ENDPOINT, INVENTORY
-from core.toolbox import load_json as json_load
 
 
 async def fetch(session: aiohttp.ClientSession, headers: dict, op) -> dict:
@@ -27,8 +26,8 @@ async def fetch(session: aiohttp.ClientSession, headers: dict, op) -> dict:
 
 
 async def main(needle: str = "") -> int:
-    auth = json_load(TOKEN_FILE, {"access_token": "", "user_id": 0})
-    if not auth["access_token"]:
+    token, _ = Identity._load()
+    if not token:
         print("Немає збереженого токена — спершу авторизуйся.")
         return 1
 
@@ -37,7 +36,7 @@ async def main(needle: str = "") -> int:
         "Accept": "*/*",
         "Client-Id": client.client_id,
         "User-Agent": client.pick_user_agent(),
-        "Authorization": f"OAuth {auth['access_token']}",
+        "Authorization": f"OAuth {token}",
         "Origin": client.home,
         "Referer": client.home,
     }

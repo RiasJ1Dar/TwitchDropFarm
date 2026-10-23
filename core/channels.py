@@ -1,29 +1,21 @@
 """Канали, трансляції та доставка події перегляду.
 
-Доставка винесена в окремий `WatchReporter`: у нього власний стан (адреса spade,
-чи зламався основний шлях), і каналу знати про це не потрібно — його справа
+Доставка винесена в окремий `WatchReporter`: у нього власний стан (підписана
+адреса HLS-плейлиста), і каналу знати про це не потрібно — його справа
 відповідати, хто зараз в етері та з якою грою.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
-import re
-from time import monotonic
-from typing import Any, ClassVar, Protocol
+from typing import Any, Protocol
+from urllib.parse import urlencode, urljoin, urlsplit
 
 from core import protocol
-from core.config import SPADE_ATTEMPTS, STREAM_UP_DELAY, TRACE
+from core.config import STREAM_UP_DELAY, TRACE, WATCH_ATTEMPTS
 from core.toolbox import Game
 
 log = logging.getLogger("TwitchDrops")
-
-# Скільки триматись на запасному шляху (GQL), перш ніж знову спробувати spade.
-# Година: збій spade зазвичай або хвилинний на боці Twitch, або довгий і
-# зовнішній (блокувальник у мережі) — тоді зайва спроба раз на годину нічого
-# не коштує, а от вічний фолбек приховав би, що пряма дорога вже вільна.
-SPADE_RETRY_AFTER = 3600.0
-
 
 class Backend(Protocol):
     """Те, що канал очікує від ядра."""
@@ -31,6 +23,7 @@ class Backend(Protocol):
     async def graphql(self, payload: Any) -> Any: ...
     async def fetch_text(self, url: str, **kwargs: Any) -> str: ...
     async def post_form(self, url: str, body: dict[str, Any], **kwargs: Any) -> int: ...
+    async def head(self, url: str, **kwargs: Any) -> int: ...
     def channel_state_changed(self, channel: Channel, was_live: bool) -> None: ...
     def channel_display_changed(self, channel: Channel) -> None: ...
     def campaign_by_id(self, campaign_id: str) -> Any: ...
@@ -83,121 +76,83 @@ class Stream:
 
 
 class WatchReporter:
-    """Повідомляє Twitch, що ми дивимось хвилину.
+    """Доставляє перегляд через HLS, не завантажуючи відео.
 
-    Основний шлях — spade-ендпоінт. Його адресу треба виколупувати зі сторінки
-    стрімера, і Twitch регулярно змінює, де саме вона лежить, тож коли витяг не
-    вдається — мовчки переходимо на GQL-мутацію. Фолбек увімкнений завжди, а не
-    «про запас»: у попередній версії він був написаний, але вимкнений, і кожен
-    злам розмітки зупиняв фарм.
+    23.10 spade відповідав 204, але прогрес шість хвилин стояв на 8/30.
+    HEAD до сегментів тієї самої трансляції одразу дав 9, 10 хвилин.
+    Тому успішний spade більше не є запасним доказом доставки перегляду.
     """
 
-    __slots__ = ("_backend",)
-
-    # ⚠️ Спільне на всі канали, а не на кожен окремо. Адреса spade у Twitch
-    # одна на весь сайт, а `WatchReporter` створювався свій кожному каналу — і
-    # кожен качав повну HTML-сторінку, щоб знайти те саме значення. Гірше:
-    # об'єкти каналів перестворюються на кожне читання інвентаря
-    # (`core/model.py`, `Channel.from_allowlist`), тож кеш губився навіть тоді,
-    # коли канал не мінявся.
-    _spade_url: ClassVar[str | None] = None
-    # Замість вічного прапорця «spade зламався» — час, до якого сидимо на GQL.
-    # Глобальний прапорець назавжди саджав би програму на запасний шлях через
-    # одну випадкову невдачу.
-    _fallback_until: ClassVar[float] = 0.0
+    __slots__ = ("_backend", "_broadcast_id", "_playlist_url")
 
     def __init__(self, backend: Backend):
         self._backend = backend
-
-    @property
-    def _use_mutation(self) -> bool:
-        return monotonic() < WatchReporter._fallback_until
+        self._playlist_url: str | None = None
+        self._broadcast_id: int | None = None
 
     @staticmethod
-    def _fall_back_to_gql() -> None:
-        WatchReporter._fallback_until = monotonic() + SPADE_RETRY_AFTER
+    def _urls(text: str, base: str) -> list[str]:
+        if not text.lstrip().startswith("#EXTM3U"):
+            raise ValueError("Відповідь не є HLS-плейлистом")
+        return [
+            url for raw_line in text.splitlines()
+            if (line := raw_line.strip()) and not line.startswith("#")
+            if urlsplit(url := urljoin(base, line)).scheme in ("http", "https")
+        ]
 
-    async def _resolve_spade_url(self, channel_url: str) -> str | None:
-        page = await self._backend.fetch_text(
-            channel_url, attempts=SPADE_ATTEMPTS, count_as_network=False,
+    async def _resolve_playlist(self, channel: Channel) -> str:
+        answer = await self._backend.graphql(protocol.PLAYBACK_ACCESS(login=channel.login))
+        access = answer["data"]["streamPlaybackAccessToken"]
+        query = urlencode({
+            "sig": access["signature"], "token": access["value"],
+            "allow_source": "true", "allow_audio_only": "true",
+        })
+        master_url = f"https://usher.ttvnw.net/api/channel/hls/{channel.login}.m3u8?{query}"
+        master = await self._backend.fetch_text(
+            master_url, attempts=WATCH_ATTEMPTS, count_as_network=False,
         )
-        if found := re.search(protocol.SPADE_IN_PAGE, page, re.IGNORECASE):
-            return found.group(1)
-        script = re.search(protocol.SETTINGS_SCRIPT, page, re.IGNORECASE)
-        if script is None:
-            return None
-        config = await self._backend.fetch_text(
-            script.group(1), attempts=SPADE_ATTEMPTS, count_as_network=False,
-        )
-        found = re.search(protocol.SPADE_IN_PAGE, config, re.IGNORECASE)
-        return found.group(1) if found else None
+        variants = self._urls(master, master_url)
+        if not variants:
+            raise ValueError("У HLS немає доступної якості")
+        return variants[-1]
 
     async def report(self, channel: Channel) -> bool:
+        try:
+            # Обмежуємо весь прохід, а не кожен із п'ятнадцяти HEAD окремо.
+            return await asyncio.wait_for(self._report_hls(channel), timeout=18)
+        except Exception as error:
+            self._playlist_url = None
+            # Виняток aiohttp містить підписаний URL із playback-токеном.
+            # Назви класу достатньо; сам URL у журнал не потрапляє.
+            log.warning(
+                f"HLS-перегляд {channel.login} не доставлено ({type(error).__name__})"
+            )
+            return False
+
+    async def _report_hls(self, channel: Channel) -> bool:
         stream = channel.stream
         if stream is None:
             return False
-        event = protocol.watch_event(
-            broadcast_id=stream.broadcast_id,
-            channel_id=channel.id,
-            channel_login=channel.login,
-            game_id=stream.game.id if stream.game else None,
-            game_name=stream.game.name if stream.game else None,
-            user_id=self._backend.user_id,
+        if self._broadcast_id != stream.broadcast_id:
+            self._playlist_url = None
+            self._broadcast_id = stream.broadcast_id
+        if self._playlist_url is None:
+            self._playlist_url = await self._resolve_playlist(channel)
+        playlist = await self._backend.fetch_text(
+            self._playlist_url, attempts=WATCH_ATTEMPTS,
+            count_as_network=False, headers={"Connection": "close"},
         )
-
-        if not self._use_mutation:
-            if WatchReporter._spade_url is None:
-                try:
-                    WatchReporter._spade_url = await self._resolve_spade_url(channel.url)
-                except Exception as error:
-                    log.warning(
-                        f"Сторінка {channel.login} недоступна "
-                        f"({type(error).__name__}) — переходжу на GQL"
-                    )
-                    self._fall_back_to_gql()
-                else:
-                    if WatchReporter._spade_url is None:
-                        log.warning("Адресу spade не знайдено — переходжу на GQL")
-                        self._fall_back_to_gql()
-            if WatchReporter._spade_url is not None and not self._use_mutation:
-                try:
-                    status = await self._backend.post_form(
-                        WatchReporter._spade_url, protocol.spade_body(event),
-                        attempts=SPADE_ATTEMPTS, count_as_network=False,
-                    )
-                except Exception as error:
-                    # Раніше виняток обривав метод і GQL навіть не пробували.
-                    # Якщо блокувальник ріже лише spade, запасний шлях живий.
-                    log.warning(
-                        f"spade недоступний ({type(error).__name__}) — переходжу на GQL"
-                    )
-                    self._fall_back_to_gql()
-                else:
-                    if status == 204:
-                        return True
-                    log.warning(f"spade відповів {status} — переходжу на GQL")
-                    self._fall_back_to_gql()
-
-        try:
-            answer = await self._backend.graphql(protocol.spade_mutation(event))
-        except Exception as error:
-            # ⚠️ Це останній шлях звітування перегляду: spade сюди вже не довіз.
-            # Мовчазне `return False` означало «хвилини не капають, а в журналі
-            # порожньо» — саме той симптом, який доводилось розбирати запитами
-            # до Twitch замість читання журналу. Усі сусідні гілки вище
-            # називають причину; ця чомусь ні.
-            log.warning(
-                f"GQL-звіт про перегляд не пройшов ({type(error).__name__}: {error})"
+        chunks = self._urls(playlist, self._playlist_url)
+        if not chunks or "#EXT-X-ENDLIST" in playlist:
+            raise ValueError("Трансляція не має живих сегментів")
+        for chunk in chunks:
+            status = await self._backend.head(
+                chunk, attempts=WATCH_ATTEMPTS, count_as_network=False,
             )
-            return False
-        try:
-            return answer["data"]["sendSpadeEvents"]["statusCode"] == 204
-        except (KeyError, TypeError) as error:
-            # Відповідь є, але не такої форми, якої чекали, — ознака того, що
-            # Twitch змінив схему. Без цього рядка це виглядало б так само, як
-            # мережевий збій, і сторожа persisted-запитів мовчала б.
-            log.warning(f"Twitch відповів на звіт не тим, чого чекали: {error}")
-            return False
+            if status != 200:
+                raise ValueError(f"Сегмент HLS віддав HTTP {status}")
+        log.log(TRACE, f"HLS-перегляд {channel.login}: HEAD {len(chunks)} сегментів, HTTP 200")
+        return True
 
 
 class Channel:

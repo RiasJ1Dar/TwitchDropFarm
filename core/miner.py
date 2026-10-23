@@ -212,6 +212,9 @@ class Miner:
     async def post_form(self, url: str, body: dict[str, Any], **kwargs: Any) -> int:
         return await self.api.post_form(url, body, **kwargs)
 
+    async def head(self, url: str, **kwargs: Any) -> int:
+        return await self.api.head(url, **kwargs)
+
     def campaign_by_id(self, campaign_id: str) -> Campaign | None:
         return self._by_id.get(campaign_id)
 
@@ -965,9 +968,12 @@ class Miner:
                 self._note_delivery_failed(channel)
 
             # даємо Twitch час відзвітувати самому
-            await asyncio.sleep(PROGRESS_GRACE.total_seconds())
-            if not await self._confirm_progress(channel):
-                self._estimate_progress(channel)
+            await asyncio.sleep(max(
+                0.0, PROGRESS_GRACE.total_seconds() - (monotonic() - sent_at),
+            ))
+            # Цикл HLS тепер іде кожні 20 с. Домальована «хвилина» на кожному
+            # проході потроїла б прогрес; показуємо лише підтверджене Twitch.
+            await self._confirm_progress(channel)
             self._check_stall(before, channel)
 
             self._restart_watch.clear()
@@ -1144,7 +1150,7 @@ class Miner:
             needed = query.operation in {
                 protocol.CAMPAIGN_DETAILS.operation, protocol.GAME_DIRECTORY.operation,
                 protocol.CURRENT_DROP.operation, protocol.CHANNEL_DROPS.operation,
-                protocol.STREAM_INFO.operation,
+                protocol.STREAM_INFO.operation, protocol.PLAYBACK_ACCESS.operation,
             }
             if needed and query.operation not in variables:
                 skipped.append(query.operation)

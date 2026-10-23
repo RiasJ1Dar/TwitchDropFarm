@@ -173,6 +173,14 @@ STREAM_INFO = Query(
     "198492e0857f6aedead9665c81c5a06d67b25b58034649687124083ff288597d",
     {"channel": REQUIRED},
 )
+PLAYBACK_ACCESS = Query(
+    "PlaybackAccessToken",
+    "ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9",
+    {
+        "isLive": True, "isVod": False, "login": REQUIRED,
+        "platform": "web", "playerType": "site", "vodID": "",
+    },
+)
 GAME_DIRECTORY = Query(
     "DirectoryPage_Game",
     "86bcceb4e8b1a51256ff8eed8bd8aae4acacf80d737efe904f84f3aeadf8cafd",
@@ -229,7 +237,7 @@ DROP_NOTIFICATION_DELETE = Query(
 # руками, щоб додавання мутації не потрапило туди автоматично.
 READ_ONLY_QUERIES: tuple[Query, ...] = (
     INVENTORY, CAMPAIGN_LIST, CAMPAIGN_DETAILS, CURRENT_DROP,
-    CHANNEL_DROPS, STREAM_INFO, GAME_DIRECTORY,
+    CHANNEL_DROPS, STREAM_INFO, GAME_DIRECTORY, PLAYBACK_ACCESS,
 )
 
 
@@ -269,8 +277,8 @@ def watch_event(
 ) -> list[JsonDict]:
     """Подія «переглянуто хвилину» — та сама, яку шле звичайний плеєр.
 
-    Саме вона й змушує Twitch зараховувати час. Склад полів фіксований: зайве
-    або пропущене поле обертається мовчазним нулем у лічильнику.
+    Спадковий формат spade для сумісності. З 09.10.2026 успішна доставка
+    цієї події більше не доводить фарм; робочий перегляд іде через HLS.
     """
     return [{
         "event": "minute-watched",

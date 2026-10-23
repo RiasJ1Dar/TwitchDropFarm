@@ -217,6 +217,8 @@ class TwitchApi:
         а наступний успішний інвентар — зелене «зв'язок відновлено».
         """
         session = await self.session()
+        # Підписані HLS-адреси містять playback-токен у query string.
+        safe_url = url.split("?", 1)[0]
         if self.proxy and "proxy" not in kwargs:
             kwargs["proxy"] = self.proxy
         budget = session.timeout.total or 0
@@ -229,7 +231,7 @@ class TwitchApi:
             if attempts is not None and tried > attempts:
                 if last_error is not None:
                     raise last_error
-                raise ApiError(f"Не вдалося звернутись до {url}")
+                raise ApiError(f"Не вдалося звернутись до {safe_url}")
             if valid_until is not None:
                 # враховуємо, що запит може завершитись уже після протухання
                 deadline = valid_until.timestamp() - budget
@@ -253,23 +255,34 @@ class TwitchApi:
                 last_error = error
                 if count_as_network:
                     self._network_failed(type(error).__name__)
-                log.log(TRACE, f"{type(error).__name__} на {url}, повтор через {delay:.0f}с")
+                log.log(TRACE, f"{type(error).__name__} на {safe_url}, повтор через {delay:.0f}с")
             finally:
                 if response is not None:
                     response.release()
             if attempts is not None and tried >= attempts:
                 if last_error is not None:
                     raise last_error
-                raise ApiError(f"Не вдалося звернутись до {url}")
+                raise ApiError(f"Не вдалося звернутись до {safe_url}")
             await asyncio.sleep(delay)
 
     async def fetch_text(self, url: str, *,
                          attempts: int | None = None,
-                         count_as_network: bool = True) -> str:
+                         count_as_network: bool = True,
+                         headers: dict[str, str] | None = None) -> str:
         async with self.request(
             "GET", url, attempts=attempts, count_as_network=count_as_network,
+            headers=headers,
         ) as response:
+            if response.status >= 400:
+                raise ApiError(f"HTTP {response.status} замість тексту")
             return await response.text(encoding="utf8")
+
+    async def head(self, url: str, *, attempts: int | None = None,
+                   count_as_network: bool = False) -> int:
+        async with self.request(
+            "HEAD", url, attempts=attempts, count_as_network=count_as_network,
+        ) as response:
+            return response.status
 
     async def post_form(self, url: str, body: dict[str, Any], *,
                         attempts: int | None = None,
