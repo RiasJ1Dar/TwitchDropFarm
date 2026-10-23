@@ -198,6 +198,8 @@ class Miner:
         self._link_told: set[str] = self.tracker.link_told
         self._loss_told: set[str] = self.tracker.loss_told
         self._hint_told: set[str] = self.tracker.hint_told
+        # канали, про які вже сказали «Twitch не нараховує тут жодному дропу»
+        self._no_drop_told: set[str] = set()
 
     # ================================================================ послуги
 
@@ -989,6 +991,20 @@ class Miner:
         if session is None:
             log.log(TRACE, "Twitch не віддав поточну сесію дропа")
             return False
+        if not session["dropID"]:
+            # ⚠️ Сесія є, дропа в ній немає — Twitch зарахував хвилину, але
+            # ЖОДНОМУ дропу. Майже завжди це канал без увімкнених дропів:
+            # стрімер грає потрібну гру, а нагород не роздає.
+            #
+            # Домальовувати тут не можна, і це не педантизм. 18–21.10 саме
+            # ця гілка йшла в `_estimate_progress` щохвилини: лічильник ріс
+            # 1, 2, 3 … 11, у вікні було видно рух, а на боці Twitch стояв
+            # нуль. 21.10 о 23:08 Twitch уперше віддав справжній дроп, і
+            # намальовані 11 хвилин обвалились на 1. Людина два дні бачила
+            # фарм, якого не було, — і дізналась про це лише тому, що
+            # прогрес стрибнув назад.
+            self._warn_no_drop(channel)
+            return True
         drop = self._drops.get(session["dropID"])
         if drop is None:
             log.log(TRACE, f"Twitch звітує невідомий нам дроп {session['dropID']}")
@@ -1027,6 +1043,30 @@ class Miner:
         self._counted_elsewhere = ""
         drop.set_counted(session["currentMinutesWatched"])
         return True
+
+    def _warn_no_drop(self, channel: Channel) -> None:
+        """Twitch рахує перегляд, але не нараховує його жодному дропу.
+
+        Кажемо один раз на канал: повторювати щохвилини — значить залити
+        журнал так, що в ньому не знайдеться нічого іншого. Але змовчати теж
+        не можна: ззовні це виглядає як «програма фармить», а насправді
+        години йдуть у нікуди.
+        """
+        told: set[str] = getattr(self, "_no_drop_told", set())
+        if channel.name in told:
+            return
+        told.add(channel.name)
+        self._no_drop_told = told
+        hint = (
+            ""
+            if self.verify_drops_enabled
+            else " Увімкніть «перевіряти дропи на каналі» в налаштуваннях —"
+                 " інакше канали беруться за грою, без перевірки нагород."
+        )
+        log.warning(
+            f"{channel.name}: Twitch зараховує перегляд, але не нараховує його "
+            f"жодному дропу — схоже, на каналі дропи вимкнені.{hint}"
+        )
 
     def _estimate_progress(self, channel: Channel) -> None:
         campaign = self.active_campaign(channel)

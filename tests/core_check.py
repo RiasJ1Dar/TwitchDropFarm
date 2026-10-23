@@ -922,6 +922,36 @@ def parallel_watch_checks() -> None:
     check("чужий перегляд — прогрес не підтверджено",
           confirmed is False and counted == [], str(counted))
 
+    # ⚠️ Сесія без дропа. Twitch зарахував хвилину, але ЖОДНОМУ дропу — майже
+    # завжди це канал із вимкненими дропами. 18–21.10 ця гілка домальовувала
+    # хвилину щохвилини: лічильник дійшов до 11, а на боці Twitch стояв нуль,
+    # і 21.10 о 23:08 намальоване обвалилось на 1. Людина два дні бачила фарм,
+    # якого не було.
+    async def no_drop(_payload):
+        return {"data": {"currentUser": {"dropCurrentSession": {
+            "dropID": "", "currentMinutesWatched": 0,
+        }}}}
+
+    empty = miner_stub(graphql=no_drop, _drops={}, _counted_elsewhere="",
+                       verify_drops_enabled=False, _no_drop_told=set())
+    # Заглушка не успадковує методів, а перевіряємо ми саме зв'язку
+    # «порожня сесія → попередження», тож підв'язуємо справжній.
+    empty._warn_no_drop = lambda ch: Miner._warn_no_drop(empty, ch)
+    spy, real = FakeLog(), miner_module.log
+    miner_module.log = spy
+    try:
+        confirmed = asyncio.run(Miner._confirm_progress(empty, channel))
+        # вдруге по тому самому каналу — журнал не заливаємо
+        asyncio.run(Miner._confirm_progress(empty, channel))
+    finally:
+        miner_module.log = real
+    check("сесія без дропа — наосліп не домальовуємо", confirmed is True)
+    check("сесія без дропа — сказано один раз", len(spy.warnings) == 1,
+          str(spy.warnings))
+    check("підказано, що вмикати",
+          "перевіряти дропи" in (spy.warnings[0] if spy.warnings else ""),
+          str(spy.warnings))
+
     # Причина доїжджає до повідомлення замість здогаду про ручний перегляд
     fake = miner_stub(
         _progress_mark=lambda: 40, _stall_since=0.0, _stall_alerted=False,
