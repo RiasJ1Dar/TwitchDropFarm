@@ -186,7 +186,7 @@ def routing_checks() -> None:
         caught = True
     check("заглушка вікна ловить неіснуюче поле", caught)
     check("справжнє поле проходить",
-          miner_stub(_benched={}, campaigns=[]) is not None)
+          miner_stub(channel_selector=None, campaigns=[]) is not None)
 
     # ⚠️ Рятівний пріоритет. Написано за втраченим дропом: 31.08
     # `Anniversary Store #9 Drop 2` згорів на 206/240, і разом із ним майже

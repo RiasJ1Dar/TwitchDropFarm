@@ -26,13 +26,14 @@ from core.campaigns import (
     needs_rescue,
     weekly_report,
 )
+from core.channel_selection import ChannelSelector, should_switch
+from core.channel_selection import can_farm as channel_can_farm
 from core.channels import Channel
 from core.config import (
     ALMOST_THERE_MINUTES,
     CHANNEL_REFRESH_DELAY,
     HISTORY_FILE,
     IMAGE_DIR,
-    MAX_CHANNELS,
     PROGRESS_GRACE,
     PROTOCOL_PROBE_EVERY,
     PROTOCOL_PROBE_PAUSE,
@@ -84,7 +85,6 @@ from core.toolbox import (
     Game,
     Slot,
     TaskKeeper,
-    batched,
     describe_exception,
     guard_task,
     race,
@@ -92,7 +92,6 @@ from core.toolbox import (
 )
 from core.update_manager import UpdateCoordinator
 from core.watchdog import (
-    ChannelBench,
     StallDetector,
     build_probe_variables,
     note_delivery_failed,
@@ -156,7 +155,7 @@ class Miner:
         self._by_id: dict[str, Campaign] = {}
         self._drops: dict[str, Drop] = {}
         self.wanted = []  # сеттер нижче будує ще й індекс пріоритетів
-        self.channels: OrderedDict[int, Channel] = OrderedDict()
+        self.channel_selector = ChannelSelector(self)
         self.watching: Slot[Channel] = Slot()
         # точкові топіки активного каналу; тримаємо імена, щоб відписати
         self._live_topics: list[str] = []
@@ -178,9 +177,6 @@ class Miner:
         self._counted_elsewhere = ""
         self._delivery_failures = 0
         self._shown_progress: dict[str, tuple[int, int]] = {}
-        # канали, які не зараховують хвилини: ім'я -> доки не чіпати
-        self.bench_tracker = ChannelBench()
-        self._benched: dict[str, float] = self.bench_tracker.benched
         # людина натиснула «Відкласти» — до наступного запуску не нагадуємо
         self.update_postponed = False
         # Стан оновлення тримає координатор, а не майнер. `_update_plan`,
@@ -211,6 +207,10 @@ class Miner:
         self._hint_told: set[str] = self.tracker.hint_told
         # канали, про які вже сказали «Twitch не нараховує тут жодному дропу»
         self._no_drop_told: set[str] = set()
+
+    @property
+    def channels(self) -> OrderedDict[int, Channel]:
+        return self.channel_selector.channels
 
     # ================================================================ послуги
 
@@ -445,37 +445,14 @@ class Miner:
             return 1 << 30
         return self._wanted_rank.get(game, 1 << 30)
 
-    def can_farm(self, channel: Channel) -> bool:
-        if not channel.live:
-            return False
-        return any(
-            campaign.farmable(channel)
-            and (
-                (channel.game is not None and channel.drops_on
-                 and channel.game in self.wanted)
-                or campaign.game.any_channel
-            )
-            for campaign in self.campaigns
-        )
+    def can_farm(self, channel: Channel | None) -> bool:
+        return channel_can_farm(self.campaigns, self.wanted, channel)
 
     def benched(self, channel: Channel) -> bool:
-        tracker = getattr(self, "bench_tracker", None)
-        benched_map = getattr(self, "_benched", None)
-        if benched_map is None and tracker is not None:
-            benched_map = tracker.benched
-        if benched_map is None:
-            return False
-        return ChannelBench(benched_map).is_benched(channel.name)
+        return self.channel_selector.bench.is_benched(channel.name)
 
     def bench(self, channel: Channel) -> None:
-        tracker = getattr(self, "bench_tracker", None)
-        benched_map = getattr(self, "_benched", None)
-        if benched_map is None and tracker is not None:
-            benched_map = tracker.benched
-        if benched_map is None:
-            benched_map = {}
-            self._benched = benched_map
-        ChannelBench(benched_map).bench(channel.name)
+        self.channel_selector.bench.bench(channel.name)
 
     def almost_there(self) -> int:
         """Скільки хвилин лишилось до нагороди на каналі, який дивимось.
@@ -497,23 +474,10 @@ class Miner:
     def should_switch_to(self, channel: Channel) -> bool:
         if self.benched(channel):
             return False
-        # ⚠️ Доводимо до кінця те, що ось-ось дасть нагороду. Інакше добір міг
-        # перемкнути канал за десять хвилин до дропа — намайнене лишалось
-        # висіти, а хвилини починали копитись в іншому місці.
-        left = self.almost_there()
-        if left and self.can_farm(self.watching.peek()):
-            log.log(TRACE, f"Не перемикаюсь: до нагороди {left} хв")
-            return False
-        if not self.can_farm(channel):
-            return False
-        current = self.watching.peek()
-        if current is None or not self.can_farm(current):
-            return True
-        here, there = self.priority_of(channel), self.priority_of(current)
-        if here != there:
-            return here < there
-        # за рівних умов канал зі списку кампанії надійніший
-        return channel.from_allowlist_flag and not current.from_allowlist_flag
+        return should_switch(
+            channel, self.watching.peek(), remaining=self.almost_there(),
+            farmable=self.can_farm, priority=self.priority_of,
+        )
 
     def watch(self, channel: Channel, *, announce: bool = True) -> None:
         self._follow_settings(channel)
@@ -646,68 +610,10 @@ class Miner:
         )
 
     async def find_streams(self, game: Game, *, limit: int = 20) -> list[Channel]:
-        try:
-            answer = await self.graphql(protocol.GAME_DIRECTORY(
-                slug=game.slug, limit=limit,
-                options={"systemFilters": ["DROPS_ENABLED"]},
-            ))
-        except ApiError as error:
-            log.warning(f"Каталог {game.slug} недоступний: {error}")
-            return []
-        node = answer["data"].get("game")
-        if not node:
-            return []
-        return [
-            Channel.from_directory(self, edge["node"], drops_on=True)
-            for edge in node["streams"]["edges"]
-            if edge["node"]["broadcaster"] is not None
-        ]
+        return await self.channel_selector.find_streams(game, limit=limit)
 
     async def check_many(self, channels: list[Channel]) -> None:
-        """Пакетна перевірка статусу — замість запиту на кожен канал окремо."""
-        if not channels:
-            return
-        by_id = {c.id: c for c in channels}
-        jobs = [
-            asyncio.ensure_future(self.graphql(
-                [protocol.STREAM_INFO(channel=c.login) for c in portion]
-            ))
-            for portion in batched(channels, 20)
-        ]
-        found: dict[int, dict[str, Any]] = {}
-        try:
-            for finished in asyncio.as_completed(jobs):
-                for reply in await finished:
-                    body = reply["data"]["user"]
-                    if body:
-                        found[int(body["id"])] = body
-        except Exception:
-            for job in jobs:
-                job.cancel()
-            raise
-
-        drops_map: dict[int, list[dict[str, Any]]] = {}
-        if self.verify_drops_enabled:
-            live_ids = [cid for cid, body in found.items() if body["stream"]]
-            drop_jobs = [
-                asyncio.ensure_future(self.graphql(
-                    [protocol.CHANNEL_DROPS(channelID=str(cid)) for cid in portion]
-                ))
-                for portion in batched(live_ids, 20)
-            ]
-            try:
-                for finished in asyncio.as_completed(drop_jobs):
-                    for reply in await finished:
-                        node = reply["data"]["channel"]
-                        drops_map[int(node["id"])] = node["viewerDropCampaigns"] or []
-            except Exception:
-                for job in drop_jobs:
-                    job.cancel()
-                raise
-
-        for channel_id, body in found.items():
-            if (channel := by_id.get(channel_id)) is not None:
-                channel.apply_bulk_update(body, drops_map.get(channel_id, []))
+        await self.channel_selector.check_many(channels)
 
     # ================================================================ PubSub
 
@@ -1418,19 +1324,11 @@ class Miner:
 
     def _drop_stale_channels(self) -> None:
         self.events.status(t("status_cleanup"))
-        if not self.wanted or self._full_sweep:
-            doomed = list(self.channels.values())
-        else:
-            doomed = [
-                c for c in self.channels.values()
-                if not c.from_allowlist_flag
-                and (c.dark or c.game is None or c.game not in self.wanted)
-            ]
+        doomed = self.channel_selector.remove_stale(self.wanted, full_sweep=self._full_sweep)
         self._full_sweep = False
         if doomed:
             self.topics.unsubscribe(pubsub.channel_topic_names(c.id for c in doomed))
             for channel in doomed:
-                self.channels.pop(channel.id, None)
                 channel.forget()
             self._publish_channels()
         if self.wanted:
@@ -1441,44 +1339,11 @@ class Miner:
 
     async def _find_channels(self) -> None:
         self.events.status(t("status_searching"))
-        pool: set[Channel] = set(self.channels.values())
-        self.channels.clear()
-
-        soon = datetime.now(timezone.utc) + timedelta(hours=1)
-        listed: set[Channel] = set()
-        open_games: set[Game] = set()
-        for campaign in self.campaigns:
-            if campaign.game in self.wanted and campaign.farmable_before(soon):
-                if campaign.channels:
-                    listed.update(campaign.channels)
-                else:
-                    open_games.add(campaign.game)
-        listed -= pool
-
-        # Перевірка списків і пошук у каталозі — незалежні мережеві запити.
-        # Послідовно це давало кілька секунд на старті: по колу чекали відповіді
-        # для кожної гри окремо.
-        directory = [
-            asyncio.ensure_future(self.find_streams(game)) for game in open_games
-        ]
-        try:
-            await self.check_many(list(listed))
-            pool |= listed
-            for found in await asyncio.gather(*directory):
-                pool.update(found)
-        except Exception:
-            for job in directory:
-                job.cancel()
-            raise
-
-        ranked = sorted(pool, key=lambda c: c.viewers, reverse=True)
-        ranked.sort(key=lambda c: c.from_allowlist_flag, reverse=True)
-        ranked.sort(key=self.priority_of)
-        keep, spare = ranked[:MAX_CHANNELS], ranked[MAX_CHANNELS:]
+        spare = await self.channel_selector.discover(
+            self.campaigns, self.wanted, self.priority_of, now=datetime.now(timezone.utc),
+        )
         if spare:
             self.topics.unsubscribe(pubsub.channel_topic_names(c.id for c in spare))
-        for channel in keep:
-            self.channels[channel.id] = channel
 
         # Тільки «стрім піднявся/впав». Зміну гри слухаємо окремо й лише на
         # тому каналі, який дивимось, — це вдвічі збільшує, скільки каналів

@@ -155,8 +155,11 @@ def delivery_checks() -> None:
     check("невдала доставка лишається відмовою", attempts.count("failed") == 3)
     check("20-секундні проходи не вигадують хвилини", progress.minutes == 7)
 
+    from core.watchdog import ChannelBench
+
+    selector = types.SimpleNamespace(bench=ChannelBench())
     fake = miner_stub(
-        _delivery_failures=0, events=Bus(), _benched={},
+        _delivery_failures=0, events=Bus(), channel_selector=selector,
         _restart_watch=types.SimpleNamespace(set=lambda: None),
     )
     fake.bench = lambda channel: Miner.bench(fake, channel)
@@ -176,10 +179,10 @@ def delivery_checks() -> None:
     # зарахувалась» і спокійно вертався на той самий канал наступним добором.
     check("канал, що підвів, відкладено", Miner.benched(fake, ch))
     check("відстійник знає, доки чекати",
-          fake._benched["канал"] > monotonic())
-    fake._benched["канал"] = monotonic() - 1.0
+          selector.bench.benched["канал"] > monotonic())
+    selector.bench.benched["канал"] = monotonic() - 1.0
     check("через півгодини канал знову в грі", not Miner.benched(fake, ch))
-    check("прострочений запис прибирається", "канал" not in fake._benched)
+    check("прострочений запис прибирається", "канал" not in selector.bench.benched)
 
     Miner._note_delivery_ok(fake, ch)
     check("успіх скидає лічильник відмов", fake._delivery_failures == 0)
