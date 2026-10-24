@@ -33,6 +33,9 @@ APPLY_LOG = STATE_DIR / "update-apply.log"
 # нього, щоб відрізнити «оновлення встало» від «нова збірка не запускається».
 STARTED_FLAG = STATE_DIR / "started.flag"
 CHUNK = 256 * 1024
+# 24.10 GitHub віддав CSP понад стандартні 8190 байтів aiohttp: перевірка
+# падала ще до манифесту. Межа стосується лише HTTP-запитів оновлення.
+MAX_UPDATE_HEADER_FIELD = 64 * 1024
 # 2.0.0 вийшла раніше за 1.0.x — порівнюємо лише всередині тієї ж мажорної лінії
 USER_AGENT = f"TwitchDropFarm/{VERSION}"
 # Відкрита половина Ed25519. Приватна — лише GitHub Secret MANIFEST_SIGNING_KEY.
@@ -526,6 +529,7 @@ async def fetch_manifest(
     async with session.get(
         url,
         headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+        max_field_size=MAX_UPDATE_HEADER_FIELD,
     ) as response:
         if response.status != 200:
             raise ValueError(f"манифест {response.status} з {url}")
@@ -537,7 +541,10 @@ async def fetch_manifest(
 async def download_item(session: aiohttp.ClientSession, item: FetchItem) -> None:
     item.dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = item.dest.with_suffix(item.dest.suffix + ".part")
-    async with session.get(item.url, headers={"User-Agent": USER_AGENT}) as response:
+    async with session.get(
+        item.url, headers={"User-Agent": USER_AGENT},
+        max_field_size=MAX_UPDATE_HEADER_FIELD,
+    ) as response:
         if response.status != 200:
             raise ValueError(f"{response.status} для {item.spec.path}")
         with tmp.open("wb") as handle:

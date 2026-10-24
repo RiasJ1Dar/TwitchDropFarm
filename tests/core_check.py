@@ -30,6 +30,7 @@ GROUPS = {
     "protocol": ["protocol_watch_checks", "stale_request_checks", "request_limit_checks"],
     "delivery": ["delivery_checks"],
     "updates": ["update_checks"],
+    "update_http": ["update_http_checks"],
     "storage": [
         "lock_and_wording_checks",
         "log_rotation_checks",
