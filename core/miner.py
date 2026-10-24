@@ -71,6 +71,13 @@ from core.identity import Identity
 from core.images import ImageCache
 from core.model import Campaign, Drop
 from core.seen import SeenCampaigns
+from core.selection import (
+    SELECTION_LOOKAHEAD,
+    CampaignCandidate,
+    SelectionPolicy,
+    SkipReason,
+    select_games,
+)
 from core.settings import Settings
 from core.toolbox import (
     Game,
@@ -1415,56 +1422,31 @@ class Miner:
                     await drop.take()
 
         mode: FarmMode = self.settings.farm_mode
-        priority: list[str] = list(self.settings.priority)
-        excluded = set(self.settings.exclude)
-        soon = datetime.now(timezone.utc) + timedelta(hours=1)
-
-        ordered = list(self.campaigns)
-        if mode is FarmMode.TIGHTEST_FIT:
-            ordered.sort(key=lambda c: c.slack)
-        elif mode is not FarmMode.PRIORITY_LIST:
-            ordered.sort(key=lambda c: c.closes_at)
-        if mode is not FarmMode.LINKED_ONLY:
-            # LINKED_ONLY навмисно ігнорує список: його зміст у тому, щоб нічого
-            # не налаштовувати руками
-            ordered.sort(key=lambda c: (
-                priority.index(c.game.name) if c.game.name in priority else 1 << 30
-            ))
-
-        # ⚠️ РЯТІВНИЙ ПРІОРИТЕТ, поверх будь-якого режиму. Кампанія, у якій уже
-        # намайнено години і в якої тане запас часу, має перебивати решту — бо
-        # інакше ці години просто згорять. Саме так 31.08 пропав
-        # `Anniversary Store #9 Drop 2` на 206/240: попередження про ризик
-        # прийшло, коли рятувати було вже нічого.
-        #
-        # Стабільне сортування: усе інше впорядкування, вибудуване вище,
-        # зберігається всередині обох груп.
-        ordered.sort(key=lambda c: not self._needs_rescue(c))
-
-        chosen: list[Game] = []
-        for campaign in ordered:
-            game = campaign.game
-            if game in chosen or game.name in excluded:
-                continue
-            if mode is FarmMode.PRIORITY_LIST and game.name not in priority:
-                continue
-            if mode is FarmMode.LINKED_ONLY and not (
-                campaign.linked and campaign.has_real_item
-            ):
-                continue
-            # «Не братися за безнадійне»: кампанія, де жоден дроп уже не
-            # встигнути. Саме жоден — інакше ми викидали б і ті, де половина
-            # нагород ще досяжна.
-            if self.settings.skip_hopeless and campaign.hopeless:
+        now = datetime.now(timezone.utc)
+        soon = now + SELECTION_LOOKAHEAD
+        policy = SelectionPolicy(
+            mode=mode, priority=tuple(self.settings.priority),
+            excluded=frozenset(self.settings.exclude), skip_hopeless=self.settings.skip_hopeless,
+        )
+        # Придатність лишається відповідальністю моделі. Політика отримує
+        # готові значення після claim, не Miner і не callbacks із мережею.
+        candidates = [CampaignCandidate(
+            id=c.id, name=c.name, game=c.game, closes_at=c.closes_at,
+            slack=c.slack if mode is FarmMode.TIGHTEST_FIT else 0.0,
+            linked=c.linked if mode is FarmMode.LINKED_ONLY else False,
+            has_real_item=c.has_real_item if mode is FarmMode.LINKED_ONLY else False,
+            hopeless=c.hopeless if policy.skip_hopeless else False,
+            eligible=c.farmable_before(soon), rescue=self._needs_rescue(c),
+        ) for c in self.campaigns]
+        result = select_games(candidates, policy, now=now)
+        for skipped in result.skipped:
+            if skipped.reason is SkipReason.HOPELESS:
+                candidate = skipped.campaign
                 log.info(
-                    f"Пропускаю «{campaign.name}» ({campaign.game.name}): "
+                    f"Пропускаю «{candidate.name}» ({candidate.game.name}): "
                     f"жоден дроп не встигнути до кінця кампанії"
                 )
-                continue
-            if campaign.farmable_before(soon):
-                chosen.append(game)
-
-        self.wanted = chosen
+        self.wanted = list(result.games)
         self._full_sweep = True
         self._restart_watch.set()
         self.go(Stage.DROP_CHANNELS)

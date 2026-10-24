@@ -75,6 +75,32 @@ def selection_checks() -> None:
     check("порожній інвентар дає порожній вибір",
           select(FarmMode.SOONEST_END, campaigns=[]) == [])
 
+    claims = []
+    horizons = []
+
+    async def take():
+        claims.append("claimed")
+        return True
+
+    def eligible_after_claim(horizon):
+        horizons.append(horizon)
+        return bool(claims)
+
+    a.all_drops = [types.SimpleNamespace(ready_to_take=True, take=take)]
+    a.farmable_before = eligible_after_claim
+    check("готовий дроп отримується перед побудовою знімка вибору",
+          select(FarmMode.SOONEST_END, campaigns=[a]) == ["A"] and claims == ["claimed"])
+    check("придатність питається на годинний горизонт",
+          now + timedelta(minutes=59) < horizons[0] < now + timedelta(minutes=61))
+    claims.clear()
+    check("claim виконується навіть перед пропуском гри за налаштуванням",
+          select(FarmMode.SOONEST_END, exclude=("A",), campaigns=[a]) == []
+          and claims == ["claimed"])
+    a.not_started = True
+    claims.clear()
+    select(FarmMode.SOONEST_END, campaigns=[a])
+    check("кампанія до старту не виконує claim", not claims)
+
 
 def deadline_checks() -> None:
     print("\n[3] Прогноз «встигну / не встигну»")

@@ -22,6 +22,7 @@ GROUPS = {
     ],
     "completion": ["claim_checks", "completed_drop_checks"],
     "campaigns": ["deadline_checks", "watchlist_checks", "model_cache_checks", "selection_checks"],
+    "selection": ["pure_selection_checks"],
     "protocol": ["protocol_watch_checks", "stale_request_checks", "request_limit_checks"],
     "delivery": ["delivery_checks"],
     "updates": ["update_checks"],
