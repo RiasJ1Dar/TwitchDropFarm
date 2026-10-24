@@ -50,5 +50,11 @@ jobs:
       - name: Telegram-бот (без мережі)
         run: python tests/bot_check.py
 
+      - name: Справжнє вікно GUI (без мережі)
+        run: python tests/gui_smoke.py
+
+      - name: Живі імпорти модулів
+        run: python -c "import main, gui.app, core.miner, notify.telegram"
+
       # live_check тут не запускається навмисно: він б'є по живому Twitch і
       # вимагає токена. Його місце — на робочій машині, а не в CI.
