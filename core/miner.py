@@ -99,6 +99,9 @@ log = logging.getLogger("TwitchDrops")
 # нагороди рідко змінюються на ходу, тож повторний запис десятків однакових
 # CAMPAIGN_DETAILS на кожному оновленні інвентаря лише марнує запити до GraphQL.
 CAMPAIGN_DETAILS_TTL = 5400.0
+# Twitch може видати нагороду автоматично, без PubSub drop-claim.
+# Якщо self/claim ID ще не оновились, перепитуємо не частіше разу на хвилину.
+COMPLETED_DROP_REFRESH = 60.0
 
 
 class Restart(Exception):
@@ -182,6 +185,7 @@ class Miner:
         self._protocol_checked = 0.0
         # кеш подробиць кампаній (id -> (timestamp, data)) для зменшення навантаження GraphQL
         self._campaign_details_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+        self._completed_drop_refresh: dict[str, float] = {}
 
         # Ядро історію лише читає. Підписку на запис робить `main`, і не з
         # педантизму: `Miner` створюють і тести, а вони не сміють дописувати
@@ -974,11 +978,43 @@ class Miner:
             # Цикл HLS тепер іде кожні 20 с. Домальована «хвилина» на кожному
             # проході потроїла б прогрес; показуємо лише підтверджене Twitch.
             await self._confirm_progress(channel)
+            if self._refresh_completed_drops(channel):
+                continue
             self._check_stall(before, channel)
 
             self._restart_watch.clear()
             waited = monotonic() - sent_at
             await sleep_unless(self._restart_watch, max(0.0, period - waited))
+
+    def _refresh_completed_drops(self, channel: Channel, *, now: float | None = None) -> bool:
+        """Перечитати серверний стан завершеного дропа навіть без PubSub."""
+        if self._paused or self.watching.peek(None) is not channel:
+            return False
+        if self._stage in (Stage.LOAD_INVENTORY, Stage.QUIT, Stage.RESTART):
+            return False
+        clock = monotonic() if now is None else now
+        completed = [
+            drop
+            for campaign in self.campaigns if self._counts_here(campaign, channel)
+            for drop in campaign.all_drops
+            if not drop.taken and drop.required_minutes > 0
+            and drop.counted_minutes >= drop.required_minutes
+            and clock >= self._completed_drop_refresh.get(drop.id, 0.0)
+        ]
+        if not completed:
+            return False
+        for drop in completed:
+            self._completed_drop_refresh[drop.id] = clock + COMPLETED_DROP_REFRESH
+            # self у кеші деталей може ще казати «не забрано». Для цього
+            # дропа потрібні свіжі self і gameEventDrops з інвентаря.
+            self._campaign_details_cache.pop(drop.campaign.id, None)
+        log.info(
+            "Дроп досяг потрібних хвилин — перевіряю видачу в інвентарі: "
+            + ", ".join(drop.name for drop in completed)
+        )
+        self.stop_watching()
+        self.go(Stage.LOAD_INVENTORY)
+        return True
 
     async def _confirm_progress(self, channel: Channel) -> bool:
         """Питає Twitch, скільки він нам нарахував. False — не вдалось.
