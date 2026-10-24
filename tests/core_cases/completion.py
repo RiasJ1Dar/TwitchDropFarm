@@ -4,8 +4,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import types
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 
+from core.api import ApiError
 from core.config import Stage
 from core.model import Campaign
 from tests.core_cases.support import check, miner
@@ -169,3 +171,68 @@ def completed_drop_checks() -> None:
     check("інвентар розпізнає автоматично видану нагороду", fresh.everything_taken)
     check("забраний дроп не утворює цикл перечитувань",
           not twitch._refresh_completed_drops(channel, now=220.0))
+
+
+def claim_retry_checks() -> None:
+    """Відмова claim не є видачею, запізнілий PubSub не видає дроп удруге."""
+    twitch = miner()
+    claimed, changed, requests = [], [], []
+    twitch.drop_claimed = lambda drop: claimed.append(drop.id)
+    twitch.drop_changed = lambda drop: changed.append(drop.id)
+    body = {
+        "id": "retry-campaign", "name": "Retry", "status": "ACTIVE",
+        "game": {"id": "1", "name": "Game"}, "self": {"isAccountConnected": True},
+        "startAt": "2020-01-01T00:00:00Z", "endAt": "2099-01-01T00:00:00Z",
+        "timeBasedDrops": [{
+            "id": "retry-drop", "name": "Retry drop", "requiredMinutesWatched": 15,
+            "startAt": "2020-01-01T00:00:00Z", "endAt": "2099-01-01T00:00:00Z",
+            "preconditionDrops": None,
+            "self": {"isClaimed": False, "currentMinutesWatched": 14},
+            "benefitEdges": [{"benefit": {"id": "retry-benefit", "name": "Reward",
+                                         "distributionType": "DIRECT_ENTITLEMENT"}}],
+        }],
+    }
+    drop = Campaign(twitch, body, {}).drops["retry-drop"]
+    statuses = iter((ApiError("temporary failure"), "NOT_ELIGIBLE", "ELIGIBLE_FOR_ALL",
+                     "DROP_INSTANCE_ALREADY_CLAIMED"))
+
+    async def graphql(payload):
+        requests.append(payload)
+        status = next(statuses)
+        if isinstance(status, Exception):
+            raise status
+        return {"data": {"claimDropRewards": {"status": status}}}
+
+    twitch.graphql = graphql
+
+    async def run():
+        check("без claim ID видача не вигадується", not await drop.take() and not drop.taken)
+        check("без claim ID мутація не викликається", not requests)
+        drop.note_claim_id("server-instance")
+        check("тимчасовий збій claim залишає нагороду невиданою",
+              not await drop.take() and not drop.taken and not claimed)
+        check("відмова Twitch не є успішною видачею",
+              not await drop.take() and not drop.taken and not claimed)
+        check("повтор після відмови приймає підтверджену видачу",
+              await drop.take() and drop.taken and drop.counted_minutes == 15)
+        check("ранній claim ID завершує дроп і повідомляє один раз",
+              claimed == [drop.id] and changed == [drop.id])
+        before = len(requests)
+        drop.note_claim_id("late-pubsub-instance")
+        check("запізнілий PubSub після claim не дублює мутацію чи подію",
+              await drop.take() and len(requests) == before and len(claimed) == 1)
+        already = Campaign(twitch, body, {}).drops[drop.id]
+        already.note_claim_id("already-claimed-instance")
+        check("відповідь already-claimed узгоджує локальний стан",
+              await already.take() and already.taken)
+        auto_body = deepcopy(body)
+        auto_body["timeBasedDrops"][0]["self"] = None
+        awarded = Campaign(twitch, auto_body,
+                           {"retry-benefit": datetime.now(timezone.utc)}).drops[drop.id]
+        before_requests, before_events = len(requests), len(claimed)
+        awarded.note_claim_id("late-auto-award-pubsub")
+        check("PubSub після автовидачі не створює повторної видачі",
+              await awarded.take() and len(requests) == before_requests
+              and len(claimed) == before_events)
+
+    asyncio.run(run())

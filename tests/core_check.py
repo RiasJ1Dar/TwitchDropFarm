@@ -20,7 +20,7 @@ GROUPS = {
         "growing_checks",
         "parallel_watch_checks",
     ],
-    "completion": ["claim_checks", "completed_drop_checks"],
+    "completion": ["claim_checks", "completed_drop_checks", "claim_retry_checks"],
     "campaigns": ["deadline_checks", "watchlist_checks", "model_cache_checks", "selection_checks"],
     "selection": ["pure_selection_checks"],
     "inventory": ["inventory_checks"],

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from core import watch_session as session_module
+from core.api import ApiError
 from core.config import Stage
 from core.events import Command, CommandType
 from core.toolbox import Game
@@ -46,7 +47,7 @@ def session_checks() -> None:
 
         async def graphql(payload):
             queries.append(payload["variables"]["channelID"])
-            if phase == "GraphQL":
+            if phase.startswith("GraphQL"):
                 started.set()
                 try:
                     await release.wait()
@@ -54,6 +55,8 @@ def session_checks() -> None:
                     # Імітуємо відповідь, яка вже готова одночасно зі скасуванням.
                     # Вона все одно повинна пройти перевірку покоління.
                     pass
+                if phase == "GraphQL error":
+                    raise ApiError("late network failure")
             return {"data": {"currentUser": {"dropCurrentSession": {
                 "dropID": "d", "currentMinutesWatched": 99,
             }}}}
@@ -81,11 +84,11 @@ def session_checks() -> None:
         label = f"{phase}/{action}"
         check(label + ": старий прохід завершився", finished.is_set())
         check(label + ": стара відповідь не змінює прогрес", not counted)
-        if phase != "GraphQL":
+        if not phase.startswith("GraphQL"):
             check(label + ": старий канал не надсилає підтвердження", "1" not in queries)
 
     async def run():
-        for phase in ("HLS", "grace", "GraphQL"):
+        for phase in ("HLS", "grace", "GraphQL", "GraphQL error"):
             for action in ("pause", "reload", "quit", "switch", "same", "restart"):
                 await scenario(phase, action)
 
