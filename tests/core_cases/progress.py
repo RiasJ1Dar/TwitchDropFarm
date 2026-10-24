@@ -77,7 +77,7 @@ def stall_checks() -> None:
     # залишком вказував на нерухому — і тривога била під час здорового фарму.
     def drop(counted, blind=0, fits=True):
         return types.SimpleNamespace(
-            counted_minutes=counted, blind_minutes=blind,
+            counted_minutes=counted,
             minutes=counted + blind,
             farmable=lambda _c, ignore_channel_state=False: fits,
         )

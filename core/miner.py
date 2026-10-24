@@ -90,7 +90,9 @@ from core.watchdog import (
     build_probe_variables,
     note_delivery_failed,
     note_delivery_ok,
-    query_alive,
+)
+from core.watchdog import (
+    probe_protocol as probe_queries,
 )
 
 log = logging.getLogger("TwitchDrops")
@@ -213,8 +215,6 @@ class Miner:
     async def fetch_text(self, url: str, **kwargs: Any) -> str:
         return await self.api.fetch_text(url, **kwargs)
 
-    async def post_form(self, url: str, body: dict[str, Any], **kwargs: Any) -> int:
-        return await self.api.post_form(url, body, **kwargs)
 
     async def head(self, url: str, **kwargs: Any) -> int:
         return await self.api.head(url, **kwargs)
@@ -318,8 +318,6 @@ class Miner:
                 CampaignFinished(campaign_name=campaign.name, game=campaign.game.name)
             )
 
-    def campaign_exhausted(self, campaign: Campaign) -> None:
-        self.go(Stage.PICK_CHANNEL)
 
     # ---- зворотні виклики каналів
 
@@ -1054,8 +1052,8 @@ class Miner:
         if drop.taken:
             # Кілька секунд після клейму Twitch віддає щойно забраний дроп як
             # поточний: його сесія перемикається на наступний із запізненням.
-            # Це нормальний стан, а не чужий перегляд — просто чекаємо
-            # наступного опитування, домалювавши хвилину наосліп.
+            # Це нормальний стан, а не чужий перегляд — чекаємо наступного
+            # підтвердження без непідтверджених хвилин.
             log.log(TRACE, f"Twitch ще звітує забраний дроп «{drop.name}»")
             return False
         if not drop.farmable(channel):
@@ -1110,12 +1108,6 @@ class Miner:
             f"жодному дропу — схоже, на каналі дропи вимкнені.{hint}"
         )
 
-    def _estimate_progress(self, channel: Channel) -> None:
-        campaign = self.active_campaign(channel)
-        if campaign is None:
-            log.log(TRACE, "Активний дроп не визначено")
-            return
-        campaign.add_blind_minute(channel)
 
     def _note_delivery_failed(self, channel: Channel) -> None:
         current = getattr(self, "_delivery_failures", 0)
@@ -1178,35 +1170,10 @@ class Miner:
         )
 
     async def probe_protocol(self) -> tuple[list[str], list[str]]:
-        pause = PROTOCOL_PROBE_PAUSE
-        variables = self._probe_variables()
-        suspects: list[protocol.Query] = []
-        skipped: list[str] = []
-        for query in protocol.READ_ONLY_QUERIES:
-            needed = query.operation in {
-                protocol.CAMPAIGN_DETAILS.operation, protocol.GAME_DIRECTORY.operation,
-                protocol.CURRENT_DROP.operation, protocol.CHANNEL_DROPS.operation,
-                protocol.STREAM_INFO.operation, protocol.PLAYBACK_ACCESS.operation,
-            }
-            if needed and query.operation not in variables:
-                skipped.append(query.operation)
-                continue
-            if not await self._query_alive(query, variables):
-                suspects.append(query)
-        if not suspects:
-            return [], skipped
+        return await probe_queries(
+            self.graphql, self._probe_variables(), pause=PROTOCOL_PROBE_PAUSE,
+        )
 
-        log.log(TRACE, f"Перепитую підозрюваних: {[q.operation for q in suspects]}")
-        await asyncio.sleep(pause.total_seconds())
-        dead = [
-            query.operation for query in suspects
-            if not await self._query_alive(query, variables)
-        ]
-        return dead, skipped
-
-    async def _query_alive(self, query: protocol.Query,
-                           variables: dict[str, dict[str, Any]]) -> bool:
-        return await query_alive(self.graphql, query, variables)
 
     async def _watch_protocol(self) -> None:
         """Раз на добу питає, чи живі наші запити.

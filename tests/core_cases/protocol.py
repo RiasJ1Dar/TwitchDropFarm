@@ -61,7 +61,6 @@ def protocol_watch_checks() -> None:
         # методи ядра, які сторожа використовує як є
         _probe_variables = Miner._probe_variables
         probe_protocol = Miner.probe_protocol
-        _query_alive = Miner._query_alive
         _watch_protocol = Miner._watch_protocol
 
     real_pause = miner_module.PROTOCOL_PROBE_PAUSE

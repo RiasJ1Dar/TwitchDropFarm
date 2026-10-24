@@ -10,6 +10,7 @@ from core.channels import WatchReporter
 from core.config import WATCH_ATTEMPTS
 from core.events import StatusChanged, WatchUncounted
 from core.miner import Miner
+from core.model import Drop
 from tests.core_cases.support import Bus, check, miner_stub
 
 
@@ -125,12 +126,14 @@ def delivery_checks() -> None:
         return None
 
     active = types.SimpleNamespace(live=True, report_watching=failed_delivery)
+    progress = Drop.__new__(Drop)
+    progress.counted_minutes = 7
     loop = miner_stub(
         watching=types.SimpleNamespace(take=take_channel),
-        _progress_mark=lambda: 0,
+        _drops={"d1": progress},
+        _progress_mark=lambda: progress.minutes,
         _confirm_progress=missing_confirmation,
         _refresh_completed_drops=lambda ch: False,
-        _estimate_progress=lambda ch: attempts.append("estimated"),
         _note_delivery_failed=lambda ch: attempts.append("failed"),
         _check_stall=lambda before, ch: None,
         _restart_watch=asyncio.Event(),
@@ -150,7 +153,7 @@ def delivery_checks() -> None:
         asyncio.run(run_loop())
     check("кожен прохід питає підтвердження Twitch", attempts.count("confirmed") == 3)
     check("невдала доставка лишається відмовою", attempts.count("failed") == 3)
-    check("20-секундні проходи не вигадують хвилини", "estimated" not in attempts)
+    check("20-секундні проходи не вигадують хвилини", progress.minutes == 7)
 
     fake = miner_stub(
         _delivery_failures=0, events=Bus(), _benched={},

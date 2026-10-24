@@ -20,7 +20,6 @@ from functools import cached_property
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from core import protocol
-from core.config import BLIND_MINUTES_LIMIT
 from core.toolbox import Game, parse_timestamp
 
 if TYPE_CHECKING:
@@ -59,7 +58,6 @@ class Owner(Protocol):
     def drop_changed(self, drop: Drop) -> None: ...
     def drop_claimed(self, drop: Drop) -> None: ...
     def show_drop(self, drop: Drop, *, minus_one: bool = False) -> None: ...
-    def campaign_exhausted(self, campaign: Campaign) -> None: ...
     async def graphql(self, payload: Any) -> Any: ...
     @property
     def cosmetics_wanted(self) -> bool: ...
@@ -108,7 +106,6 @@ class Drop:
 
     __slots__ = (
         "_owner",
-        "blind_minutes",
         "campaign",
         "claim_id",
         "closes_at",
@@ -141,8 +138,6 @@ class Drop:
         self.claim_id: str | None = mine.get("dropInstanceID")
         self.taken: bool = bool(mine.get("isClaimed"))
         self.counted_minutes: int = mine.get("currentMinutesWatched") or 0
-        # хвилини, домальовані нами, поки Twitch мовчить про прогрес
-        self.blind_minutes: int = 0
 
         if not self.taken and not mine:
             self.taken = self._infer_taken(awarded)
@@ -165,7 +160,7 @@ class Drop:
 
     @property
     def minutes(self) -> int:
-        return self.counted_minutes + self.blind_minutes
+        return self.counted_minutes
 
     @property
     def minutes_left(self) -> int:
@@ -219,8 +214,6 @@ class Drop:
             and self.prerequisites_done
             # має власну нагороду або відкриває шлях іншому дропу
             and (bool(self.rewards) or self.id in self.campaign.prerequisite_ids)
-            # домалювали стільки, що самим собі більше не віримо
-            and self.blind_minutes < BLIND_MINUTES_LIMIT
         )
 
     @property
@@ -271,16 +264,8 @@ class Drop:
         self.counted_minutes = max(
             0, min(self.counted_minutes + delta, self.required_minutes)
         )
-        self.blind_minutes = 0
         self._owner.drop_changed(self)
 
-    def add_blind_minute(self, channel: Channel | None) -> bool:
-        """Домальовує хвилину, коли Twitch мовчить. True — ліміт довіри вичерпано."""
-        if not self.farmable(channel):
-            return False
-        self.blind_minutes += 1
-        self._owner.drop_changed(self)
-        return self.blind_minutes >= BLIND_MINUTES_LIMIT
 
     def show(self, *, minus_one: bool = False) -> None:
         self._owner.show_drop(self, minus_one=minus_one)
@@ -313,7 +298,6 @@ class Drop:
 
         self.taken = True
         self.counted_minutes = self.required_minutes
-        self.blind_minutes = 0
         self._owner.drop_claimed(self)
         self._owner.drop_changed(self)
         return True
@@ -529,17 +513,6 @@ class Campaign:
         if (current := self.next_drop) is not None:
             current.show()
 
-    def add_blind_minute(self, channel: Channel) -> None:
-        # список, а не генератор: хвилину мають отримати всі дропи, а не лише
-        # ті, що трапились до першого True
-        exhausted = [drop.add_blind_minute(channel) for drop in self.all_drops]
-        if any(exhausted):
-            log.warning(
-                f"Кампанія «{self.name}» вичерпала ліміт домальованих хвилин"
-            )
-            self._owner.campaign_exhausted(self)
-        if (current := self.next_drop) is not None:
-            current.show()
 
     def mark_reported_done(self) -> bool:
         """True рівно один раз — щоб не повідомляти про завершення двічі."""

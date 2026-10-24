@@ -284,14 +284,6 @@ class TwitchApi:
         ) as response:
             return response.status
 
-    async def post_form(self, url: str, body: dict[str, Any], *,
-                        attempts: int | None = None,
-                        count_as_network: bool = True) -> int:
-        async with self.request(
-            "POST", url, data=body,
-            attempts=attempts, count_as_network=count_as_network,
-        ) as response:
-            return response.status
 
     # ------------------------------------------------------------ GraphQL
 

@@ -1,7 +1,7 @@
 """Приватний API Twitch: усе, що ми про нього знаємо.
 
 Вміст цього файлу — **факти, а не рішення**. Хеші persisted-запитів, назви
-PubSub-топіків, форма події `minute-watched`, ідентифікатори клієнтів — усе це
+PubSub-топіків, ідентифікатори клієнтів — усе це
 видно в інструментах розробника будь-якого браузера на twitch.tv і однакове в
 будь-якій програмі, що працює з drops. Їх не можна «написати краще»: зміна
 бодай символу перетворює запит на `PersistedQueryNotFound`.
@@ -11,13 +11,10 @@ PubSub-топіків, форма події `minute-watched`, ідентифі�
 """
 from __future__ import annotations
 
-import gzip
 import json
 import logging
 import random
-from base64 import b64encode
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Any
 
 JsonDict = dict[str, Any]
@@ -264,72 +261,6 @@ CHANNEL_TOPICS = {
 def topic_name(group: dict[str, str], key: str, target_id: int) -> str:
     return f"{group[key]}.{target_id}"
 
-
-# ---------------------------------------------------------------- перегляд
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-
-
-def watch_event(
-    *, broadcast_id: int, channel_id: int, channel_login: str,
-    game_id: int | None, game_name: str | None, user_id: int,
-) -> list[JsonDict]:
-    """Подія «переглянуто хвилину» — та сама, яку шле звичайний плеєр.
-
-    Спадковий формат spade для сумісності. З 09.10.2026 успішна доставка
-    цієї події більше не доводить фарм; робочий перегляд іде через HLS.
-    """
-    return [{
-        "event": "minute-watched",
-        "properties": {
-            "broadcast_id": str(broadcast_id),
-            "channel_id": str(channel_id),
-            "channel": channel_login,
-            "client_time": _now_iso(),
-            "game": game_name or "",
-            "game_id": str(game_id) if game_id is not None else "",
-            "hidden": False,
-            "is_live": True,
-            "live": True,
-            "logged_in": True,
-            "minutes_logged": 1,
-            "muted": False,
-            "user_id": user_id,
-        },
-    }]
-
-
-def _compact(payload: Any) -> str:
-    return json.dumps(payload, separators=(",", ":"))
-
-
-def spade_body(event: list[JsonDict]) -> JsonDict:
-    """Тіло для spade-ендпоінта: base64 від компактного JSON."""
-    return {"data": b64encode(_compact(event).encode("utf8")).decode("utf8")}
-
-
-def spade_mutation(event: list[JsonDict]) -> JsonDict:
-    """Той самий перегляд, але через GQL — запасний шлях, коли spade недоступний."""
-    return {
-        "query": (
-            "\n mutation SendEvents($input: SendSpadeEventsInput!) "
-            "{\n sendSpadeEvents(input: $input) {\n statusCode\n}\n}\n"
-        ),
-        "variables": {
-            "input": {
-                "data": b64encode(gzip.compress(_compact(event).encode("utf8"))).decode("utf8"),
-                "repository": "twilight",
-                "encoding": "GZIP_B64",
-            }
-        },
-    }
-
-
-# Витяг адреси spade зі сторінки стрімера: або прямо в HTML, або в підключеному
-# конфігу. Twitch періодично міняє, де саме вона лежить, тому шукаємо обидва.
-SPADE_IN_PAGE = r'"spade_?url": ?"(https://[.\w\-/]+)"'
-SETTINGS_SCRIPT = r'src="(https://[\w.]+/config/settings\.[0-9a-f]{32}\.js)"'
 
 # Ігри, для яких Twitch не прив'язує кампанію до конкретного каналу.
 GAMES_WITHOUT_CHANNEL_LIMIT = frozenset({509663, 509672})

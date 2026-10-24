@@ -1,17 +1,79 @@
 """Регресії: campaigns."""
 from __future__ import annotations
 
+import asyncio
 import tempfile
 import types
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from core.config import FarmMode
 from core.events import CampaignAppeared, DeadlineRisk
 from core.miner import Miner
 from core.model import Campaign
 from core.seen import SeenCampaigns
 from core.toolbox import Game
-from tests.core_cases.support import Bus, check, miner_stub
+from tests.core_cases.support import Bus, check, miner, miner_stub
+
+
+def selection_checks() -> None:
+    """Опорна поведінка вибору перед винесенням політик із Miner."""
+    print("\n[вибір] Режими й пріоритети кампаній")
+    twitch = miner()
+    now = datetime.now(timezone.utc)
+
+    def campaign(name, days, slack, *, game=None, linked=True, real=True, hopeless=False):
+        return types.SimpleNamespace(
+            id=name, name=name,
+            game=Game({"id": {"A": "1", "B": "2", "C": "3"}[game or name],
+                       "name": game or name}),
+            not_started=False, all_drops=[], closes_at=now + timedelta(days=days),
+            slack=slack, linked=linked, has_real_item=real, hopeless=hopeless,
+            farmable_before=lambda _time: True,
+        )
+
+    a, b, c = campaign("A", 2, 1), campaign("B", 1, 4), campaign("C", 3, 2)
+
+    def select(mode, *, priority=(), exclude=(), skip=False, rescue=(), campaigns=None):
+        twitch.settings = types.SimpleNamespace(
+            farm_mode=mode, priority=list(priority), exclude=list(exclude), skip_hopeless=skip,
+        )
+        twitch.campaigns = campaigns if campaigns is not None else [a, b, c]
+        twitch._needs_rescue = lambda item: item.id in rescue
+        asyncio.run(twitch._pick_games())
+        return [game.name for game in twitch.wanted]
+
+    check("найближчий дедлайн задає порядок",
+          select(FarmMode.SOONEST_END) == ["B", "A", "C"])
+    check("tightest fit задає порядок за запасом часу",
+          select(FarmMode.TIGHTEST_FIT) == ["A", "C", "B"])
+    check("список пріоритету відкидає не названі ігри",
+          select(FarmMode.PRIORITY_LIST, priority=("C", "A")) == ["C", "A"])
+    check("порожній ручний список означає порожній вибір",
+          select(FarmMode.PRIORITY_LIST) == [])
+    check("пріоритети враховуються й поверх дедлайну",
+          select(FarmMode.SOONEST_END, priority=("C",)) == ["C", "B", "A"])
+    b.linked = False
+    c.has_real_item = False
+    check("linked-only лишає прив'язані кампанії зі справжнім предметом",
+          select(FarmMode.LINKED_ONLY, priority=("B",)) == ["A"])
+    b.linked = True
+    c.has_real_item = True
+    check("чорний список ігор діє при виборі",
+          select(FarmMode.SOONEST_END, exclude=("B",)) == ["A", "C"])
+    a.hopeless = True
+    check("вимкнений пропуск дозволяє безнадійну кампанію",
+          select(FarmMode.SOONEST_END, skip=False) == ["B", "A", "C"])
+    check("увімкнений пропуск відкидає безнадійну кампанію",
+          select(FarmMode.SOONEST_END, skip=True) == ["B", "C"])
+    a.hopeless = False
+    check("рятівний пріоритет випереджає звичайний порядок",
+          select(FarmMode.SOONEST_END, rescue=("C",)) == ["C", "B", "A"])
+    duplicate = campaign("earlier-A", 0.5, 0.5, game="A")
+    check("дві кампанії гри не дублюють гру у виборі",
+          select(FarmMode.SOONEST_END, campaigns=[a, b, c, duplicate]) == ["A", "B", "C"])
+    check("порожній інвентар дає порожній вибір",
+          select(FarmMode.SOONEST_END, campaigns=[]) == [])
 
 
 def deadline_checks() -> None:
@@ -163,6 +225,13 @@ def model_cache_checks() -> None:
     check("є справжній предмет — не косметика", not with_item.only_cosmetics)
     check("справжній предмет знайдено", with_item.has_real_item)
     check("серед значків предмета немає", not only_badges.has_real_item)
+
+    chain = payload("DIRECT_ENTITLEMENT", "DIRECT_ENTITLEMENT")
+    chain["timeBasedDrops"][1]["preconditionDrops"] = [{"id": "d0"}]
+    dependent = Campaign(owner, chain, {})
+    check("залежний дроп чекає видачі попереднього", not dependent.drops["d1"].farmable())
+    dependent.drops["d0"].taken = True
+    check("виданий попередній дроп відкриває залежний", dependent.drops["d1"].farmable())
 
     # Обидві властивості кешовані. Кеш живе рівно стільки, скільки об'єкт
     # кампанії, а той створюється наново на кожне читання інвентаря — саме
