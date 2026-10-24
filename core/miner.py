@@ -69,6 +69,7 @@ from core.history import History
 from core.i18n import t
 from core.identity import Identity
 from core.images import ImageCache
+from core.inventory import InventoryLoader
 from core.model import Campaign, Drop
 from core.seen import SeenCampaigns
 from core.selection import (
@@ -86,7 +87,6 @@ from core.toolbox import (
     batched,
     describe_exception,
     guard_task,
-    parse_timestamp,
     race,
     sleep_unless,
 )
@@ -104,10 +104,6 @@ from core.watchdog import (
 
 log = logging.getLogger("TwitchDrops")
 
-# Скільки тримати подробиці кампаній у кеші (90 хвилин). Описи, канали й
-# нагороди рідко змінюються на ходу, тож повторний запис десятків однакових
-# CAMPAIGN_DETAILS на кожному оновленні інвентаря лише марнує запити до GraphQL.
-CAMPAIGN_DETAILS_TTL = 5400.0
 # Twitch може видати нагороду автоматично, без PubSub drop-claim.
 # Якщо self/claim ID ще не оновились, перепитуємо не частіше разу на хвилину.
 COMPLETED_DROP_REFRESH = 60.0
@@ -192,8 +188,10 @@ class Miner:
         self.updater = UpdateCoordinator(self)
         # коли востаннє питали Twitch, чи живі наші persisted-запити
         self._protocol_checked = 0.0
-        # кеш подробиць кампаній (id -> (timestamp, data)) для зменшення навантаження GraphQL
-        self._campaign_details_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+        self.inventory = InventoryLoader(
+            lambda payload: self.graphql(payload), lambda: str(self.identity.user_id),
+            self.events.status,
+        )
         self._completed_drop_refresh: dict[str, float] = {}
 
         # Ядро історію лише читає. Підписку на запис робить `main`, і не з
@@ -572,73 +570,10 @@ class Miner:
 
     async def load_inventory(self) -> None:
         self.events.status(t("status_inventory"))
-        answer = await self.graphql(protocol.INVENTORY())
-        block = answer["data"]["currentUser"]["inventory"]
-        in_progress = block["dropCampaignsInProgress"] or []
-        awarded = {
-            item["id"]: parse_timestamp(item["lastAwardedAt"])
-            for item in block["gameEventDrops"] or []
-        }
-        merged: dict[str, dict[str, Any]] = {c["id"]: c for c in in_progress}
-
-        answer = await self.graphql(protocol.CAMPAIGN_LIST())
-        listed = answer["data"]["currentUser"]["dropCampaigns"] or []
-        interesting = {
-            c["id"]: c for c in listed if c["status"] in ("ACTIVE", "UPCOMING")
-        }
-
-        self.events.status(t("status_details"))
-        details = await self._load_details(list(interesting.items()))
+        snapshot = await self.inventory.load()
         self._maybe_watch_protocol()
-        for campaign_id, extra in details.items():
-            merged[campaign_id] = _blend(merged.get(campaign_id, {}), extra)
+        self._rebuild(snapshot.campaigns, snapshot.awarded)
 
-        self._rebuild(merged, awarded)
-
-    async def _load_details(
-        self, wanted: list[tuple[str, dict[str, Any]]]
-    ) -> dict[str, dict[str, Any]]:
-        """Дотягує подробиці кампаній пакетами, паралельно з кешуванням TTL."""
-        now = monotonic()
-        collected: dict[str, dict[str, Any]] = {}
-        missing: list[tuple[str, dict[str, Any]]] = []
-
-        for cid, body in wanted:
-            entry = self._campaign_details_cache.get(cid)
-            if entry is not None and (now - entry[0]) < CAMPAIGN_DETAILS_TTL:
-                collected[cid] = entry[1]
-            else:
-                missing.append((cid, body))
-
-        if missing:
-            login = str(self.identity.user_id)
-            jobs = [
-                asyncio.ensure_future(self.graphql([
-                    protocol.CAMPAIGN_DETAILS(channelLogin=login, dropID=campaign_id)
-                    for campaign_id, _ in portion
-                ]))
-                for portion in batched(missing, 20)
-            ]
-            base = dict(missing)
-            try:
-                for finished in asyncio.as_completed(jobs):
-                    for reply in await finished:
-                        body = reply["data"]["user"]["dropCampaign"]
-                        if body:
-                            blended = _blend(base.get(body["id"], {}), body)
-                            self._campaign_details_cache[body["id"]] = (now, blended)
-                            collected[body["id"]] = blended
-            except Exception:
-                for job in jobs:
-                    job.cancel()
-                raise
-
-        current_ids = {cid for cid, _ in wanted}
-        for cid in list(self._campaign_details_cache):
-            if cid not in current_ids:
-                self._campaign_details_cache.pop(cid, None)
-
-        return collected
 
 
     def _rebuild(self, raw: dict[str, dict[str, Any]],
@@ -1012,7 +947,7 @@ class Miner:
             self._completed_drop_refresh[drop.id] = clock + COMPLETED_DROP_REFRESH
             # self у кеші деталей може ще казати «не забрано». Для цього
             # дропа потрібні свіжі self і gameEventDrops з інвентаря.
-            self._campaign_details_cache.pop(drop.campaign.id, None)
+            self.inventory.invalidate(drop.campaign.id)
         log.info(
             "Дроп досяг потрібних хвилин — перевіряю видачу в інвентарі: "
             + ", ".join(drop.name for drop in completed)
@@ -1271,7 +1206,7 @@ class Miner:
             self._paused = False
             self.go(Stage.LOAD_INVENTORY)
         elif kind is CommandType.RELOAD:
-            self._campaign_details_cache.clear()
+            self.inventory.invalidate()
             self.go(Stage.LOAD_INVENTORY)
         elif kind is CommandType.SHUTDOWN:
             self.request_stop()
@@ -1599,15 +1534,3 @@ class Miner:
         self._shown_progress.clear()
         self.identity.clear()
         await self.events.drain()
-
-
-def _blend(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
-    """Зливає два описи однієї кампанії; за розбіжності виграє перший."""
-    merged = dict(extra)
-    for key, value in base.items():
-        current = merged.get(key)
-        if isinstance(value, dict) and isinstance(current, dict):
-            merged[key] = _blend(value, current)
-        else:
-            merged[key] = value
-    return merged

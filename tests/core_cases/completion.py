@@ -78,8 +78,19 @@ def completed_drop_checks() -> None:
     twitch.wanted = [campaign.game]
     twitch.watching.put(channel)
     twitch._stage = Stage.PICK_CHANNEL
-    twitch._campaign_details_cache[campaign.id] = (0.0, body)
-    twitch._campaign_details_cache["other"] = (0.0, {})
+    from core.inventory import InventoryLoader
+
+    detail_requests = []
+
+    async def details_query(payload):
+        ids = [item["variables"]["dropID"] for item in payload]
+        detail_requests.extend(ids)
+        return [{"data": {"user": {"dropCampaign": {"id": cid}}}} for cid in ids]
+
+    twitch.inventory = InventoryLoader(details_query, lambda: "1", lambda _: None)
+    wanted_details = [(campaign.id, body), ("other", {"id": "other"})]
+    asyncio.run(twitch.inventory.load_details(wanted_details))
+    detail_requests.clear()
 
     async def progress(_payload):
         return {"data": {"currentUser": {"dropCurrentSession": {
@@ -97,9 +108,10 @@ def completed_drop_checks() -> None:
           twitch._refresh_completed_drops(channel, now=100.0))
     check("стан переходить до LOAD_INVENTORY", twitch._stage is Stage.LOAD_INVENTORY)
     check("старий канал більше не отримує HLS", not twitch.watching.filled)
+    asyncio.run(twitch.inventory.load_details(wanted_details))
     check("self завершеної кампанії не береться зі старого кешу",
-          campaign.id not in twitch._campaign_details_cache)
-    check("кеш інших кампаній збережено", "other" in twitch._campaign_details_cache)
+          campaign.id in detail_requests)
+    check("кеш інших кампаній збережено", "other" not in detail_requests)
 
     # Видача ще не відобразилась у self: не перечитуємо інвентар кожні 20 с.
     twitch.watching.put(channel)
