@@ -48,6 +48,7 @@ from core.events import (
 from core.i18n import t
 from core.protocol import TELEGRAM_ENDPOINT as TELEGRAM_API
 from notify.telegram_client import TelegramClient
+from notify.telegram_commands import parse_command
 from notify.telegram_views import (
     button_commands,
     command_catalog,
@@ -84,7 +85,7 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
-    from core.miner import Miner as Twitch
+    from core.client import MinerClient as Twitch
 
 logger = logging.getLogger("TwitchDrops")
 
@@ -563,16 +564,10 @@ class TelegramNotifier:
         await self._client._process_callback(callback)
 
     async def _handle_command(self, chat_id: int, text: str) -> None:
-        # Кнопка панелі надсилає свій напис звичайним повідомленням — перекладаємо
-        # його в команду, щоб далі був один спільний шлях обробки.
-        if (mapped := button_commands().get(text.strip())) is not None:
-            text = f"/{mapped}"
-        if not text.startswith("/"):
+        parsed = parse_command(text, button_commands())
+        if parsed is None:
             return
-        parts = text.split(maxsplit=1)
-        # у групах команди приходять як /cmd@botname
-        command = parts[0].lstrip("/").split("@", 1)[0].lower()
-        argument = parts[1].strip() if len(parts) > 1 else ""
+        command, argument = parsed.name, parsed.argument
         control = self._twitch.control
 
         if command in ("start", "help", "menu"):

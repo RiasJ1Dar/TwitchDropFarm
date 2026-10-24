@@ -9,7 +9,7 @@ import customtkinter as ctk
 from gui.pulse import rainbow
 
 if TYPE_CHECKING:
-    from core.miner import Miner as Twitch
+    from core.client import MinerClient as Twitch
 
 
 class ProgressMixin:

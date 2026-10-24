@@ -45,7 +45,7 @@ from core.i18n import t
 from core.toolbox import plural
 
 if TYPE_CHECKING:
-    from core.miner import Miner as Twitch
+    from core.client import MinerClient as Twitch
 
 log = logging.getLogger("TwitchDrops")
 

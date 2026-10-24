@@ -26,6 +26,7 @@ GROUPS = {
     "inventory": ["inventory_checks"],
     "channels": ["channel_checks"],
     "session": ["session_checks"],
+    "client": ["client_checks"],
     "protocol": ["protocol_watch_checks", "stale_request_checks", "request_limit_checks"],
     "delivery": ["delivery_checks"],
     "updates": ["update_checks"],

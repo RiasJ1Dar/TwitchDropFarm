@@ -14,7 +14,7 @@ from core.events import InventoryUpdated
 from core.i18n import t
 
 if TYPE_CHECKING:
-    from core.miner import Miner as Twitch
+    from core.client import MinerClient as Twitch
 
 logger = logging.getLogger("TwitchDrops")
 

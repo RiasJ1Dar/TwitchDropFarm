@@ -76,7 +76,7 @@ from gui.theme import export as export_theme
 from gui.widgets import WidgetsMixin
 
 if TYPE_CHECKING:
-    from core.miner import Miner as Twitch
+    from core.client import MinerClient as Twitch
     from gui.settings_tab import SettingsTab
 
 logger = logging.getLogger("TwitchDrops")
@@ -512,7 +512,7 @@ class GUI(
         self._twitch.control.send(Command(kind, argument))
 
     def _toggle_pause(self) -> None:
-        if self._twitch._paused:
+        if self._twitch.paused:
             self._send(CommandType.RESUME)
             self.pause_btn.configure(text=t("pause"))
             self._set_farm_state("going" if self._watching_name else "idle")
@@ -865,7 +865,7 @@ class GUI(
         # після назви йде перелік команд і хештеги.
         title = " ".join(event.channel.stream_title.split())
         self.title_var.set(title if len(title) <= 90 else title[:87] + "…")
-        if not self._twitch._paused:
+        if not self._twitch.paused:
             self._set_farm_state("going")
 
     @SHOW.on(DropProgress)

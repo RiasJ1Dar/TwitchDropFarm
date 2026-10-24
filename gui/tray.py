@@ -40,7 +40,7 @@ from gui.icon import make_icon
 if TYPE_CHECKING:
     from PIL import Image
 
-    from core.miner import Miner as Twitch
+    from core.client import MinerClient as Twitch
     from gui.app import GUI
 
 logger = logging.getLogger("TwitchDrops")

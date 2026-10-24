@@ -15,7 +15,7 @@ from core.i18n import t
 from core.toolbox import plural
 
 if TYPE_CHECKING:
-    from core.miner import Miner as Twitch
+    from core.client import MinerClient as Twitch
     from core.model import Campaign
 
 
@@ -97,8 +97,8 @@ def render_status(twitch: Twitch) -> str:
     """Форматування повної відповіді на /status."""
     esc = html.escape
     lines = [t("tg_status_title")]
-    channel = twitch.watching.peek()
-    if twitch._paused:
+    channel = twitch.current_channel
+    if twitch.paused:
         lines.append(t("tg_status_paused"))
     elif channel is None:
         lines.append(t("tg_status_idle"))
@@ -126,7 +126,7 @@ def render_status(twitch: Twitch) -> str:
     active = [c for c in twitch.campaigns
               if c.running and c.available_to_me and not c.everything_taken]
     lines.append(t("tg_status_queue", count=len(active)))
-    if twitch.api.offline:
+    if twitch.offline:
         lines.append(t("tg_status_offline"))
     return "\n".join(lines)
 

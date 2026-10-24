@@ -214,6 +214,18 @@ class Miner:
         return self.channel_selector.channels
 
     @property
+    def paused(self) -> bool:
+        return self._paused
+
+    @property
+    def offline(self) -> bool:
+        return self.api.offline
+
+    @property
+    def current_channel(self) -> Channel | None:
+        return self.watching.peek(None)
+
+    @property
     def watching(self) -> Slot[Channel]:
         return self.watch_session.watching
 

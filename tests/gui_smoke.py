@@ -85,7 +85,7 @@ class FakeMiner:
         self.settings = SmokeSettings()
         self.events = EventBus()
         self.control = ControlBus()
-        self._paused = False
+        self.paused = False
         self.active_campaign = None
         self.campaigns: list[Any] = []
         self.history = FakeHistory()
