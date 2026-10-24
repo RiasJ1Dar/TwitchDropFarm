@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import OrderedDict, deque
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from time import monotonic
 from typing import Any
@@ -34,13 +35,11 @@ from core.config import (
     CHANNEL_REFRESH_DELAY,
     HISTORY_FILE,
     IMAGE_DIR,
-    PROGRESS_GRACE,
     PROTOCOL_PROBE_EVERY,
     PROTOCOL_PROBE_PAUSE,
     RESTART_PAUSE,
     SEEN_CAMPAIGNS_FILE,
     TRACE,
-    WATCH_PERIOD,
     FarmMode,
     Stage,
 )
@@ -91,6 +90,7 @@ from core.toolbox import (
     sleep_unless,
 )
 from core.update_manager import UpdateCoordinator
+from core.watch_session import WatchHooks, WatchSession
 from core.watchdog import (
     StallDetector,
     build_probe_variables,
@@ -102,11 +102,6 @@ from core.watchdog import (
 )
 
 log = logging.getLogger("TwitchDrops")
-
-# Twitch може видати нагороду автоматично, без PubSub drop-claim.
-# Якщо self/claim ID ще не оновились, перепитуємо не частіше разу на хвилину.
-COMPLETED_DROP_REFRESH = 60.0
-
 
 class Restart(Exception):
     """Прохання підняти ядро наново, не закриваючи вікно."""
@@ -156,17 +151,24 @@ class Miner:
         self._drops: dict[str, Drop] = {}
         self.wanted = []  # сеттер нижче будує ще й індекс пріоритетів
         self.channel_selector = ChannelSelector(self)
-        self.watching: Slot[Channel] = Slot()
         # точкові топіки активного каналу; тримаємо імена, щоб відписати
         self._live_topics: list[str] = []
         # рейд, до якого вже приєднались: Twitch шле подію кілька разів
         self._joined_raid: str = ""
 
         self._tasks = TaskKeeper()
-        self._watch_task: asyncio.Task[None] | None = None
         self._upkeep_task: asyncio.Task[None] | None = None
         self._refresh_task: asyncio.Task[None] | None = None
-        self._restart_watch = asyncio.Event()
+        self.watch_session = WatchSession(WatchHooks(
+            allowed=lambda: self.watch_allowed,
+            progress_mark=lambda: self._progress_mark(),
+            confirm=lambda channel, valid: self._confirm_progress(channel, valid=valid),
+            completed=lambda channel: self._refresh_completed_drops(channel),
+            delivered=lambda channel: self._note_delivery_ok(channel),
+            failed=lambda channel: self._note_delivery_failed(channel),
+            check_stall=lambda before, channel: self._check_stall(before, channel),
+            stop=lambda: self.stop_watching(),
+        ), self._tasks)
         self._upcoming: deque[datetime] = deque()
 
         self._full_sweep = False
@@ -188,7 +190,6 @@ class Miner:
             lambda payload: self.graphql(payload), lambda: str(self.identity.user_id),
             self.events.status,
         )
-        self._completed_drop_refresh: dict[str, float] = {}
 
         # Ядро історію лише читає. Підписку на запис робить `main`, і не з
         # педантизму: `Miner` створюють і тести, а вони не сміють дописувати
@@ -211,6 +212,20 @@ class Miner:
     @property
     def channels(self) -> OrderedDict[int, Channel]:
         return self.channel_selector.channels
+
+    @property
+    def watching(self) -> Slot[Channel]:
+        return self.watch_session.watching
+
+    @property
+    def _restart_watch(self) -> asyncio.Event:
+        return self.watch_session.restart
+
+    @property
+    def watch_allowed(self) -> bool:
+        return not self._paused and self._stage not in (
+            Stage.LOAD_INVENTORY, Stage.QUIT, Stage.RESTART,
+        )
 
     # ================================================================ послуги
 
@@ -271,6 +286,8 @@ class Miner:
     def go(self, stage: Stage) -> None:
         if self._stage is not Stage.QUIT:
             self._stage = stage
+        if stage in (Stage.LOAD_INVENTORY, Stage.QUIT, Stage.RESTART):
+            self.watch_session.interrupt()
         self._stage_changed.set()
 
     def _network_lost(self, reason: str, attempt: int) -> None:
@@ -481,7 +498,7 @@ class Miner:
 
     def watch(self, channel: Channel, *, announce: bool = True) -> None:
         self._follow_settings(channel)
-        self.watching.put(channel)
+        self.watch_session.activate(channel)
         self._stall_since = None
         self._stall_alerted = False
         self._delivery_failures = 0
@@ -520,7 +537,7 @@ class Miner:
 
     def stop_watching(self) -> None:
         self._follow_settings(None)
-        self.watching.clear()
+        self.watch_session.deactivate()
         self.events.emit(WatchingChanged(channel=None))
 
     def active_campaign(self, channel: Channel | None = None) -> Campaign | None:
@@ -803,54 +820,16 @@ class Miner:
 
     @guard_task(vital=True)
     async def _watch_loop(self) -> None:
-        period = WATCH_PERIOD.total_seconds()
-        while True:
-            channel = await self.watching.take()
-            if not channel.live:
-                self.stop_watching()
-                continue
-
-            before = self._progress_mark()
-            sent_at = monotonic()
-            if await channel.report_watching():
-                self._note_delivery_ok(channel)
-            else:
-                self._note_delivery_failed(channel)
-
-            # даємо Twitch час відзвітувати самому
-            await asyncio.sleep(max(
-                0.0, PROGRESS_GRACE.total_seconds() - (monotonic() - sent_at),
-            ))
-            # Цикл HLS тепер іде кожні 20 с. Домальована «хвилина» на кожному
-            # проході потроїла б прогрес; показуємо лише підтверджене Twitch.
-            await self._confirm_progress(channel)
-            if self._refresh_completed_drops(channel):
-                continue
-            self._check_stall(before, channel)
-
-            self._restart_watch.clear()
-            waited = monotonic() - sent_at
-            await sleep_unless(self._restart_watch, max(0.0, period - waited))
+        await self.watch_session.run()
 
     def _refresh_completed_drops(self, channel: Channel, *, now: float | None = None) -> bool:
         """Перечитати серверний стан завершеного дропа навіть без PubSub."""
-        if self._paused or self.watching.peek(None) is not channel:
-            return False
-        if self._stage in (Stage.LOAD_INVENTORY, Stage.QUIT, Stage.RESTART):
-            return False
-        clock = monotonic() if now is None else now
-        completed = [
-            drop
-            for campaign in self.campaigns if self._counts_here(campaign, channel)
-            for drop in campaign.all_drops
-            if not drop.taken and drop.required_minutes > 0
-            and drop.counted_minutes >= drop.required_minutes
-            and clock >= self._completed_drop_refresh.get(drop.id, 0.0)
-        ]
+        completed = self.watch_session.pending_completions(
+            self.campaigns, channel, self._counts_here, now=now,
+        )
         if not completed:
             return False
         for drop in completed:
-            self._completed_drop_refresh[drop.id] = clock + COMPLETED_DROP_REFRESH
             # self у кеші деталей може ще казати «не забрано». Для цього
             # дропа потрібні свіжі self і gameEventDrops з інвентаря.
             self.inventory.invalidate(drop.campaign.id)
@@ -862,7 +841,8 @@ class Miner:
         self.go(Stage.LOAD_INVENTORY)
         return True
 
-    async def _confirm_progress(self, channel: Channel) -> bool:
+    async def _confirm_progress(self, channel: Channel, *,
+                                valid: Callable[[], bool] | None = None) -> bool:
         """Питає Twitch, скільки він нам нарахував. False — не вдалось.
 
         Кожен вихід із False лишає слід у журналі. Без цього чотири різні
@@ -875,6 +855,9 @@ class Miner:
             session = context["data"]["currentUser"]["dropCurrentSession"]
         except (ApiError, Aborted) as error:
             log.log(TRACE, f"Підтвердження не вдалось: {type(error).__name__}")
+            return False
+        if valid is not None and not valid():
+            log.log(TRACE, "Відкидаю підтвердження попередньої сесії перегляду")
             return False
         if session is None:
             log.log(TRACE, "Twitch не віддав поточну сесію дропа")
@@ -1200,9 +1183,7 @@ class Miner:
         self.events.emit(LoggedIn(user_id=self.identity.user_id))
         await self.topics.start()
 
-        if self._watch_task is not None:
-            self._watch_task.cancel()
-        self._watch_task = self._tasks.launch(self._watch_loop())
+        self.watch_session.start()
 
         self._tasks.launch(self._check_updates())
 
@@ -1383,10 +1364,11 @@ class Miner:
 
     async def shutdown(self) -> None:
         self.stop_watching()
-        for task in (self._watch_task, self._upkeep_task, self._refresh_task):
+        await self.watch_session.shutdown()
+        for task in (self._upkeep_task, self._refresh_task):
             if task is not None:
                 task.cancel()
-        self._watch_task = self._upkeep_task = self._refresh_task = None
+        self._upkeep_task = self._refresh_task = None
         self._tasks.cancel_all()
         await self.topics.stop(forget_topics=True)
         await self.api.close()

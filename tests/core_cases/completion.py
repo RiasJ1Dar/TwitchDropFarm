@@ -137,7 +137,6 @@ def completed_drop_checks() -> None:
         return True
 
     async def run_completion_loop():
-        twitch._completed_drop_refresh.clear()
         twitch._stage = Stage.PICK_CHANNEL
         twitch._stage_changed.clear()
         channel.report_watching = delivered
@@ -156,9 +155,9 @@ def completed_drop_checks() -> None:
 
     from unittest.mock import patch
 
-    from core import miner as miner_module
+    from core import watch_session as session_module
 
-    with patch.object(miner_module, "PROGRESS_GRACE", timedelta(0)):
+    with patch.object(session_module, "PROGRESS_GRACE", timedelta(0)):
         check("робочий HLS-цикл сам виходить із завершеного дропа без PubSub",
               asyncio.run(run_completion_loop()))
 

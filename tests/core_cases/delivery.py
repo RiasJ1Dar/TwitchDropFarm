@@ -106,7 +106,9 @@ def delivery_checks() -> None:
     # Три швидкі проходи без відповіді Twitch не можуть стати трьома хвилинами.
     from unittest.mock import patch
 
-    from core import miner as miner_module
+    from core import watch_session as session_module
+    from core.toolbox import TaskKeeper
+    from core.watch_session import WatchHooks, WatchSession
 
     attempts: list[str] = []
 
@@ -128,27 +130,24 @@ def delivery_checks() -> None:
     active = types.SimpleNamespace(live=True, report_watching=failed_delivery)
     progress = Drop.__new__(Drop)
     progress.counted_minutes = 7
-    loop = miner_stub(
-        watching=types.SimpleNamespace(take=take_channel),
-        _drops={"d1": progress},
-        _progress_mark=lambda: progress.minutes,
-        _confirm_progress=missing_confirmation,
-        _refresh_completed_drops=lambda ch: False,
-        _note_delivery_failed=lambda ch: attempts.append("failed"),
-        _check_stall=lambda before, ch: None,
-        _restart_watch=asyncio.Event(),
-    )
+    loop = WatchSession(WatchHooks(
+        allowed=lambda: True, progress_mark=lambda: progress.minutes,
+        confirm=lambda ch, valid: missing_confirmation(ch), completed=lambda ch: False,
+        delivered=lambda ch: None, failed=lambda ch: attempts.append("failed"),
+        check_stall=lambda before, ch: None, stop=lambda: None,
+    ), TaskKeeper())
+    loop.watching = types.SimpleNamespace(take=take_channel, peek=lambda _: active)
 
     async def run_loop():
         try:
-            await Miner._watch_loop(loop)
+            await loop.run()
         except asyncio.CancelledError:
             return
 
     with (
-        patch.object(miner_module, "WATCH_PERIOD", timedelta(0)),
-        patch.object(miner_module, "PROGRESS_GRACE", timedelta(0)),
-        patch.object(miner_module, "sleep_unless", no_wait),
+        patch.object(session_module, "WATCH_PERIOD", timedelta(0)),
+        patch.object(session_module, "PROGRESS_GRACE", timedelta(0)),
+        patch.object(session_module, "sleep_unless", no_wait),
     ):
         asyncio.run(run_loop())
     check("кожен прохід питає підтвердження Twitch", attempts.count("confirmed") == 3)
