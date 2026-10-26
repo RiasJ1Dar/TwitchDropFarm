@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "C:\\Users\\Public\\archify-20261026\\TwitchDropFarm\\.archify\\architecture-twitchdropfarm-20261026-212000\\candidate.json",
+    "sha256": "5d5ce18bb4d2aeb4a576e2a4905db458d6e7f6ce11f1a55c34cd61f309b9c761",
+    "bytes": 6292
+  },
+  "artifact": {
+    "path": "C:\\Users\\Public\\archify-20261026\\TwitchDropFarm\\docs\\architecture.html",
+    "sha256": "d0193bf5f64d93146022dc6b9608f358603cb439d5665e151a1a3b2d151bf12a",
+    "bytes": 832356
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "fail"
+  },
+  "failedStage": "browser-check",
+  "diagnostics": [
+    {
+      "code": "viewer/browser-check-runtime",
+      "severity": "error",
+      "message": "browser-check could not complete its Chrome inspection.",
+      "subject": {
+        "artifact": "C:\\Users\\Public\\archify-20261026\\TwitchDropFarm\\docs\\architecture.html"
+      },
+      "evidence": {
+        "reason": "Chrome DevTools read pipe failed: stream ended\nChrome process: still running.\nWindows browser startup may have relaunched before connecting to the DevTools pipe. Retry from a non-elevated PowerShell opened normally, outside an elevated or compatibility-mode parent. Archify does not disable browser de-elevation or the sandbox to preserve pipe handles.\nChrome transport: Node v26.5.0, libuv 1.52.1, win32; pid=3252, exitCode=null, signalCode=null.\nChrome read pipe: readable=false, ended=true, destroyed=false, receivedBytes=0, messages=0, bufferedBytes=0.\nChrome write pipe: writable=true, ended=false, destroyed=false, completedWrites=1, writtenBytes=50, bufferedBytes=0."
+      },
+      "supportedFixes": [
+        "resolve the reported Chrome inspection error, then rerun browser-check"
+      ]
+    }
+  ],
+  "diagnosticSummary": {
+    "total": 1,
+    "shown": 1,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "C:\\Users\\Public\\archify-20261026\\TwitchDropFarm\\docs\\architecture.finalize.json",
+    "summaryReceipt": "C:\\Users\\Public\\archify-20261026\\TwitchDropFarm\\docs\\architecture.finalize-summary.json",
+    "browserCheckReceipt": "C:\\Users\\Public\\archify-20261026\\TwitchDropFarm\\docs\\architecture.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-26T17:28:59.599Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 1834,
+  "browserCheck": {
+    "requested": true,
+    "ran": false
+  }
+}

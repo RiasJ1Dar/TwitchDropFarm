@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "0f1faec9-c965-40c6-af16-42b97c3ec687",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "C:\\Users\\Public\\archify-20261026\\TwitchDropFarm\\.archify\\architecture-twitchdropfarm-en-20261026-212500\\candidate.json",
+  "output": "C:\\Users\\Public\\archify-20261026\\TwitchDropFarm\\docs\\architecture.en.html",
+  "specification": {
+    "sha256": "8739985499e91950a2759710c82f71e5f9c04a801ec18221e6460cf72df39e1d",
+    "bytes": 5661
+  },
+  "artifact": {
+    "sha256": "6faad5d644bf65737b4a52b1607d08df16035dc8c0d75c9f52a75c65656f42fe",
+    "bytes": 831234
+  }
+}

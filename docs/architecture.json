@@ -2,32 +2,141 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "Twitch Drop Farm: один exe",
+    "title": "Twitch Drop Farm: один exe, рішення в майнері",
+    "output": "docs/architecture.html",
     "quality_profile": "showcase",
-    "output": "architecture.html",
-    "viewBox": [1280, 720]
+    "repository": {
+      "url": "https://github.com/RiasJ1Dar/TwitchDropFarm.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "2288b63f6dab6f964b362ff6ff188fac74dd5975"
+    }
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [40, 48],
+    "cols": 4,
+    "cellW": 125,
+    "cellH": 70,
+    "gapX": 70,
+    "gapY": 90
   },
   "components": [
-    { "id": "tray", "type": "frontend", "label": "Трей / вікно", "sublabel": "CustomTkinter", "pos": [80, 200], "size": [170, 64] },
-    { "id": "tg", "type": "frontend", "label": "Telegram", "sublabel": "дистанційне керування", "pos": [80, 420], "size": [170, 64] },
-    { "id": "core", "type": "backend", "label": "майнер", "sublabel": "Python → exe", "pos": [420, 300], "size": [170, 72] },
-    { "id": "cfg", "type": "database", "label": "конфіг + журнал", "sublabel": "Документи\\TwitchDropFarm", "pos": [720, 180], "size": [200, 64] },
-    { "id": "twitch", "type": "cloud", "label": "Twitch", "sublabel": "drops / inventory", "pos": [720, 400], "size": [170, 64] },
-    { "id": "exe", "type": "external", "label": "TwitchDropFarm.exe", "sublabel": "без рантайму", "pos": [1000, 300], "size": [190, 64] }
-  ],
-  "boundaries": [
-    { "kind": "region", "label": "один процес", "wraps": ["tray", "core", "cfg"] }
+    {
+      "id": "tray", "type": "frontend", "label": "Трей і вікно", "sublabel": "CustomTkinter",
+      "row": 0, "col": 0,
+      "sources": [
+        { "path": "gui/app.py", "line": 1, "label": "вікно" },
+        { "path": "gui/tray.py", "line": 1, "label": "трей" }
+      ]
+    },
+    {
+      "id": "main", "type": "backend", "label": "main.py", "sublabel": "точка входу",
+      "row": 0, "col": 1,
+      "sources": [
+        { "path": "main.py", "line": 1, "end_line": 30, "label": "старт і логи" },
+        { "path": "core/config.py", "line": 14, "label": "версія" }
+      ]
+    },
+    {
+      "id": "campaigns", "type": "backend", "label": "campaigns", "sublabel": "знімки, дедлайни",
+      "row": 0, "col": 2,
+      "sources": [{ "path": "core/campaigns.py", "line": 1, "end_line": 12 }]
+    },
+    {
+      "id": "history", "type": "database", "label": "історія фарму", "sublabel": "журнал і звіти",
+      "row": 0, "col": 3,
+      "sources": [
+        { "path": "core/history.py", "line": 1, "label": "історія" },
+        { "path": "core/campaigns.py", "line": 8, "end_line": 11, "label": "втрати і звіт" }
+      ]
+    },
+    {
+      "id": "tg", "type": "frontend", "label": "Telegram-бот", "sublabel": "дистанційно",
+      "row": 1, "col": 0,
+      "sources": [
+        { "path": "notify/telegram_commands.py", "line": 1, "label": "команди" },
+        { "path": "notify/telegram_client.py", "line": 1, "label": "клієнт Bot API" }
+      ]
+    },
+    {
+      "id": "miner", "type": "backend", "label": "miner", "sublabel": "рішення майнера",
+      "row": 1, "col": 1,
+      "sources": [
+        { "path": "core/miner.py", "line": 1, "end_line": 6, "label": "лише логіка рішень" },
+        { "path": "core/watch_session.py", "line": 1, "end_line": 15, "label": "сесія перегляду" }
+      ]
+    },
+    {
+      "id": "api", "type": "backend", "label": "api", "sublabel": "HTTP і GraphQL",
+      "row": 1, "col": 2,
+      "sources": [
+        { "path": "core/api.py", "line": 1, "label": "мережевий шар" },
+        { "path": "core/api.py", "line": 203, "end_line": 243, "label": "повтори і backoff" }
+      ]
+    },
+    {
+      "id": "twitch", "type": "cloud", "label": "Twitch", "sublabel": "drops, inventory",
+      "row": 1, "col": 3,
+      "sources": [
+        { "path": "auth/device.py", "line": 1, "end_line": 3, "label": "device flow" },
+        { "path": "core/api.py", "line": 106, "label": "обмеження частоти" }
+      ]
+    },
+    {
+      "id": "state", "type": "database", "label": "STATE_DIR", "sublabel": "конфіг і токен",
+      "row": 2, "col": 1,
+      "sources": [
+        { "path": "core/config.py", "line": 66, "end_line": 71, "label": "шляхи стану" },
+        { "path": "core/settings.py", "line": 1, "label": "налаштування" }
+      ]
+    },
+    {
+      "id": "pubsub", "type": "messagebus", "label": "pubsub", "sublabel": "пул з'єднань",
+      "row": 2, "col": 2,
+      "sources": [{ "path": "core/pubsub.py", "line": 1, "end_line": 6 }]
+    }
   ],
   "connections": [
-    { "id": "tray-core", "from": "tray", "to": "core", "label": "старт / стоп / тема", "variant": "emphasis" },
-    { "id": "tg-core", "from": "tg", "to": "core", "label": "бот команди" },
-    { "id": "core-cfg", "from": "core", "to": "cfg", "label": "журнал завжди" },
-    { "id": "core-twitch", "from": "core", "to": "twitch", "label": "GQL / drops" },
-    { "id": "pack", "from": "core", "to": "exe", "label": "PyInstaller", "variant": "dashed" }
+    { "id": "tray-main", "from": "tray", "to": "main", "label": "старт", "variant": "emphasis" },
+    { "id": "main-miner", "from": "main", "to": "miner", "label": "запуск", "variant": "emphasis", "fromSide": "bottom", "toSide": "top" },
+    { "id": "tg-miner", "from": "tg", "to": "miner", "label": "команди" },
+    { "id": "miner-campaigns", "from": "miner", "to": "campaigns", "label": "знімки" },
+    { "id": "campaigns-history", "from": "campaigns", "to": "history", "label": "звіти" },
+    { "id": "miner-api", "from": "miner", "to": "api", "label": "GraphQL", "variant": "emphasis" },
+    { "id": "api-twitch", "from": "api", "to": "twitch", "label": "HTTP", "variant": "emphasis" },
+    { "id": "miner-state", "from": "miner", "to": "state", "label": "конфіг", "fromSide": "bottom", "toSide": "top" },
+    { "id": "miner-pubsub", "from": "miner", "to": "pubsub", "label": "підписки" },
+    { "id": "pubsub-twitch", "from": "pubsub", "to": "twitch", "label": "події", "variant": "dashed" }
   ],
   "cards": [
-    { "dot": "cyan", "title": "Поставка", "items": ["Один self-contained exe", "Без Python у користувача"] },
-    { "dot": "emerald", "title": "Керування", "items": ["Трей на ПК", "Telegram з телефону"] },
-    { "dot": "rose", "title": "Межа", "items": ["Живий exe на ПК не чіпати з сесії агента"] }
+    {
+      "dot": "cyan",
+      "title": "Межі модулів",
+      "items": [
+        "Майнер тримає лише логіку рішень: що дивитись і коли перемикатись",
+        "Мережа живе в api, підписки в pubsub, модель у model",
+        "Майнер не знає ні про заголовки, ні про інтерфейс"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Доставка",
+      "items": [
+        "Один .exe без окремого рантайму, збирається PyInstaller",
+        "Консоль Windows переводиться в UTF-8 до першого рядка логів",
+        "Трей і Telegram керують тим самим майнером"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Доступ і живучість",
+      "items": [
+        "Авторизація через OAuth device flow під Android-клієнт, не крадіжкою cookie",
+        "Токен і cookies лежать у теці стану поруч із конфігом",
+        "Twitch обмежує топіки на з'єднання, тому пул сам відкриває й згортає з'єднання",
+        "Запити до GraphQL дроселюються: 5 на секунду"
+      ]
+    }
   ]
 }

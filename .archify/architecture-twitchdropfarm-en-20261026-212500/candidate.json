@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Twitch Drop Farm: a single exe, decisions in the miner",
+    "locale": "en",
+    "output": "docs/architecture.en.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/RiasJ1Dar/TwitchDropFarm.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "2288b63f6dab6f964b362ff6ff188fac74dd5975"
+    }
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [40, 48],
+    "cols": 4,
+    "cellW": 125,
+    "cellH": 70,
+    "gapX": 70,
+    "gapY": 90
+  },
+  "components": [
+    {
+      "id": "tray", "type": "frontend", "label": "Tray + window", "sublabel": "CustomTkinter",
+      "row": 0, "col": 0,
+      "sources": [
+        { "path": "gui/app.py", "line": 1, "label": "window" },
+        { "path": "gui/tray.py", "line": 1, "label": "tray" }
+      ]
+    },
+    {
+      "id": "main", "type": "backend", "label": "main.py", "sublabel": "entry point",
+      "row": 0, "col": 1,
+      "sources": [
+        { "path": "main.py", "line": 1, "end_line": 30, "label": "startup and logs" },
+        { "path": "core/config.py", "line": 14, "label": "version" }
+      ]
+    },
+    {
+      "id": "campaigns", "type": "backend", "label": "campaigns", "sublabel": "snapshots, deadlines",
+      "row": 0, "col": 2,
+      "sources": [{ "path": "core/campaigns.py", "line": 1, "end_line": 12 }]
+    },
+    {
+      "id": "history", "type": "database", "label": "farm history", "sublabel": "log and reports",
+      "row": 0, "col": 3,
+      "sources": [
+        { "path": "core/history.py", "line": 1, "label": "history" },
+        { "path": "core/campaigns.py", "line": 8, "end_line": 11, "label": "losses and report" }
+      ]
+    },
+    {
+      "id": "tg", "type": "frontend", "label": "Telegram bot", "sublabel": "remote control",
+      "row": 1, "col": 0,
+      "sources": [
+        { "path": "notify/telegram_commands.py", "line": 1, "label": "commands" },
+        { "path": "notify/telegram_client.py", "line": 1, "label": "Bot API client" }
+      ]
+    },
+    {
+      "id": "miner", "type": "backend", "label": "miner", "sublabel": "decision logic",
+      "row": 1, "col": 1,
+      "sources": [
+        { "path": "core/miner.py", "line": 1, "end_line": 6, "label": "decisions only" },
+        { "path": "core/watch_session.py", "line": 1, "end_line": 15, "label": "watch session" }
+      ]
+    },
+    {
+      "id": "api", "type": "backend", "label": "api", "sublabel": "HTTP and GraphQL",
+      "row": 1, "col": 2,
+      "sources": [
+        { "path": "core/api.py", "line": 1, "label": "network layer" },
+        { "path": "core/api.py", "line": 203, "end_line": 243, "label": "retries, backoff" }
+      ]
+    },
+    {
+      "id": "twitch", "type": "cloud", "label": "Twitch", "sublabel": "drops, inventory",
+      "row": 1, "col": 3,
+      "sources": [
+        { "path": "auth/device.py", "line": 1, "end_line": 3, "label": "device flow" },
+        { "path": "core/api.py", "line": 106, "label": "rate limit" }
+      ]
+    },
+    {
+      "id": "state", "type": "database", "label": "STATE_DIR", "sublabel": "config and token",
+      "row": 2, "col": 1,
+      "sources": [
+        { "path": "core/config.py", "line": 66, "end_line": 71, "label": "state paths" },
+        { "path": "core/settings.py", "line": 1, "label": "settings" }
+      ]
+    },
+    {
+      "id": "pubsub", "type": "messagebus", "label": "pubsub", "sublabel": "connection pool",
+      "row": 2, "col": 2,
+      "sources": [{ "path": "core/pubsub.py", "line": 1, "end_line": 6 }]
+    }
+  ],
+  "connections": [
+    { "id": "tray-main", "from": "tray", "to": "main", "label": "start", "variant": "emphasis" },
+    { "id": "main-miner", "from": "main", "to": "miner", "label": "run", "variant": "emphasis", "fromSide": "bottom", "toSide": "top" },
+    { "id": "tg-miner", "from": "tg", "to": "miner", "label": "commands" },
+    { "id": "miner-campaigns", "from": "miner", "to": "campaigns", "label": "snapshots" },
+    { "id": "campaigns-history", "from": "campaigns", "to": "history", "label": "reports" },
+    { "id": "miner-api", "from": "miner", "to": "api", "label": "GraphQL", "variant": "emphasis" },
+    { "id": "api-twitch", "from": "api", "to": "twitch", "label": "HTTP", "variant": "emphasis" },
+    { "id": "miner-state", "from": "miner", "to": "state", "label": "config", "fromSide": "bottom", "toSide": "top" },
+    { "id": "miner-pubsub", "from": "miner", "to": "pubsub", "label": "topics" },
+    { "id": "pubsub-twitch", "from": "pubsub", "to": "twitch", "label": "events", "variant": "dashed" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Module boundaries",
+      "items": [
+        "The miner holds decision logic only: what to watch and when to switch",
+        "Networking lives in api, subscriptions in pubsub, the model in model",
+        "The miner knows nothing about headers or the interface"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Delivery",
+      "items": [
+        "One .exe with no separate runtime, built with PyInstaller",
+        "The Windows console is switched to UTF-8 before the first log line",
+        "Tray and Telegram drive the same miner"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Access and resilience",
+      "items": [
+        "Authorization uses the OAuth device flow for the Android client, not stolen cookies",
+        "Token and cookies sit in the state directory next to the config",
+        "Twitch caps topics per connection, so the pool opens and collapses connections itself",
+        "GraphQL requests are throttled to 5 per second"
+      ]
+    }
+  ]
+}
