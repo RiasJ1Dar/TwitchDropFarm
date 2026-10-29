@@ -28,3 +28,12 @@ MANIFEST_PUBLIC_KEY.txt
 # на кожному прогоні, у репозиторії потрібна лише сама схема.
 docs/*.visual-check.*
 docs/*.vcheck-out.txt
+
+# Квитанції archify містять абсолютні локальні шляхи: у git лише HTML і candidate.json
+*.finalize.json
+*.finalize-summary.json
+*.delivery.json
+*.browser-check.json
+*.visual-check.*
+review-*/
+visual-check/
